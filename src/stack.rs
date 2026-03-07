@@ -7,6 +7,9 @@ pub enum Stack {
     Python,
     Flutter,
     Php,
+    Go,
+    Java,
+    Swift,
     Unknown,
 }
 
@@ -18,6 +21,9 @@ impl std::fmt::Display for Stack {
             Stack::Python => write!(f, "Python"),
             Stack::Flutter => write!(f, "Flutter/Dart"),
             Stack::Php => write!(f, "PHP"),
+            Stack::Go => write!(f, "Go"),
+            Stack::Java => write!(f, "Java"),
+            Stack::Swift => write!(f, "Swift/SwiftUI"),
             Stack::Unknown => write!(f, "Unknown"),
         }
     }
@@ -26,7 +32,12 @@ impl std::fmt::Display for Stack {
 pub fn detect(project_dir: &Path) -> Stack {
     let markers: &[(&str, Stack)] = &[
         ("Cargo.toml", Stack::Rust),
+        ("go.mod", Stack::Go),
+        ("Package.swift", Stack::Swift),
         ("pubspec.yaml", Stack::Flutter),
+        ("pom.xml", Stack::Java),
+        ("build.gradle", Stack::Java),
+        ("build.gradle.kts", Stack::Java),
         ("package.json", Stack::Node),
         ("requirements.txt", Stack::Python),
         ("pyproject.toml", Stack::Python),
@@ -63,7 +74,65 @@ mod tests {
         assert_eq!(Stack::Python.to_string(), "Python");
         assert_eq!(Stack::Flutter.to_string(), "Flutter/Dart");
         assert_eq!(Stack::Php.to_string(), "PHP");
+        assert_eq!(Stack::Go.to_string(), "Go");
+        assert_eq!(Stack::Java.to_string(), "Java");
+        assert_eq!(Stack::Swift.to_string(), "Swift/SwiftUI");
         assert_eq!(Stack::Unknown.to_string(), "Unknown");
+    }
+
+    #[test]
+    fn detect_go() {
+        let tmp = std::env::temp_dir().join("__kx_stack_go__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("go.mod"), "module example.com/app").unwrap();
+
+        assert_eq!(detect(&tmp), Stack::Go);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn detect_java_maven() {
+        let tmp = std::env::temp_dir().join("__kx_stack_java_maven__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("pom.xml"), "<project></project>").unwrap();
+
+        assert_eq!(detect(&tmp), Stack::Java);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn detect_java_gradle() {
+        let tmp = std::env::temp_dir().join("__kx_stack_java_gradle__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("build.gradle"), "plugins {}").unwrap();
+
+        assert_eq!(detect(&tmp), Stack::Java);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn detect_java_gradle_kts() {
+        let tmp = std::env::temp_dir().join("__kx_stack_java_gradle_kts__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("build.gradle.kts"), "plugins {}").unwrap();
+
+        assert_eq!(detect(&tmp), Stack::Java);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn detect_swift() {
+        let tmp = std::env::temp_dir().join("__kx_stack_swift__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("Package.swift"), "// swift-tools-version:5.5").unwrap();
+
+        assert_eq!(detect(&tmp), Stack::Swift);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

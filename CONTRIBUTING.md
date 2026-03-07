@@ -4,7 +4,7 @@ Thank you for your interest in contributing to kx. This document outlines the pr
 
 ## Before You Start
 
-Read [CLAUDE.md](CLAUDE.md) for the full project principles and code standards.
+This guide provides the essential information for contributors. For details, see the [README](README.md).
 
 ## Development Setup
 

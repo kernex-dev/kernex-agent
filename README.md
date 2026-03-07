@@ -4,7 +4,7 @@ CLI dev assistant powered by [Kernex](https://github.com/kernex-dev/kernex-dev).
 
 ## Features
 
-- **Stack detection** - Automatically detects Rust, Node/TypeScript, Python, Flutter/Dart, and PHP projects
+- **Stack detection** - Automatically detects Rust, Node/TypeScript, Python, Flutter/Dart, PHP, Go, Java, and Swift projects
 - **Persistent memory** - Remembers decisions, patterns, and context across sessions per project
 - **One-shot mode** - Quick answers without entering interactive mode
 - **Multiline input** - Paste code blocks with `"""` delimiters
@@ -189,6 +189,9 @@ Valid values for `stack`:
 - `python`
 - `flutter`, `dart`
 - `php`
+- `go`, `golang`
+- `java`, `kotlin`
+- `swift`, `swiftui`
 
 ## Skills
 
@@ -263,7 +266,11 @@ kx automatically detects your project's stack by looking for these files (in ord
 | File | Detected Stack |
 |------|----------------|
 | `Cargo.toml` | Rust |
+| `go.mod` | Go |
+| `Package.swift` | Swift/SwiftUI |
 | `pubspec.yaml` | Flutter/Dart |
+| `pom.xml` | Java |
+| `build.gradle` / `build.gradle.kts` | Java |
 | `package.json` | JavaScript/TypeScript (Node) |
 | `requirements.txt` | Python |
 | `pyproject.toml` | Python |
@@ -298,9 +305,9 @@ For details on the underlying runtime, see [kernex-dev](https://github.com/kerne
 
 ## Extending with Skills
 
-kx can be extended with MCP-based skills from [kernex-dev](https://github.com/kernex-dev/kernex).
+kx can be extended with MCP-based and CLI-based skills from [kernex-dev](https://github.com/kernex-dev/kernex).
 
-Available skills: filesystem, git, playwright, github, postgres, sqlite, brave-search.
+Available skills: filesystem, git, playwright, github, postgres, sqlite, brave-search, pdf, webhook.
 
 See [kernex-dev/examples/skills](https://github.com/kernex-dev/kernex/tree/main/examples/skills) for setup.
 

@@ -32,3 +32,9 @@ Thumbs.db
 # Temp
 /tmp/
 *.tmp
+
+# Internal documentation (not public)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+docs/

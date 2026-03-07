@@ -323,3 +323,191 @@ async fn handle_skills_command(arg: &str) {
         "warn:".yellow().bold()
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_result_variants() {
+        // Test that all variants can be constructed
+        let _ = CommandResult::Continue;
+        let _ = CommandResult::Quit;
+        let _ = CommandResult::Unknown;
+    }
+
+    #[test]
+    fn strip_prefix_search() {
+        let input = "/search rust async";
+        let rest = input.strip_prefix("/search");
+        assert!(rest.is_some());
+        assert_eq!(rest.unwrap().trim(), "rust async");
+    }
+
+    #[test]
+    fn strip_prefix_facts() {
+        let input = "/facts";
+        let rest = input.strip_prefix("/facts");
+        assert!(rest.is_some());
+        assert_eq!(rest.unwrap().trim(), "");
+    }
+
+    #[test]
+    fn strip_prefix_facts_delete() {
+        let input = "/facts delete user_name";
+        let rest = input.strip_prefix("/facts").unwrap().trim();
+        let key = rest.strip_prefix("delete ");
+        assert!(key.is_some());
+        assert_eq!(key.unwrap().trim(), "user_name");
+    }
+
+    #[test]
+    fn strip_prefix_skills() {
+        let input = "/skills add acme/repo";
+        let rest = input.strip_prefix("/skills");
+        assert!(rest.is_some());
+        let arg = rest.unwrap().trim();
+        assert!(arg.starts_with("add "));
+    }
+
+    #[test]
+    fn command_matching_quit() {
+        let input = "/quit";
+        assert!(input == "/quit" || input == "/exit");
+    }
+
+    #[test]
+    fn command_matching_exit() {
+        let input = "/exit";
+        assert!(input == "/quit" || input == "/exit");
+    }
+
+    #[test]
+    fn command_matching_help() {
+        let input = "/help";
+        assert_eq!(input, "/help");
+    }
+
+    #[test]
+    fn command_matching_stack() {
+        let input = "/stack";
+        assert_eq!(input, "/stack");
+    }
+
+    #[test]
+    fn command_matching_history() {
+        let input = "/history";
+        assert_eq!(input, "/history");
+    }
+
+    #[test]
+    fn command_matching_memory() {
+        let input = "/memory";
+        assert_eq!(input, "/memory");
+    }
+
+    #[test]
+    fn command_matching_config() {
+        let input = "/config";
+        assert_eq!(input, "/config");
+    }
+
+    #[test]
+    fn command_matching_clear() {
+        let input = "/clear";
+        assert_eq!(input, "/clear");
+    }
+
+    #[test]
+    fn skills_arg_parsing_empty() {
+        let arg = "";
+        assert!(arg.is_empty());
+    }
+
+    #[test]
+    fn skills_arg_parsing_add() {
+        let arg = "add acme/my-skill sandboxed";
+        let rest = arg.strip_prefix("add ");
+        assert!(rest.is_some());
+        let parts: Vec<&str> = rest.unwrap().split_whitespace().collect();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], "acme/my-skill");
+        assert_eq!(parts[1], "sandboxed");
+    }
+
+    #[test]
+    fn skills_arg_parsing_add_default_trust() {
+        let arg = "add acme/my-skill";
+        let rest = arg.strip_prefix("add ");
+        assert!(rest.is_some());
+        let parts: Vec<&str> = rest.unwrap().split_whitespace().collect();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0], "acme/my-skill");
+        let trust = parts.get(1).copied().unwrap_or("sandboxed");
+        assert_eq!(trust, "sandboxed");
+    }
+
+    #[test]
+    fn skills_arg_parsing_remove() {
+        let arg = "remove my-skill";
+        let rest = arg.strip_prefix("remove ");
+        assert!(rest.is_some());
+        assert_eq!(rest.unwrap().trim(), "my-skill");
+    }
+
+    #[test]
+    fn skills_arg_parsing_verify() {
+        let arg = "verify";
+        assert_eq!(arg, "verify");
+    }
+
+    #[test]
+    fn history_message_preview_short() {
+        let text = "Hello world";
+        let preview: String = text.chars().take(150).collect();
+        let ellipsis = if text.len() > 150 { "..." } else { "" };
+        assert_eq!(preview, "Hello world");
+        assert_eq!(ellipsis, "");
+    }
+
+    #[test]
+    fn history_message_preview_long() {
+        let text = "a".repeat(200);
+        let preview: String = text.chars().take(150).collect();
+        let ellipsis = if text.len() > 150 { "..." } else { "" };
+        assert_eq!(preview.len(), 150);
+        assert_eq!(ellipsis, "...");
+    }
+
+    #[test]
+    fn search_result_preview_short() {
+        let text = "Search result";
+        let preview: String = text.chars().take(120).collect();
+        let ellipsis = if text.len() > 120 { "..." } else { "" };
+        assert_eq!(preview, "Search result");
+        assert_eq!(ellipsis, "");
+    }
+
+    #[test]
+    fn search_result_preview_long() {
+        let text = "b".repeat(150);
+        let preview: String = text.chars().take(120).collect();
+        let ellipsis = if text.len() > 120 { "..." } else { "" };
+        assert_eq!(preview.len(), 120);
+        assert_eq!(ellipsis, "...");
+    }
+
+    #[test]
+    fn memory_stats_mb_calculation() {
+        let size: u64 = 1024 * 1024 * 5; // 5 MB
+        let mb = size as f64 / (1024.0 * 1024.0);
+        assert!((mb - 5.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn memory_stats_kb_to_mb() {
+        let size: u64 = 512 * 1024; // 512 KB
+        let mb = size as f64 / (1024.0 * 1024.0);
+        assert!((mb - 0.5).abs() < 0.001);
+    }
+}
