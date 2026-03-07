@@ -10,6 +10,18 @@ pub enum CommandResult {
 }
 
 pub async fn handle(input: &str, runtime: &Runtime, detected_stack: Stack) -> CommandResult {
+    if let Some(rest) = input.strip_prefix("/facts") {
+        let arg = rest.trim();
+        if arg.is_empty() {
+            print_facts(runtime).await;
+        } else if let Some(key) = arg.strip_prefix("delete ") {
+            delete_fact(runtime, key.trim()).await;
+        } else {
+            eprintln!("{} Usage: /facts or /facts delete <key>\n", "warn:".yellow().bold());
+        }
+        return CommandResult::Continue;
+    }
+
     match input {
         "/quit" | "/exit" => CommandResult::Quit,
         "/help" => {
@@ -80,6 +92,32 @@ async fn print_memory_stats(runtime: &Runtime) {
     }
 }
 
+async fn print_facts(runtime: &Runtime) {
+    match runtime.store.get_facts("user").await {
+        Ok(facts) if facts.is_empty() => {
+            println!("{}", "  No facts stored.\n".dimmed());
+        }
+        Ok(facts) => {
+            println!("\n{}", "  Stored facts".bold());
+            for (key, value) in &facts {
+                println!("  {} {}", format!("{key}:").dimmed(), value);
+            }
+            println!();
+        }
+        Err(e) => {
+            eprintln!("{} fetching facts: {e}\n", "error:".red().bold());
+        }
+    }
+}
+
+async fn delete_fact(runtime: &Runtime, key: &str) {
+    match runtime.store.delete_fact("user", key).await {
+        Ok(true) => println!("{}", format!("  Deleted fact: {key}\n").dimmed()),
+        Ok(false) => println!("{}", format!("  Fact not found: {key}\n").yellow()),
+        Err(e) => eprintln!("{} deleting fact: {e}\n", "error:".red().bold()),
+    }
+}
+
 fn print_help() {
     println!(
         r#"
@@ -87,6 +125,8 @@ fn print_help() {
   /help     Show this help
   /stack    Show detected stack and project info
   /memory   Show memory stats and DB size
+  /facts    List stored facts
+  /facts delete <key>  Delete a specific fact
   /clear    Close current conversation
   /quit     Exit kx dev
 
