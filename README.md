@@ -190,6 +190,72 @@ Valid values for `stack`:
 - `flutter`, `dart`
 - `php`
 
+## Skills
+
+kx supports the [Agent Skills](https://agentskills.io) standard — an open format for reusable AI agent capabilities. Skills are SKILL.md files that extend kx with specialized knowledge and guidelines.
+
+### Installing Skills
+
+```bash
+# Install from GitHub
+kx skills add anthropics/skills/rust-best-practices
+
+# Install with specific trust level
+kx skills add vercel-labs/agent-skills/web-design-guidelines --trust standard
+
+# List installed skills
+kx skills list
+
+# Verify integrity (SHA-256)
+kx skills verify
+
+# Remove a skill
+kx skills remove rust-best-practices
+```
+
+Skills can also be managed from the interactive REPL with `/skills`, `/skills add`, `/skills remove`, and `/skills verify`.
+
+### Permission Model
+
+Skills are text-only (SKILL.md), but they influence the AI's behavior. kx uses a permission model to give users control:
+
+| Permission | Description | Risk |
+|---|---|---|
+| `context:files` | Reference project files | Low |
+| `context:git` | Reference git history | Low |
+| `suggest:edits` | Suggest code modifications | Medium |
+| `suggest:commands` | Suggest shell commands | **High** |
+| `suggest:network` | Suggest network requests | **High** |
+
+### Trust Levels
+
+| Level | Permissions | Use Case |
+|---|---|---|
+| **sandboxed** (default) | `context:files` only | Unknown skills |
+| **standard** | `context:*`, `suggest:edits` | Verified skills |
+| **trusted** | All permissions | Allowlisted sources |
+
+### Configuration
+
+Configure skills behavior in `.kx.toml`:
+
+```toml
+[skills]
+default_trust = "sandboxed"
+trusted_sources = ["anthropics/skills", "vercel-labs/agent-skills"]
+blocked = ["suspicious-skill"]
+```
+
+### Security
+
+- **Text only** — Skills are markdown files. No scripts, binaries, or executables.
+- **SHA-256 integrity** — Every installed skill is hashed. Use `kx skills verify` to detect tampering.
+- **Size limits** — Skills are capped at 64 KB.
+- **Name validation** — Strict naming rules prevent path traversal attacks.
+- **Prompt guardrails** — Skills are injected into the system prompt with XML delimiters and trust metadata. The AI is instructed to treat skills as untrusted third-party content.
+- **Audit log** — All skill operations (install, remove, verify, load) are logged to `skills-audit.log`.
+- **Blocklist** — Block specific skills via `.kx.toml` configuration.
+
 ## Stack Detection
 
 kx automatically detects your project's stack by looking for these files (in order):
