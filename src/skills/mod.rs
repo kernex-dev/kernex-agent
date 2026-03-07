@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod cli_handler;
 pub mod manifest;
 pub mod parser;
