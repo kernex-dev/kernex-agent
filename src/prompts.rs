@@ -72,3 +72,95 @@ You have persistent memory for this project. Use it to remember decisions, patte
 - If a task is ambiguous, ask for clarification before acting."#
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prompt_contains_project_name() {
+        let prompt = dev_system_prompt(Stack::Rust, "my-project");
+        assert!(prompt.contains("my-project"));
+    }
+
+    #[test]
+    fn prompt_contains_stack_name() {
+        let prompt = dev_system_prompt(Stack::Rust, "test");
+        assert!(prompt.contains("Rust"));
+
+        let prompt_node = dev_system_prompt(Stack::Node, "test");
+        assert!(prompt_node.contains("JavaScript/TypeScript"));
+    }
+
+    #[test]
+    fn prompt_rust_has_rust_rules() {
+        let prompt = dev_system_prompt(Stack::Rust, "test");
+        assert!(prompt.contains("idiomatic Rust"));
+        assert!(prompt.contains("clippy"));
+        assert!(prompt.contains("cargo fmt"));
+        assert!(prompt.contains("thiserror"));
+    }
+
+    #[test]
+    fn prompt_node_has_node_rules() {
+        let prompt = dev_system_prompt(Stack::Node, "test");
+        assert!(prompt.contains("TypeScript strict"));
+        assert!(prompt.contains("ESM imports"));
+        assert!(prompt.contains("package.json"));
+    }
+
+    #[test]
+    fn prompt_python_has_python_rules() {
+        let prompt = dev_system_prompt(Stack::Python, "test");
+        assert!(prompt.contains("PEP 8"));
+        assert!(prompt.contains("type hints"));
+        assert!(prompt.contains("pathlib"));
+        assert!(prompt.contains("venv"));
+    }
+
+    #[test]
+    fn prompt_flutter_has_flutter_rules() {
+        let prompt = dev_system_prompt(Stack::Flutter, "test");
+        assert!(prompt.contains("Dart"));
+        assert!(prompt.contains("const constructors"));
+        assert!(prompt.contains("pubspec.yaml"));
+    }
+
+    #[test]
+    fn prompt_php_has_php_rules() {
+        let prompt = dev_system_prompt(Stack::Php, "test");
+        assert!(prompt.contains("PSR-12"));
+        assert!(prompt.contains("Composer"));
+        assert!(prompt.contains("prepared statements"));
+    }
+
+    #[test]
+    fn prompt_unknown_has_generic_rules() {
+        let prompt = dev_system_prompt(Stack::Unknown, "test");
+        assert!(prompt.contains("existing conventions"));
+        assert!(prompt.contains("config files"));
+    }
+
+    #[test]
+    fn prompt_has_core_behavior() {
+        let prompt = dev_system_prompt(Stack::Rust, "test");
+        assert!(prompt.contains("Core behavior"));
+        assert!(prompt.contains("direct and concise"));
+        assert!(prompt.contains("Never commit or expose secrets"));
+    }
+
+    #[test]
+    fn prompt_has_memory_section() {
+        let prompt = dev_system_prompt(Stack::Rust, "test");
+        assert!(prompt.contains("Memory"));
+        assert!(prompt.contains("persistent memory"));
+    }
+
+    #[test]
+    fn prompt_has_output_section() {
+        let prompt = dev_system_prompt(Stack::Rust, "test");
+        assert!(prompt.contains("Output"));
+        assert!(prompt.contains("path:line"));
+        assert!(prompt.contains("code blocks"));
+    }
+}
