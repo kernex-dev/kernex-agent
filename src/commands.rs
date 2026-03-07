@@ -52,6 +52,10 @@ pub async fn handle(input: &str, runtime: &Runtime, detected_stack: Stack) -> Co
             );
             CommandResult::Continue
         }
+        "/history" => {
+            print_history(runtime).await;
+            CommandResult::Continue
+        }
         "/memory" => {
             print_memory_stats(runtime).await;
             CommandResult::Continue
@@ -128,6 +132,32 @@ async fn delete_fact(runtime: &Runtime, key: &str) {
     }
 }
 
+async fn print_history(runtime: &Runtime) {
+    let channel = &runtime.channel;
+    match runtime.store.get_history(channel, "user", 20).await {
+        Ok(messages) if messages.is_empty() => {
+            println!("{}", "  No history in current session.\n".dimmed());
+        }
+        Ok(messages) => {
+            println!("\n  {}\n", "Conversation history (last 20)".bold());
+            for (role, text) in &messages {
+                let label = if role == "user" {
+                    "you:".cyan()
+                } else {
+                    "kx:".green()
+                };
+                let preview: String = text.chars().take(150).collect();
+                let ellipsis = if text.len() > 150 { "..." } else { "" };
+                println!("  {label} {preview}{ellipsis}");
+            }
+            println!();
+        }
+        Err(e) => {
+            eprintln!("{} fetching history: {e}\n", "error:".red().bold());
+        }
+    }
+}
+
 async fn search_memory(runtime: &Runtime, query: &str) {
     match runtime.store.search_messages(query, "", "user", 10).await {
         Ok(results) if results.is_empty() => {
@@ -159,6 +189,7 @@ fn print_help() {
   {}
   /help     Show this help
   /search <query>  Search past conversations (FTS5)
+  /history  Show recent conversation history
   /stack    Show detected stack and project info
   /memory   Show memory stats and DB size
   /facts    List stored facts
