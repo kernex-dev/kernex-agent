@@ -3,7 +3,6 @@ mod commands;
 mod prompts;
 mod stack;
 
-use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -13,7 +12,8 @@ use kernex_core::context::ContextNeeds;
 use kernex_core::message::Request;
 use kernex_providers::claude_code::ClaudeCodeProvider;
 use kernex_runtime::{Runtime, RuntimeBuilder};
-use tokio::sync::Notify;
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
 
 use crate::cli::{Cli, Command};
 use crate::commands::CommandResult;
@@ -90,125 +90,143 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
     );
     println!("{}", "Type /help for commands, /quit to exit.\n".dimmed());
 
-    let shutdown = setup_ctrlc_handler(&runtime).await;
+    let history_path = data_dir.join("history.txt");
+    let editor = Arc::new(tokio::sync::Mutex::new(create_editor(&history_path)?));
 
     loop {
-        print!("{} ", ">".cyan().bold());
-        io::stdout().flush()?;
-
-        let input = match read_input(&shutdown).await {
-            Some(line) => line,
-            None => break, // EOF or Ctrl+C
+        let input = {
+            let ed = editor.clone();
+            match tokio::task::spawn_blocking(move || {
+                ed.blocking_lock().readline("> ")
+            })
+            .await?
+            {
+                Ok(line) => line,
+                Err(ReadlineError::Interrupted) => {
+                    graceful_shutdown(&runtime).await;
+                    save_history(&editor, &history_path).await;
+                    break;
+                }
+                Err(ReadlineError::Eof) => {
+                    graceful_shutdown(&runtime).await;
+                    save_history(&editor, &history_path).await;
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("{} readline: {e}", "error:".red().bold());
+                    break;
+                }
+            }
         };
 
-        let input = input.trim();
+        let trimmed = input.trim();
 
-        if input.is_empty() {
+        if trimmed.is_empty() {
             continue;
         }
 
-        if input.starts_with('/') {
-            match commands::handle(input, &runtime, detected_stack).await {
+        editor.lock().await.add_history_entry(&input).ok();
+
+        if trimmed == "\"\"\"" {
+            let multiline = read_multiline(&editor).await;
+            match multiline {
+                Some(text) if !text.trim().is_empty() => {
+                    send_message(&runtime, &provider, &needs, &text).await;
+                }
+                _ => continue,
+            }
+            continue;
+        }
+
+        if trimmed.starts_with("\"\"\"") {
+            let first = trimmed.trim_start_matches("\"\"\"");
+            let rest = read_multiline(&editor).await.unwrap_or_default();
+            let full = format!("{first}\n{rest}");
+            if !full.trim().is_empty() {
+                send_message(&runtime, &provider, &needs, &full).await;
+            }
+            continue;
+        }
+
+        if trimmed.starts_with('/') {
+            match commands::handle(trimmed, &runtime, detected_stack).await {
                 CommandResult::Quit => {
                     graceful_shutdown(&runtime).await;
+                    save_history(&editor, &history_path).await;
                     break;
                 }
                 CommandResult::Continue => continue,
                 CommandResult::Unknown => {
-                    eprintln!("{} Unknown command: {input}\n", "warn:".yellow().bold());
+                    eprintln!("{} Unknown command: {trimmed}\n", "warn:".yellow().bold());
                     continue;
                 }
             }
         }
 
-        let request = Request::text("user", input);
-        match runtime
-            .complete_with_needs(&provider, &request, &needs)
-            .await
-        {
-            Ok(response) => {
-                println!("\n{}\n", response.text);
-            }
-            Err(e) => {
-                eprintln!("{} {e}\n", "error:".red().bold());
-            }
-        }
+        send_message(&runtime, &provider, &needs, trimmed).await;
     }
 
     Ok(())
 }
 
-async fn read_line_async(shutdown: &Arc<Notify>) -> Option<String> {
-    let shutdown = shutdown.clone();
-    tokio::select! {
-        result = tokio::task::spawn_blocking(|| {
-            let mut buf = String::new();
-            let n = io::stdin().read_line(&mut buf)?;
-            Ok::<_, io::Error>((buf, n))
-        }) => {
-            match result.ok()? {
-                Ok((_, 0)) => None,
-                Ok((buf, _)) => Some(buf),
-                Err(_) => None,
-            }
+async fn send_message(
+    runtime: &Runtime,
+    provider: &ClaudeCodeProvider,
+    needs: &ContextNeeds,
+    input: &str,
+) {
+    let request = Request::text("user", input);
+    match runtime
+        .complete_with_needs(provider, &request, needs)
+        .await
+    {
+        Ok(response) => {
+            println!("\n{}\n", response.text);
         }
-        _ = shutdown.notified() => None,
+        Err(e) => {
+            eprintln!("{} {e}\n", "error:".red().bold());
+        }
     }
 }
 
-async fn read_input(shutdown: &Arc<Notify>) -> Option<String> {
-    let line = read_line_async(shutdown).await?;
-
-    if line.trim() == "\"\"\"" {
-        println!("{}", "  Multiline mode. Type \"\"\" on its own line to finish.".dimmed());
-        let mut lines = Vec::new();
-        loop {
-            print!("{} ", "..".dimmed());
-            io::stdout().flush().ok();
-            let next = read_line_async(shutdown).await?;
-            if next.trim() == "\"\"\"" {
-                break;
+async fn read_multiline(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>) -> Option<String> {
+    println!(
+        "{}",
+        "  Multiline mode. Type \"\"\" to finish.".dimmed()
+    );
+    let mut lines = Vec::new();
+    loop {
+        let ed = editor.clone();
+        match tokio::task::spawn_blocking(move || ed.blocking_lock().readline(".. "))
+            .await
+            .ok()?
+        {
+            Ok(line) => {
+                if line.trim() == "\"\"\"" {
+                    break;
+                }
+                lines.push(line);
             }
-            lines.push(next);
+            Err(_) => return None,
         }
-        Some(lines.join(""))
-    } else if line.trim().starts_with("\"\"\"") {
-        let first = line.trim().trim_start_matches("\"\"\"");
-        let mut lines = vec![first.to_string(), "\n".to_string()];
-        loop {
-            print!("{} ", "..".dimmed());
-            io::stdout().flush().ok();
-            let next = read_line_async(shutdown).await?;
-            if next.trim() == "\"\"\"" {
-                break;
-            }
-            lines.push(next);
-        }
-        Some(lines.join(""))
-    } else {
-        Some(line)
     }
+    Some(lines.join("\n"))
 }
 
-async fn setup_ctrlc_handler(runtime: &Runtime) -> Arc<Notify> {
-    let notify = Arc::new(Notify::new());
-    let notify_clone = notify.clone();
-    let store = runtime.store.clone();
-    let project = runtime.project.clone();
+fn create_editor(history_path: &PathBuf) -> Result<DefaultEditor, Box<dyn std::error::Error>> {
+    let mut rl = DefaultEditor::new()?;
+    let _ = rl.load_history(history_path);
+    Ok(rl)
+}
 
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            eprintln!("\n{}", "Caught Ctrl+C, closing conversation...".dimmed());
-            let proj = project.as_deref().unwrap_or("default");
-            let _ = store
-                .close_current_conversation("user", proj, "Session interrupted by Ctrl+C.")
-                .await;
-            eprintln!("{}", "Bye.".dimmed());
-            notify_clone.notify_one();
-        }
-    });
-
-    notify
+async fn save_history(
+    editor: &Arc<tokio::sync::Mutex<DefaultEditor>>,
+    history_path: &PathBuf,
+) {
+    if let Some(parent) = history_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = editor.lock().await.save_history(history_path);
 }
 
 async fn graceful_shutdown(runtime: &Runtime) {
