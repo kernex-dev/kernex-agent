@@ -1,3 +1,6 @@
+#![deny(clippy::unwrap_used, clippy::expect_used)]
+#![deny(warnings)]
+
 mod cli;
 mod commands;
 mod config;
@@ -247,12 +250,11 @@ async fn send_message(
 
 fn create_spinner(msg: &str) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-            .template("{spinner:.cyan} {msg}")
-            .unwrap(),
-    );
+    let style = ProgressStyle::default_spinner()
+        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]);
+    if let Ok(s) = style.template("{spinner:.cyan} {msg}") {
+        pb.set_style(s);
+    }
     pb.set_message(msg.to_string());
     pb.enable_steady_tick(std::time::Duration::from_millis(80));
     pb
