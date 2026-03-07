@@ -109,3 +109,133 @@ pub fn resolve_permissions(
         denied,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn policy_default() {
+        let policy = PermissionPolicy::default();
+        assert_eq!(policy.default_trust, TrustLevel::Sandboxed);
+        assert!(policy.trusted_sources.is_empty());
+        assert!(policy.blocked_skills.is_empty());
+    }
+
+    #[test]
+    fn policy_is_blocked() {
+        let policy = PermissionPolicy {
+            blocked_skills: vec!["bad-skill".to_string()],
+            ..Default::default()
+        };
+        assert!(policy.is_blocked("bad-skill"));
+        assert!(!policy.is_blocked("good-skill"));
+    }
+
+    #[test]
+    fn policy_is_trusted_source() {
+        let policy = PermissionPolicy {
+            trusted_sources: vec!["anthropics/".to_string(), "vercel-labs/".to_string()],
+            ..Default::default()
+        };
+        assert!(policy.is_trusted_source("anthropics/skills"));
+        assert!(policy.is_trusted_source("vercel-labs/agent-skills"));
+        assert!(!policy.is_trusted_source("random/repo"));
+    }
+
+    #[test]
+    fn resolve_sandboxed_grants_minimal() {
+        let policy = PermissionPolicy::default();
+        let mut requested = BTreeSet::new();
+        requested.insert(Permission::ContextFiles);
+        requested.insert(Permission::SuggestEdits);
+        requested.insert(Permission::SuggestCommands);
+
+        let resolved = resolve_permissions(&requested, "random/skill", &policy, "test-skill");
+
+        assert_eq!(resolved.trust, TrustLevel::Sandboxed);
+        assert!(resolved.granted.contains(&Permission::ContextFiles));
+        assert!(!resolved.granted.contains(&Permission::SuggestEdits));
+        assert!(resolved.denied.contains(&Permission::SuggestEdits));
+        assert!(resolved.denied.contains(&Permission::SuggestCommands));
+    }
+
+    #[test]
+    fn resolve_trusted_source_grants_all() {
+        let policy = PermissionPolicy {
+            trusted_sources: vec!["anthropics/".to_string()],
+            ..Default::default()
+        };
+        let mut requested = BTreeSet::new();
+        requested.insert(Permission::ContextFiles);
+        requested.insert(Permission::SuggestCommands);
+
+        let resolved = resolve_permissions(&requested, "anthropics/skills", &policy, "test-skill");
+
+        assert_eq!(resolved.trust, TrustLevel::Trusted);
+        assert!(resolved.granted.contains(&Permission::ContextFiles));
+        assert!(resolved.granted.contains(&Permission::SuggestCommands));
+        assert!(resolved.denied.is_empty());
+    }
+
+    #[test]
+    fn resolve_override_trust() {
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "special-skill".to_string(),
+            SkillOverride {
+                trust: Some(TrustLevel::Trusted),
+                deny: vec![],
+            },
+        );
+        let policy = PermissionPolicy {
+            overrides,
+            ..Default::default()
+        };
+        let mut requested = BTreeSet::new();
+        requested.insert(Permission::SuggestCommands);
+
+        let resolved = resolve_permissions(&requested, "random/repo", &policy, "special-skill");
+
+        assert_eq!(resolved.trust, TrustLevel::Trusted);
+        assert!(resolved.granted.contains(&Permission::SuggestCommands));
+    }
+
+    #[test]
+    fn resolve_override_deny_specific() {
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "restricted-skill".to_string(),
+            SkillOverride {
+                trust: Some(TrustLevel::Trusted),
+                deny: vec![Permission::SuggestCommands],
+            },
+        );
+        let policy = PermissionPolicy {
+            overrides,
+            ..Default::default()
+        };
+        let mut requested = BTreeSet::new();
+        requested.insert(Permission::SuggestEdits);
+        requested.insert(Permission::SuggestCommands);
+
+        let resolved = resolve_permissions(&requested, "random/repo", &policy, "restricted-skill");
+
+        assert!(resolved.granted.contains(&Permission::SuggestEdits));
+        assert!(!resolved.granted.contains(&Permission::SuggestCommands));
+        assert!(resolved.denied.contains(&Permission::SuggestCommands));
+    }
+
+    #[test]
+    fn resolved_has_permission() {
+        let mut granted = BTreeSet::new();
+        granted.insert(Permission::ContextFiles);
+        let resolved = ResolvedPermissions {
+            trust: TrustLevel::Sandboxed,
+            granted,
+            denied: BTreeSet::new(),
+        };
+        assert!(resolved.has(Permission::ContextFiles));
+        assert!(!resolved.has(Permission::SuggestEdits));
+    }
+}

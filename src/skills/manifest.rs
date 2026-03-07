@@ -119,3 +119,249 @@ pub fn verify_skill(data_dir: &Path, skill: &InstalledSkill) -> VerifyResult {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::skills::types::{Permission, TrustLevel};
+    use std::collections::BTreeSet;
+
+    fn make_skill(name: &str, sha: &str) -> InstalledSkill {
+        InstalledSkill {
+            name: name.to_string(),
+            source: format!("test/{name}"),
+            sha256: sha.to_string(),
+            size_bytes: 1024,
+            installed_at: "2026-01-01T00:00:00Z".to_string(),
+            trust: TrustLevel::Sandboxed,
+            granted_permissions: BTreeSet::new(),
+            denied_permissions: BTreeSet::new(),
+        }
+    }
+
+    #[test]
+    fn manifest_default_is_empty() {
+        let manifest = SkillsManifest::default();
+        assert!(manifest.skills.is_empty());
+    }
+
+    #[test]
+    fn manifest_add_new_skill() {
+        let mut manifest = SkillsManifest::default();
+        let skill = make_skill("test-skill", "abc123");
+        manifest.add(skill);
+        assert_eq!(manifest.skills.len(), 1);
+        assert_eq!(manifest.skills[0].name, "test-skill");
+    }
+
+    #[test]
+    fn manifest_add_replaces_existing() {
+        let mut manifest = SkillsManifest::default();
+        manifest.add(make_skill("test-skill", "abc123"));
+        manifest.add(make_skill("test-skill", "def456"));
+        assert_eq!(manifest.skills.len(), 1);
+        assert_eq!(manifest.skills[0].sha256, "def456");
+    }
+
+    #[test]
+    fn manifest_remove() {
+        let mut manifest = SkillsManifest::default();
+        manifest.add(make_skill("skill-a", "aaa"));
+        manifest.add(make_skill("skill-b", "bbb"));
+
+        let removed = manifest.remove("skill-a");
+        assert!(removed);
+        assert_eq!(manifest.skills.len(), 1);
+        assert!(manifest.find("skill-a").is_none());
+        assert!(manifest.find("skill-b").is_some());
+    }
+
+    #[test]
+    fn manifest_remove_nonexistent() {
+        let mut manifest = SkillsManifest::default();
+        manifest.add(make_skill("skill-a", "aaa"));
+
+        let removed = manifest.remove("nonexistent");
+        assert!(!removed);
+        assert_eq!(manifest.skills.len(), 1);
+    }
+
+    #[test]
+    fn manifest_find() {
+        let mut manifest = SkillsManifest::default();
+        manifest.add(make_skill("skill-a", "aaa"));
+
+        let found = manifest.find("skill-a");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().sha256, "aaa");
+
+        assert!(manifest.find("nonexistent").is_none());
+    }
+
+    #[test]
+    fn manifest_list() {
+        let mut manifest = SkillsManifest::default();
+        manifest.add(make_skill("skill-a", "aaa"));
+        manifest.add(make_skill("skill-b", "bbb"));
+
+        let list = manifest.list();
+        assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn compute_sha256_consistent() {
+        let content = b"Hello, World!";
+        let hash1 = compute_sha256(content);
+        let hash2 = compute_sha256(content);
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash1.len(), 64); // SHA256 is 64 hex chars
+    }
+
+    #[test]
+    fn compute_sha256_different_content() {
+        let hash1 = compute_sha256(b"Hello");
+        let hash2 = compute_sha256(b"World");
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn skill_dir_path() {
+        let data_dir = Path::new("/home/user/.kx");
+        let dir = skill_dir(data_dir);
+        assert_eq!(dir, PathBuf::from("/home/user/.kx/skills"));
+    }
+
+    #[test]
+    fn skill_file_path_correct() {
+        let data_dir = Path::new("/home/user/.kx");
+        let path = skill_file_path(data_dir, "my-skill");
+        assert_eq!(
+            path,
+            PathBuf::from("/home/user/.kx/skills/my-skill/SKILL.md")
+        );
+    }
+
+    #[test]
+    fn manifest_save_and_load() {
+        let tmp = std::env::temp_dir().join("__kx_manifest_test__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let mut manifest = SkillsManifest::default();
+        let mut perms = BTreeSet::new();
+        perms.insert(Permission::ContextFiles);
+        manifest.add(InstalledSkill {
+            name: "test-skill".to_string(),
+            source: "acme/test".to_string(),
+            sha256: "abc123".to_string(),
+            size_bytes: 512,
+            installed_at: "2026-01-01T00:00:00Z".to_string(),
+            trust: TrustLevel::Standard,
+            granted_permissions: perms,
+            denied_permissions: BTreeSet::new(),
+        });
+
+        manifest.save(&tmp).unwrap();
+        let loaded = SkillsManifest::load(&tmp);
+        assert_eq!(loaded.skills.len(), 1);
+        assert_eq!(loaded.skills[0].name, "test-skill");
+        assert_eq!(loaded.skills[0].trust, TrustLevel::Standard);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn manifest_load_nonexistent() {
+        let tmp = std::env::temp_dir().join("__kx_manifest_missing__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let manifest = SkillsManifest::load(&tmp);
+        assert!(manifest.skills.is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn verify_skill_ok() {
+        let tmp = std::env::temp_dir().join("__kx_verify_ok__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let skill_path = tmp.join("skills").join("test-skill");
+        std::fs::create_dir_all(&skill_path).unwrap();
+
+        let content = b"# Test Skill\nSome content";
+        let sha = compute_sha256(content);
+        std::fs::write(skill_path.join("SKILL.md"), content).unwrap();
+
+        let skill = InstalledSkill {
+            name: "test-skill".to_string(),
+            source: "test/test-skill".to_string(),
+            sha256: sha,
+            size_bytes: content.len() as u64,
+            installed_at: "2026-01-01T00:00:00Z".to_string(),
+            trust: TrustLevel::Sandboxed,
+            granted_permissions: BTreeSet::new(),
+            denied_permissions: BTreeSet::new(),
+        };
+
+        match verify_skill(&tmp, &skill) {
+            VerifyResult::Ok => {}
+            other => panic!("Expected Ok, got {:?}", other),
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn verify_skill_modified() {
+        let tmp = std::env::temp_dir().join("__kx_verify_modified__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let skill_path = tmp.join("skills").join("mod-skill");
+        std::fs::create_dir_all(&skill_path).unwrap();
+
+        std::fs::write(skill_path.join("SKILL.md"), b"Modified content").unwrap();
+
+        let skill = InstalledSkill {
+            name: "mod-skill".to_string(),
+            source: "test/mod-skill".to_string(),
+            sha256: "original_hash_that_doesnt_match".to_string(),
+            size_bytes: 100,
+            installed_at: "2026-01-01T00:00:00Z".to_string(),
+            trust: TrustLevel::Sandboxed,
+            granted_permissions: BTreeSet::new(),
+            denied_permissions: BTreeSet::new(),
+        };
+
+        match verify_skill(&tmp, &skill) {
+            VerifyResult::Modified { .. } => {}
+            other => panic!("Expected Modified, got {:?}", other),
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn verify_skill_missing() {
+        let tmp = std::env::temp_dir().join("__kx_verify_missing__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let skill = InstalledSkill {
+            name: "missing-skill".to_string(),
+            source: "test/missing".to_string(),
+            sha256: "some_hash".to_string(),
+            size_bytes: 100,
+            installed_at: "2026-01-01T00:00:00Z".to_string(),
+            trust: TrustLevel::Sandboxed,
+            granted_permissions: BTreeSet::new(),
+            denied_permissions: BTreeSet::new(),
+        };
+
+        match verify_skill(&tmp, &skill) {
+            VerifyResult::Missing => {}
+            other => panic!("Expected Missing, got {:?}", other),
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
