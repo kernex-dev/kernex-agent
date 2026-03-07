@@ -194,6 +194,7 @@ fn print_help() {
   /memory   Show memory stats and DB size
   /facts    List stored facts
   /facts delete <key>  Delete a specific fact
+  /retry    Retry last failed message
   /clear    Close current conversation
   /quit     Exit kx dev
 

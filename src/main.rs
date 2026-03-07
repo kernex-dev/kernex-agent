@@ -100,6 +100,7 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
 
     let history_path = data_dir.join("history.txt");
     let editor = Arc::new(tokio::sync::Mutex::new(create_editor(&history_path)?));
+    let mut last_input: Option<String> = None;
 
     loop {
         let input = {
@@ -139,7 +140,12 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
             let multiline = read_multiline(&editor).await;
             match multiline {
                 Some(text) if !text.trim().is_empty() => {
-                    send_message(&runtime, &provider, &needs, &text).await;
+                    let ok = send_message(&runtime, &provider, &needs, &text).await;
+                    if !ok {
+                        last_input = Some(text);
+                    } else {
+                        last_input = None;
+                    }
                 }
                 _ => continue,
             }
@@ -151,7 +157,28 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
             let rest = read_multiline(&editor).await.unwrap_or_default();
             let full = format!("{first}\n{rest}");
             if !full.trim().is_empty() {
-                send_message(&runtime, &provider, &needs, &full).await;
+                let ok = send_message(&runtime, &provider, &needs, &full).await;
+                if !ok {
+                    last_input = Some(full);
+                } else {
+                    last_input = None;
+                }
+            }
+            continue;
+        }
+
+        if trimmed == "/retry" {
+            match &last_input {
+                Some(msg) => {
+                    println!("{}", "  Retrying last message...".dimmed());
+                    let ok = send_message(&runtime, &provider, &needs, msg).await;
+                    if ok {
+                        last_input = None;
+                    }
+                }
+                None => {
+                    eprintln!("{}", "  Nothing to retry.\n".dimmed());
+                }
             }
             continue;
         }
@@ -171,7 +198,12 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
             }
         }
 
-        send_message(&runtime, &provider, &needs, trimmed).await;
+        let ok = send_message(&runtime, &provider, &needs, trimmed).await;
+        if !ok {
+            last_input = Some(trimmed.to_string());
+        } else {
+            last_input = None;
+        }
     }
 
     Ok(())
