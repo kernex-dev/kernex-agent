@@ -32,15 +32,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Dev { message } => cmd_dev(message).await,
-        Command::Audit => {
+        Some(Command::Dev { message }) => cmd_dev(message).await,
+        Some(Command::Audit) => {
             eprintln!("{}", "kx audit is not yet implemented.".yellow());
             Ok(())
         }
-        Command::Docs => {
+        Some(Command::Docs) => {
             eprintln!("{}", "kx docs is not yet implemented.".yellow());
             Ok(())
         }
+        None => cmd_dev(cli.message).await,
     }
 }
 

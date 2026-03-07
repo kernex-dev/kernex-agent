@@ -4,7 +4,10 @@ use clap::{Parser, Subcommand};
 #[command(name = "kx", version, about = "CLI dev assistant powered by Kernex")]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
+
+    /// One-shot message when no subcommand is given (kx "fix the bug")
+    pub message: Option<String>,
 }
 
 #[derive(Subcommand)]
