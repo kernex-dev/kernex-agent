@@ -1,1 +1,34 @@
-/target
+# Build
+/target/
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+credentials.json
+secrets.toml
+
+# Config (may contain sensitive data)
+config.toml
+.kx.toml
+
+# Logs
+*.log
+logs/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+/tmp/
+*.tmp
