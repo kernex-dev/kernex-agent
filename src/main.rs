@@ -71,6 +71,14 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
 
     let provider = build_provider(&project_config);
 
+    if !ClaudeCodeProvider::check_cli().await {
+        eprintln!(
+            "{} Claude CLI not found. Install it: https://docs.anthropic.com/en/docs/claude-code",
+            "error:".red().bold()
+        );
+        return Err("claude CLI not available".into());
+    }
+
     let runtime = RuntimeBuilder::new()
         .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
         .system_prompt(&system_prompt)
