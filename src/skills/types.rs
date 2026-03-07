@@ -180,3 +180,113 @@ impl fmt::Display for SkillSource {
         write!(f, "{}", self.display_source())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn permission_display() {
+        assert_eq!(Permission::ContextFiles.to_string(), "context:files");
+        assert_eq!(Permission::ContextGit.to_string(), "context:git");
+        assert_eq!(Permission::SuggestEdits.to_string(), "suggest:edits");
+        assert_eq!(Permission::SuggestCommands.to_string(), "suggest:commands");
+        assert_eq!(Permission::SuggestNetwork.to_string(), "suggest:network");
+    }
+
+    #[test]
+    fn permission_risk_levels() {
+        assert_eq!(Permission::ContextFiles.risk_level(), RiskLevel::Low);
+        assert_eq!(Permission::ContextGit.risk_level(), RiskLevel::Low);
+        assert_eq!(Permission::SuggestEdits.risk_level(), RiskLevel::Medium);
+        assert_eq!(Permission::SuggestCommands.risk_level(), RiskLevel::High);
+        assert_eq!(Permission::SuggestNetwork.risk_level(), RiskLevel::High);
+    }
+
+    #[test]
+    fn permission_for_trust_sandboxed() {
+        let perms = Permission::for_trust_level(TrustLevel::Sandboxed);
+        assert!(perms.contains(&Permission::ContextFiles));
+        assert!(!perms.contains(&Permission::SuggestEdits));
+        assert!(!perms.contains(&Permission::SuggestCommands));
+    }
+
+    #[test]
+    fn permission_for_trust_standard() {
+        let perms = Permission::for_trust_level(TrustLevel::Standard);
+        assert!(perms.contains(&Permission::ContextFiles));
+        assert!(perms.contains(&Permission::ContextGit));
+        assert!(perms.contains(&Permission::SuggestEdits));
+        assert!(!perms.contains(&Permission::SuggestCommands));
+    }
+
+    #[test]
+    fn permission_for_trust_trusted() {
+        let perms = Permission::for_trust_level(TrustLevel::Trusted);
+        assert_eq!(perms.len(), 5);
+        assert!(perms.contains(&Permission::SuggestCommands));
+        assert!(perms.contains(&Permission::SuggestNetwork));
+    }
+
+    #[test]
+    fn trust_level_default() {
+        assert_eq!(TrustLevel::default(), TrustLevel::Sandboxed);
+    }
+
+    #[test]
+    fn trust_level_display() {
+        assert_eq!(TrustLevel::Sandboxed.to_string(), "sandboxed");
+        assert_eq!(TrustLevel::Standard.to_string(), "standard");
+        assert_eq!(TrustLevel::Trusted.to_string(), "trusted");
+    }
+
+    #[test]
+    fn risk_level_display() {
+        assert_eq!(RiskLevel::Low.to_string(), "low");
+        assert_eq!(RiskLevel::Medium.to_string(), "medium");
+        assert_eq!(RiskLevel::High.to_string(), "HIGH");
+    }
+
+    #[test]
+    fn skill_source_raw_url_simple() {
+        let source = SkillSource {
+            owner: "acme".to_string(),
+            repo: "my-skill".to_string(),
+            path: None,
+        };
+        assert_eq!(
+            source.raw_url(),
+            "https://raw.githubusercontent.com/acme/my-skill/main/skills/my-skill/SKILL.md"
+        );
+    }
+
+    #[test]
+    fn skill_source_raw_url_with_path() {
+        let source = SkillSource {
+            owner: "acme".to_string(),
+            repo: "skills-repo".to_string(),
+            path: Some("skills/rust".to_string()),
+        };
+        assert_eq!(
+            source.raw_url(),
+            "https://raw.githubusercontent.com/acme/skills-repo/main/skills/rust/SKILL.md"
+        );
+    }
+
+    #[test]
+    fn skill_source_display() {
+        let source = SkillSource {
+            owner: "acme".to_string(),
+            repo: "my-skill".to_string(),
+            path: None,
+        };
+        assert_eq!(source.to_string(), "acme/my-skill");
+
+        let source_with_path = SkillSource {
+            owner: "acme".to_string(),
+            repo: "repo".to_string(),
+            path: Some("path/to/skill".to_string()),
+        };
+        assert_eq!(source_with_path.to_string(), "acme/repo/path/to/skill");
+    }
+}

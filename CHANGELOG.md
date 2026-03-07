@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Skills CLI commands (`kx skills list/add/remove/verify`)
+- Skills permission model with trust levels (sandboxed, standard, trusted)
+- SHA-256 integrity verification for installed skills
+- Audit logging for skill operations
+- CONTRIBUTING.md with development guidelines
+- 35 new tests for skills module (54 total, up from 19)
+
 ## [0.1.0] - 2026-03-07
 
 ### Added
