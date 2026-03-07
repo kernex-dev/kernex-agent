@@ -109,10 +109,13 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
     let provider = build_provider(&project_config);
 
     if !ClaudeCodeProvider::check_cli().await {
-        eprintln!(
-            "{} Claude CLI not found. Install it: https://docs.anthropic.com/en/docs/claude-code",
-            "error:".red().bold()
-        );
+        eprintln!("{}", "error: Claude CLI not found".red().bold());
+        eprintln!();
+        eprintln!("  To fix this:");
+        eprintln!("    1. Install Claude Code: https://claude.ai/download");
+        eprintln!("    2. Verify installation: which claude");
+        eprintln!("    3. If installed, add to PATH: export PATH=\"$PATH:/path/to/claude\"");
+        eprintln!();
         return Err("claude CLI not available".into());
     }
 
