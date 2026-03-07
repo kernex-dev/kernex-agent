@@ -102,6 +102,11 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
         return Ok(());
     }
 
+    let is_first_run = !data_dir.exists();
+    if is_first_run {
+        show_first_run_welcome(&detected_stack.to_string());
+    }
+
     println!(
         "{} {} ({})",
         "kx dev".green().bold(),
@@ -325,6 +330,23 @@ fn build_provider(config: &config::ProjectConfig) -> ClaudeCodeProvider {
 async fn graceful_shutdown(runtime: &Runtime) {
     commands::close_conversation(runtime, "User exited session.").await;
     println!("{}", "Bye.".dimmed());
+}
+
+fn show_first_run_welcome(stack: &str) {
+    println!();
+    println!("{}", "Welcome to kx!".green().bold());
+    println!("Your AI-powered coding assistant.\n");
+
+    println!("Detected: {} project", stack);
+    println!();
+    println!("I can help you:");
+    println!("  {} Answer questions about your code", "•".dimmed());
+    println!("  {} Explain errors and suggest fixes", "•".dimmed());
+    println!("  {} Review and refactor code", "•".dimmed());
+    println!("  {} Remember context across sessions", "•".dimmed());
+    println!();
+    println!("Type {} for all commands.", "/help".cyan());
+    println!();
 }
 
 fn data_dir_for(project_name: &str) -> PathBuf {

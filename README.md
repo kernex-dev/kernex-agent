@@ -11,6 +11,22 @@ CLI dev assistant powered by [Kernex](https://github.com/kernex-dev/kernex-dev).
 - **Project configuration** - Per-project settings via `.kx.toml`
 - **Full-text search** - Search past conversations with FTS5
 
+## What Can kx Do?
+
+kx is your AI coding assistant. It can:
+
+- **Answer questions** about your code, errors, and architecture
+- **Suggest refactoring** patterns and improvements
+- **Hunt for bugs** and explain potential issues
+- **Explain errors** with context from your codebase
+- **Remember context** across sessions (facts, decisions, patterns)
+- **Search conversations** with full-text search
+
+**Limitations:**
+- Cannot modify files directly (suggests changes for you to apply)
+- Cannot run shell commands (use your terminal for that)
+- Requires Claude CLI for AI capabilities
+
 ## Requirements
 
 **Claude CLI must be installed.** kx uses the Claude Code CLI as its AI backend.
@@ -25,18 +41,54 @@ For documentation: [docs.anthropic.com/en/docs/claude-code](https://docs.anthrop
 
 ## Installation
 
-### From crates.io
+### Quick Install (requires Rust)
 
 ```bash
 cargo install kernex-agent
 ```
 
-### From source
+Verify installation:
+```bash
+kx --version
+```
+
+### New to Rust?
+
+Install Rust first from [rustup.rs](https://rustup.rs):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+cargo install kernex-agent
+```
+
+### From Source
 
 ```bash
 git clone https://github.com/kernex-dev/kernex-agent.git
 cd kernex-agent
 cargo install --path .
+```
+
+## First Run
+
+```bash
+cd /path/to/your/project
+kx
+```
+
+kx automatically detects your project's stack (Rust, Node, Python, etc.) and starts an interactive session:
+
+```
+kx dev my-project (Rust)
+Type /help for commands, /quit to exit.
+
+> explain the error in src/main.rs
+```
+
+For one-shot questions:
+```bash
+kx "what does this function do?"
 ```
 
 ## Quick Start
@@ -162,6 +214,14 @@ kx is a thin CLI wrapper around the Kernex runtime:
 - **kernex-core** - Shared types and context management
 
 For details on the underlying runtime, see [kernex-dev](https://github.com/kernex-dev/kernex-dev).
+
+## Extending with Skills
+
+kx can be extended with MCP-based skills from [kernex-dev](https://github.com/kernex-dev/kernex).
+
+Available skills: filesystem, git, playwright, github, postgres, sqlite, brave-search.
+
+See [kernex-dev/examples/skills](https://github.com/kernex-dev/kernex/tree/main/examples/skills) for setup.
 
 ## Troubleshooting
 
