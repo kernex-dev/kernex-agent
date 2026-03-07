@@ -26,4 +26,4 @@ dirs = "6"
 rustyline = "15"
 indicatif = "0.17"
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+toml = "1.0"
