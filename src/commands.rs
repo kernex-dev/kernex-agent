@@ -245,27 +245,52 @@ fn print_help() {
     println!(
         r#"
   {}
-  /help     Show this help
-  /search <query>  Search past conversations (FTS5)
-  /history  Show recent conversation history
-  /stack    Show detected stack and project info
-  /memory   Show memory stats and DB size
-  /config   Show active configuration
-  /facts    List stored facts
-  /facts delete <key>  Delete a specific fact
-  /skills   List installed skills
-  /skills add <source>  Install a skill (owner/repo)
-  /skills remove <name>  Remove a skill
-  /skills verify  Verify skill integrity
-  /retry    Retry last failed message
-  /clear    Close current conversation
-  /quit     Exit kx dev
+
+  /help              Show this help message
+  /quit, /exit       Exit kx dev
 
   {}
-  \"\"\"       Start/end multiline input (for pasting code blocks)
+
+  /search <query>    Full-text search across all past conversations
+  /history           Show last 20 messages in current conversation
+  /memory            Show memory stats (conversations, messages, facts, DB size)
+  /facts             List stored facts (things kx learned about your project)
+  /facts delete <k>  Delete a specific fact by its key
+  /clear             End current conversation and start fresh
+
+  {}
+
+  /stack             Show detected stack, project name, and data directory
+  /config            Show active configuration (.kx.toml settings)
+
+  {}
+
+  /skills            List installed skills with trust levels
+  /skills add <src>  Install skill from GitHub (owner/repo or owner/repo@tag)
+  /skills remove <n> Remove an installed skill by name
+  /skills verify     Verify SHA-256 integrity of all installed skills
+
+  {}
+
+  /retry             Retry the last failed message
+
+  {}
+
+  \"\"\"                Start/end multiline input (paste code blocks between \"\"\")
+                     Example: \"\"\" <paste code> \"\"\"
+
+  {}
+
+  Create .kx.toml in your project root to customize behavior.
+  See: examples/.kx.toml.example
 "#,
         "Commands".bold(),
-        "Input".bold()
+        "Memory & Search".bold(),
+        "Project Info".bold(),
+        "Skills".bold(),
+        "Recovery".bold(),
+        "Input".bold(),
+        "Configuration".bold()
     );
 }
 
