@@ -1,7 +1,10 @@
+use std::path::PathBuf;
+
 use colored::Colorize;
 use kernex_runtime::Runtime;
 
 use crate::config::ProjectConfig;
+use crate::skills;
 use crate::stack::{self, Stack};
 
 pub enum CommandResult {
@@ -33,8 +36,17 @@ pub async fn handle(
         } else if let Some(key) = arg.strip_prefix("delete ") {
             delete_fact(runtime, key.trim()).await;
         } else {
-            eprintln!("{} Usage: /facts or /facts delete <key>\n", "warn:".yellow().bold());
+            eprintln!(
+                "{} Usage: /facts or /facts delete <key>\n",
+                "warn:".yellow().bold()
+            );
         }
+        return CommandResult::Continue;
+    }
+
+    if let Some(rest) = input.strip_prefix("/skills") {
+        let arg = rest.trim();
+        handle_skills_command(arg).await;
         return CommandResult::Continue;
     }
 
@@ -241,6 +253,10 @@ fn print_help() {
   /config   Show active configuration
   /facts    List stored facts
   /facts delete <key>  Delete a specific fact
+  /skills   List installed skills
+  /skills add <source>  Install a skill (owner/repo)
+  /skills remove <name>  Remove a skill
+  /skills verify  Verify skill integrity
   /retry    Retry last failed message
   /clear    Close current conversation
   /quit     Exit kx dev
@@ -250,5 +266,59 @@ fn print_help() {
 "#,
         "Commands".bold(),
         "Input".bold()
+    );
+}
+
+async fn handle_skills_command(arg: &str) {
+    let data_dir = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".kx");
+
+    if arg.is_empty() {
+        skills::cli_handler::list_skills(&data_dir).await;
+        return;
+    }
+
+    if let Some(rest) = arg.strip_prefix("add ") {
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        if parts.is_empty() {
+            eprintln!(
+                "{} Usage: /skills add <owner/repo>\n",
+                "warn:".yellow().bold()
+            );
+            return;
+        }
+        let source = parts[0];
+        let trust = parts.get(1).copied().unwrap_or("sandboxed");
+
+        match skills::cli_handler::add_skill(&data_dir, source, trust).await {
+            Ok(()) => {}
+            Err(e) => eprintln!("{} {e}\n", "error:".red().bold()),
+        }
+        return;
+    }
+
+    if let Some(rest) = arg.strip_prefix("remove ") {
+        let name = rest.trim();
+        if name.is_empty() {
+            eprintln!("{} Usage: /skills remove <name>\n", "warn:".yellow().bold());
+            return;
+        }
+
+        match skills::cli_handler::remove_skill(&data_dir, name).await {
+            Ok(()) => {}
+            Err(e) => eprintln!("{} {e}\n", "error:".red().bold()),
+        }
+        return;
+    }
+
+    if arg == "verify" {
+        skills::cli_handler::verify_skills(&data_dir).await;
+        return;
+    }
+
+    eprintln!(
+        "{} Unknown skills command. Use: /skills, /skills add <source>, /skills remove <name>, /skills verify\n",
+        "warn:".yellow().bold()
     );
 }
