@@ -36,5 +36,6 @@ Thumbs.db
 # Internal documentation (not public)
 CLAUDE.md
 CLAUDE.local.md
+ROADMAP.md
 .claude/
 docs/
