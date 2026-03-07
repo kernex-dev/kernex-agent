@@ -82,6 +82,8 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
         return Err("claude CLI not available".into());
     }
 
+    check_claude_version();
+
     let runtime = RuntimeBuilder::new()
         .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
         .system_prompt(&system_prompt)
@@ -347,6 +349,35 @@ fn show_first_run_welcome(stack: &str) {
     println!();
     println!("Type {} for all commands.", "/help".cyan());
     println!();
+}
+
+const MIN_CLAUDE_VERSION: (u32, u32) = (2, 0);
+
+fn check_claude_version() {
+    let output = std::process::Command::new("claude")
+        .arg("--version")
+        .output();
+
+    let version_str = match output {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        Err(_) => return,
+    };
+
+    // Parse "2.1.70 (Claude Code)" -> (2, 1)
+    let parts: Vec<&str> = version_str.split(|c: char| !c.is_ascii_digit()).collect();
+    let major = parts.first().and_then(|s| s.parse::<u32>().ok());
+    let minor = parts.get(1).and_then(|s| s.parse::<u32>().ok());
+
+    if let (Some(maj), Some(min)) = (major, minor) {
+        if (maj, min) < MIN_CLAUDE_VERSION {
+            eprintln!(
+                "{} Claude CLI {version_str} is below minimum {}.{}. Please update.",
+                "warn:".yellow().bold(),
+                MIN_CLAUDE_VERSION.0,
+                MIN_CLAUDE_VERSION.1,
+            );
+        }
+    }
 }
 
 fn data_dir_for(project_name: &str) -> PathBuf {

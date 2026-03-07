@@ -29,13 +29,18 @@ kx is your AI coding assistant. It can:
 
 ## Requirements
 
+| Dependency | Minimum Version | Notes |
+|---|---|---|
+| **Claude CLI** | 2.0+ | AI backend, requires Claude Max subscription |
+| **Rust** | 1.74+ | Only needed for `cargo install` |
+
 **Claude CLI must be installed.** kx uses the Claude Code CLI as its AI backend.
 
 Claude Code is Anthropic's official AI coding assistant that runs locally. To install:
 
 1. Visit [claude.ai/download](https://claude.ai/download)
 2. Download and install for your platform (macOS, Linux, Windows)
-3. Run `claude --version` to verify installation
+3. Run `claude --version` to verify installation (must be 2.0+)
 
 For documentation: [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code)
 
