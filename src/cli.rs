@@ -10,7 +10,10 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// Interactive coding assistant with persistent memory
-    Dev,
+    Dev {
+        /// One-shot message (skip interactive loop)
+        message: Option<String>,
+    },
     /// Repository health audit (deps, tests, docs, structure)
     Audit,
     /// Documentation audit (detect outdated docs, archive)
