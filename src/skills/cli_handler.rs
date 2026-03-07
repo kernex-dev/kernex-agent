@@ -3,6 +3,7 @@ use std::path::Path;
 
 use colored::Colorize;
 
+use super::audit::{log_event, AuditEvent};
 use super::manifest::{
     compute_sha256, skill_dir, skill_file_path, verify_skill, SkillsManifest, VerifyResult,
 };
@@ -180,6 +181,16 @@ pub async fn add_skill(
         denied_permissions: resolved.denied,
     };
 
+    log_event(
+        data_dir,
+        &AuditEvent::Installed {
+            name: &installed.name,
+            source: &installed.source,
+            sha256: &installed.sha256,
+            trust: &installed.trust,
+        },
+    );
+
     let mut manifest = SkillsManifest::load(data_dir);
     manifest.add(installed);
     manifest
@@ -215,6 +226,8 @@ pub async fn remove_skill(data_dir: &Path, name: &str) -> Result<(), String> {
 
     println!("\n  {} {} removed.\n", "OK".green().bold(), name.bold());
 
+    log_event(data_dir, &AuditEvent::Removed { name });
+
     Ok(())
 }
 
@@ -236,6 +249,13 @@ pub async fn verify_skills(data_dir: &Path) {
         match verify_skill(data_dir, skill) {
             VerifyResult::Ok => {
                 println!("  {} {} (SHA256 OK)", "OK".green(), skill.name);
+                log_event(
+                    data_dir,
+                    &AuditEvent::Verified {
+                        name: &skill.name,
+                        result: "ok",
+                    },
+                );
                 ok_count += 1;
             }
             VerifyResult::Modified { expected, actual } => {
@@ -248,6 +268,13 @@ pub async fn verify_skills(data_dir: &Path) {
                 );
                 println!("    {} {exp_short}", "Expected:".dimmed());
                 println!("    {} {act_short}", "Actual:".dimmed());
+                log_event(
+                    data_dir,
+                    &AuditEvent::Verified {
+                        name: &skill.name,
+                        result: "modified",
+                    },
+                );
                 warn_count += 1;
             }
             VerifyResult::Missing => {
@@ -255,6 +282,13 @@ pub async fn verify_skills(data_dir: &Path) {
                     "  {} {} (file missing!)",
                     "FAIL".red().bold(),
                     skill.name.bold()
+                );
+                log_event(
+                    data_dir,
+                    &AuditEvent::Verified {
+                        name: &skill.name,
+                        result: "missing",
+                    },
                 );
                 warn_count += 1;
             }

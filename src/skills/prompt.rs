@@ -3,6 +3,7 @@ use std::path::Path;
 
 use colored::Colorize;
 
+use super::audit::{log_event, AuditEvent};
 use super::manifest::skill_file_path;
 use super::parser::parse_skill_md;
 use super::types::{InstalledSkill, Permission};
@@ -42,6 +43,14 @@ pub fn load_skills(data_dir: &Path, manifest_skills: &[InstalledSkill]) -> Vec<L
                 continue;
             }
         };
+
+        log_event(
+            data_dir,
+            &AuditEvent::Loaded {
+                name: &skill.name,
+                trust: &skill.trust,
+            },
+        );
 
         loaded.push(LoadedSkill {
             installed: skill.clone(),
