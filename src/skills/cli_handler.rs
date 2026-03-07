@@ -64,7 +64,12 @@ pub async fn list_skills(data_dir: &Path) {
     println!("  ({count} skill{} active)\n", if count == 1 { "" } else { "s" });
 }
 
-pub async fn add_skill(data_dir: &Path, source: &str, trust_str: &str) -> Result<(), String> {
+pub async fn add_skill(
+    data_dir: &Path,
+    source: &str,
+    trust_str: &str,
+    policy: &PermissionPolicy,
+) -> Result<(), String> {
     let trust = match trust_str.to_lowercase().as_str() {
         "sandboxed" => TrustLevel::Sandboxed,
         "standard" => TrustLevel::Standard,
@@ -107,7 +112,10 @@ pub async fn add_skill(data_dir: &Path, source: &str, trust_str: &str) -> Result
 
     let skill_manifest = parse_skill_md(&content_str).map_err(|e| e.to_string())?;
 
-    let policy = PermissionPolicy::default();
+    if policy.is_blocked(&skill_manifest.name) {
+        return Err(format!("skill '{}' is blocked by project config", skill_manifest.name));
+    }
+
     let resolved = resolve_permissions(
         &skill_manifest.requested_permissions,
         source,

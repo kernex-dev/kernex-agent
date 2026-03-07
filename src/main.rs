@@ -51,9 +51,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Error>> {
-    let data_dir = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".kx");
+    let cwd = std::env::current_dir()?;
+    let project_config = config::ProjectConfig::load(&cwd);
+    let project_name = stack::project_name(&cwd);
+    let data_dir = data_dir_for(&project_name);
+    let policy = project_config.skills_policy();
 
     match action {
         SkillsAction::List => {
@@ -61,7 +63,7 @@ async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Erro
             Ok(())
         }
         SkillsAction::Add { source, trust } => {
-            skills::cli_handler::add_skill(&data_dir, &source, &trust)
+            skills::cli_handler::add_skill(&data_dir, &source, &trust, &policy)
                 .await
                 .map_err(|e| e.into())
         }
