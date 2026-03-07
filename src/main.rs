@@ -5,13 +5,15 @@ mod stack;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::Parser;
 use colored::Colorize;
 use kernex_core::context::ContextNeeds;
 use kernex_core::message::Request;
 use kernex_providers::claude_code::ClaudeCodeProvider;
-use kernex_runtime::RuntimeBuilder;
+use kernex_runtime::{Runtime, RuntimeBuilder};
+use tokio::sync::Notify;
 
 use crate::cli::{Cli, Command};
 use crate::commands::CommandResult;
@@ -88,14 +90,38 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
     );
     println!("{}", "Type /help for commands, /quit to exit.\n".dimmed());
 
+    let shutdown = setup_ctrlc_handler(&runtime).await;
+
     loop {
         print!("{} ", ">".cyan().bold());
         io::stdout().flush()?;
 
         let mut input = String::new();
-        if io::stdin().read_line(&mut input)? == 0 {
-            break; // EOF
+        let read_result = tokio::select! {
+            result = tokio::task::spawn_blocking(move || {
+                let mut buf = String::new();
+                let n = io::stdin().read_line(&mut buf)?;
+                Ok::<_, io::Error>((buf, n))
+            }) => {
+                match result? {
+                    Ok((buf, n)) => {
+                        input = buf;
+                        Ok(n)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            _ = shutdown.notified() => {
+                break;
+            }
+        };
+
+        match read_result {
+            Ok(0) => break, // EOF
+            Err(_) => break,
+            _ => {}
         }
+
         let input = input.trim();
 
         if input.is_empty() {
@@ -105,8 +131,7 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
         if input.starts_with('/') {
             match commands::handle(input, &runtime, detected_stack).await {
                 CommandResult::Quit => {
-                    commands::close_conversation(&runtime, "User exited session.").await;
-                    println!("{}", "Bye.".dimmed());
+                    graceful_shutdown(&runtime).await;
                     break;
                 }
                 CommandResult::Continue => continue,
@@ -132,6 +157,32 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
     }
 
     Ok(())
+}
+
+async fn setup_ctrlc_handler(runtime: &Runtime) -> Arc<Notify> {
+    let notify = Arc::new(Notify::new());
+    let notify_clone = notify.clone();
+    let store = runtime.store.clone();
+    let project = runtime.project.clone();
+
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            eprintln!("\n{}", "Caught Ctrl+C, closing conversation...".dimmed());
+            let proj = project.as_deref().unwrap_or("default");
+            let _ = store
+                .close_current_conversation("user", proj, "Session interrupted by Ctrl+C.")
+                .await;
+            eprintln!("{}", "Bye.".dimmed());
+            notify_clone.notify_one();
+        }
+    });
+
+    notify
+}
+
+async fn graceful_shutdown(runtime: &Runtime) {
+    commands::close_conversation(runtime, "User exited session.").await;
+    println!("{}", "Bye.".dimmed());
 }
 
 fn data_dir_for(project_name: &str) -> PathBuf {
