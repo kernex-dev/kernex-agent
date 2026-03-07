@@ -1,6 +1,7 @@
 use colored::Colorize;
 use kernex_runtime::Runtime;
 
+use crate::config::ProjectConfig;
 use crate::stack::{self, Stack};
 
 pub enum CommandResult {
@@ -9,7 +10,12 @@ pub enum CommandResult {
     Unknown,
 }
 
-pub async fn handle(input: &str, runtime: &Runtime, detected_stack: Stack) -> CommandResult {
+pub async fn handle(
+    input: &str,
+    runtime: &Runtime,
+    detected_stack: Stack,
+    project_config: &ProjectConfig,
+) -> CommandResult {
     if let Some(rest) = input.strip_prefix("/search") {
         let query = rest.trim();
         if query.is_empty() {
@@ -58,6 +64,10 @@ pub async fn handle(input: &str, runtime: &Runtime, detected_stack: Stack) -> Co
         }
         "/memory" => {
             print_memory_stats(runtime).await;
+            CommandResult::Continue
+        }
+        "/config" => {
+            print_config(runtime, detected_stack, project_config);
             CommandResult::Continue
         }
         "/clear" => {
@@ -158,6 +168,42 @@ async fn print_history(runtime: &Runtime) {
     }
 }
 
+fn print_config(runtime: &Runtime, detected_stack: Stack, config: &ProjectConfig) {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let has_config = cwd.join(".kx.toml").exists();
+
+    println!("\n  {}", "Active configuration".bold());
+    println!("  {} {}", "Project:".dimmed(), stack::project_name(&cwd));
+    println!("  {} {detected_stack}", "Stack:".dimmed());
+    println!("  {} {}", "Data dir:".dimmed(), runtime.data_dir);
+    println!("  {} {}", "Channel:".dimmed(), runtime.channel);
+    println!(
+        "  {} {}",
+        ".kx.toml:".dimmed(),
+        if has_config { "found" } else { "not found" }
+    );
+
+    if let Some(override_stack) = &config.stack {
+        println!("  {} {override_stack}", "Stack override:".dimmed());
+    }
+    if config.system_prompt.is_some() {
+        println!("  {} yes", "Custom prompt:".dimmed());
+    }
+    if let Some(pc) = &config.provider {
+        if let Some(model) = &pc.model {
+            println!("  {} {model}", "Model:".dimmed());
+        }
+        if let Some(turns) = pc.max_turns {
+            println!("  {} {turns}", "Max turns:".dimmed());
+        }
+        if let Some(timeout) = pc.timeout_secs {
+            println!("  {} {timeout}s", "Timeout:".dimmed());
+        }
+    }
+
+    println!();
+}
+
 async fn search_memory(runtime: &Runtime, query: &str) {
     match runtime.store.search_messages(query, "", "user", 10).await {
         Ok(results) if results.is_empty() => {
@@ -192,6 +238,7 @@ fn print_help() {
   /history  Show recent conversation history
   /stack    Show detected stack and project info
   /memory   Show memory stats and DB size
+  /config   Show active configuration
   /facts    List stored facts
   /facts delete <key>  Delete a specific fact
   /retry    Retry last failed message

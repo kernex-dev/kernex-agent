@@ -193,7 +193,7 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
         }
 
         if trimmed.starts_with('/') {
-            match commands::handle(trimmed, &runtime, detected_stack).await {
+            match commands::handle(trimmed, &runtime, detected_stack, &project_config).await {
                 CommandResult::Quit => {
                     graceful_shutdown(&runtime).await;
                     save_history(&editor, &history_path).await;
