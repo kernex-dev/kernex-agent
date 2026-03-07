@@ -44,6 +44,16 @@ Claude Code is Anthropic's official AI coding assistant that runs locally. To in
 
 For documentation: [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code)
 
+### Platform Support
+
+| Platform | Status | Notes |
+|---|---|---|
+| **macOS** (Apple Silicon & Intel) | Fully supported | Sandbox via Seatbelt |
+| **Linux** (x86_64, aarch64) | Fully supported | Sandbox via Landlock (kernel 5.13+) |
+| **Windows** | Experimental | No sandbox support; requires WSL2 for best experience |
+
+The sandbox layer comes from `kernex-sandbox` and is used by the runtime to isolate AI subprocesses. On platforms without sandbox support, kx still works but without process isolation.
+
 ## Installation
 
 ### Quick Install (requires Rust)
