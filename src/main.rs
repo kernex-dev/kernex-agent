@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 use colored::Colorize;
+use indicatif::{ProgressBar, ProgressStyle};
 use kernex_core::context::ContextNeeds;
 use kernex_core::message::Request;
 use kernex_providers::claude_code::ClaudeCodeProvider;
@@ -181,19 +182,39 @@ async fn send_message(
     provider: &ClaudeCodeProvider,
     needs: &ContextNeeds,
     input: &str,
-) {
+) -> bool {
+    let spinner = create_spinner("Thinking...");
+
     let request = Request::text("user", input);
-    match runtime
+    let result = runtime
         .complete_with_needs(provider, &request, needs)
-        .await
-    {
+        .await;
+
+    spinner.finish_and_clear();
+
+    match result {
         Ok(response) => {
             println!("\n{}\n", response.text);
+            true
         }
         Err(e) => {
             eprintln!("{} {e}\n", "error:".red().bold());
+            false
         }
     }
+}
+
+fn create_spinner(msg: &str) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+            .template("{spinner:.cyan} {msg}")
+            .unwrap(),
+    );
+    pb.set_message(msg.to_string());
+    pb.enable_steady_tick(std::time::Duration::from_millis(80));
+    pb
 }
 
 async fn read_multiline(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>) -> Option<String> {
