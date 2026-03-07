@@ -1,0 +1,93 @@
+# Example .kx.toml configuration file
+#
+# Copy this file to your project root and rename it to .kx.toml
+# All settings are optional - kx works without any configuration.
+#
+# Location: <your-project>/.kx.toml
+
+# ------------------------------------------------------------------------------
+# Stack Override
+# ------------------------------------------------------------------------------
+# Override the auto-detected project stack.
+# Use this when kx detects the wrong stack (e.g., a monorepo with multiple languages).
+#
+# Valid values: rust, node, javascript, typescript, python, flutter, dart,
+#               php, go, golang, java, kotlin, swift, swiftui
+#
+# stack = "rust"
+
+# ------------------------------------------------------------------------------
+# System Prompt
+# ------------------------------------------------------------------------------
+# Add project-specific context that kx should always remember.
+# This gets appended to the default system prompt.
+#
+# Examples:
+#   - Coding conventions ("Use snake_case for all functions")
+#   - Error handling patterns ("Always use ErrorCodes from src/error.rs")
+#   - Dependencies ("This project uses sqlx for database access")
+#
+# system_prompt = """
+# This project uses a custom error type ErrorCodes in src/error.rs.
+# Always use ErrorCodes instead of anyhow for errors.
+#
+# Database: PostgreSQL via sqlx. Migrations are in ./migrations.
+# """
+
+# ------------------------------------------------------------------------------
+# Provider Configuration
+# ------------------------------------------------------------------------------
+# Customize how kx interacts with the AI provider.
+#
+# [provider]
+#
+# Model to use (optional, defaults to provider's default)
+# model = "claude-sonnet-4-20250514"
+#
+# Maximum agentic turns per request (optional, default: 10)
+# Higher values allow more complex multi-step tasks.
+# max_turns = 10
+#
+# Request timeout in seconds (optional, default: 300)
+# Increase for large codebases or complex tasks.
+# timeout_secs = 300
+
+# ------------------------------------------------------------------------------
+# Skills Configuration
+# ------------------------------------------------------------------------------
+# Control how skills are loaded and trusted.
+#
+# [skills]
+#
+# Default trust level for newly installed skills.
+# Values: "sandboxed" (safest), "standard", "trusted" (full access)
+# default_trust = "sandboxed"
+#
+# Auto-trust skills from these GitHub sources (owner/ or owner/repo format).
+# trusted_sources = ["anthropics/", "vercel-labs/"]
+#
+# Block these skills from loading (by name).
+# blocked = ["suspicious-skill"]
+
+# ------------------------------------------------------------------------------
+# Full Example
+# ------------------------------------------------------------------------------
+# Here's a complete example for a Rust backend project:
+#
+# stack = "rust"
+#
+# system_prompt = """
+# This is a REST API using Axum and SQLx.
+# Error handling: Use AppError from src/error.rs (implements IntoResponse).
+# Database: PostgreSQL. Run migrations with `sqlx migrate run`.
+# Testing: Use `cargo test` for unit tests, `cargo test --test integration` for integration.
+# """
+#
+# [provider]
+# model = "claude-sonnet-4-20250514"
+# max_turns = 15
+# timeout_secs = 600
+#
+# [skills]
+# default_trust = "sandboxed"
+# trusted_sources = ["anthropics/"]
