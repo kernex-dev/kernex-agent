@@ -1118,9 +1118,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-runtime"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e504ce9c5c40b45b4d8fe9cd4bda0f0a2e78c18b37781376be7e4d94c5e2fae0"
+checksum = "61a5e9b70f3d734aa540d2536da0768486123bc30c5c2d71af82f2b2361ac68b"
 dependencies = [
  "anyhow",
  "async-trait",
