@@ -128,3 +128,154 @@ pub fn log_event(data_dir: &Path, event: &AuditEvent<'_>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_json_string_plain() {
+        assert_eq!(escape_json_string("hello"), "hello");
+    }
+
+    #[test]
+    fn escape_json_string_quotes() {
+        assert_eq!(escape_json_string(r#"say "hello""#), r#"say \"hello\""#);
+    }
+
+    #[test]
+    fn escape_json_string_backslash() {
+        assert_eq!(escape_json_string(r"path\to\file"), r"path\\to\\file");
+    }
+
+    #[test]
+    fn escape_json_string_newlines() {
+        assert_eq!(escape_json_string("line1\nline2"), "line1\\nline2");
+        assert_eq!(escape_json_string("line1\rline2"), "line1\\rline2");
+    }
+
+    #[test]
+    fn escape_json_string_tab() {
+        assert_eq!(escape_json_string("col1\tcol2"), "col1\\tcol2");
+    }
+
+    #[test]
+    fn escape_json_string_mixed() {
+        assert_eq!(
+            escape_json_string("\"hello\"\n\tworld\\"),
+            "\\\"hello\\\"\\n\\tworld\\\\"
+        );
+    }
+
+    #[test]
+    fn format_event_installed() {
+        let event = AuditEvent::Installed {
+            name: "my-skill",
+            source: "acme/my-skill",
+            sha256: "abc123",
+            trust: &TrustLevel::Sandboxed,
+        };
+        let json = format_event(&event);
+        assert!(json.contains(r#""event":"installed""#));
+        assert!(json.contains(r#""name":"my-skill""#));
+        assert!(json.contains(r#""source":"acme/my-skill""#));
+        assert!(json.contains(r#""sha256":"abc123""#));
+        assert!(json.contains(r#""trust":"sandboxed""#));
+        assert!(json.contains(r#""timestamp":""#));
+    }
+
+    #[test]
+    fn format_event_removed() {
+        let event = AuditEvent::Removed { name: "old-skill" };
+        let json = format_event(&event);
+        assert!(json.contains(r#""event":"removed""#));
+        assert!(json.contains(r#""name":"old-skill""#));
+    }
+
+    #[test]
+    fn format_event_verified() {
+        let event = AuditEvent::Verified {
+            name: "test-skill",
+            result: "ok",
+        };
+        let json = format_event(&event);
+        assert!(json.contains(r#""event":"verified""#));
+        assert!(json.contains(r#""name":"test-skill""#));
+        assert!(json.contains(r#""result":"ok""#));
+    }
+
+    #[test]
+    fn format_event_loaded() {
+        let event = AuditEvent::Loaded {
+            name: "active-skill",
+            trust: &TrustLevel::Trusted,
+        };
+        let json = format_event(&event);
+        assert!(json.contains(r#""event":"loaded""#));
+        assert!(json.contains(r#""name":"active-skill""#));
+        assert!(json.contains(r#""trust":"trusted""#));
+    }
+
+    #[test]
+    fn format_event_escapes_special_chars() {
+        let event = AuditEvent::Installed {
+            name: "skill-with-\"quotes\"",
+            source: "path\\with\\backslash",
+            sha256: "hash",
+            trust: &TrustLevel::Standard,
+        };
+        let json = format_event(&event);
+        assert!(json.contains(r#"skill-with-\"quotes\""#));
+        assert!(json.contains(r#"path\\with\\backslash"#));
+    }
+
+    #[test]
+    fn log_event_creates_file() {
+        let tmp = std::env::temp_dir().join("__kx_audit_log__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let event = AuditEvent::Installed {
+            name: "test",
+            source: "acme/test",
+            sha256: "abc",
+            trust: &TrustLevel::Sandboxed,
+        };
+        log_event(&tmp, &event);
+
+        let log_path = tmp.join("skills-audit.log");
+        assert!(log_path.exists());
+
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        assert!(content.contains("installed"));
+        assert!(content.contains("test"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn log_event_appends() {
+        let tmp = std::env::temp_dir().join("__kx_audit_append__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        log_event(
+            &tmp,
+            &AuditEvent::Installed {
+                name: "first",
+                source: "a/b",
+                sha256: "x",
+                trust: &TrustLevel::Sandboxed,
+            },
+        );
+        log_event(&tmp, &AuditEvent::Removed { name: "second" });
+
+        let content = std::fs::read_to_string(tmp.join("skills-audit.log")).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("first"));
+        assert!(lines[1].contains("second"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
