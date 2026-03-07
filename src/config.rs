@@ -77,6 +77,9 @@ impl ProjectConfig {
             Some("python") => Stack::Python,
             Some("flutter" | "dart") => Stack::Flutter,
             Some("php") => Stack::Php,
+            Some("go" | "golang") => Stack::Go,
+            Some("java" | "kotlin") => Stack::Java,
+            Some("swift" | "swiftui") => Stack::Swift,
             _ => detected,
         }
     }
@@ -280,6 +283,51 @@ blocked = ["bad-skill"]
             ..Default::default()
         };
         assert_eq!(config_dart.resolve_stack(Stack::Unknown), Stack::Flutter);
+    }
+
+    #[test]
+    fn resolve_stack_override_go_aliases() {
+        let config_go = ProjectConfig {
+            stack: Some("go".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_go.resolve_stack(Stack::Unknown), Stack::Go);
+
+        let config_golang = ProjectConfig {
+            stack: Some("golang".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_golang.resolve_stack(Stack::Unknown), Stack::Go);
+    }
+
+    #[test]
+    fn resolve_stack_override_java_aliases() {
+        let config_java = ProjectConfig {
+            stack: Some("java".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_java.resolve_stack(Stack::Unknown), Stack::Java);
+
+        let config_kotlin = ProjectConfig {
+            stack: Some("kotlin".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_kotlin.resolve_stack(Stack::Unknown), Stack::Java);
+    }
+
+    #[test]
+    fn resolve_stack_override_swift_aliases() {
+        let config_swift = ProjectConfig {
+            stack: Some("swift".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_swift.resolve_stack(Stack::Unknown), Stack::Swift);
+
+        let config_swiftui = ProjectConfig {
+            stack: Some("swiftui".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_swiftui.resolve_stack(Stack::Unknown), Stack::Swift);
     }
 
     #[test]
