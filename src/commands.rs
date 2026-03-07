@@ -89,7 +89,11 @@ fn print_help() {
   /memory   Show memory stats and DB size
   /clear    Close current conversation
   /quit     Exit kx dev
+
+  {}
+  \"\"\"       Start/end multiline input (for pasting code blocks)
 "#,
-        "Commands".bold()
+        "Commands".bold(),
+        "Input".bold()
     );
 }

@@ -96,31 +96,10 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
         print!("{} ", ">".cyan().bold());
         io::stdout().flush()?;
 
-        let mut input = String::new();
-        let read_result = tokio::select! {
-            result = tokio::task::spawn_blocking(move || {
-                let mut buf = String::new();
-                let n = io::stdin().read_line(&mut buf)?;
-                Ok::<_, io::Error>((buf, n))
-            }) => {
-                match result? {
-                    Ok((buf, n)) => {
-                        input = buf;
-                        Ok(n)
-                    }
-                    Err(e) => Err(e),
-                }
-            }
-            _ = shutdown.notified() => {
-                break;
-            }
+        let input = match read_input(&shutdown).await {
+            Some(line) => line,
+            None => break, // EOF or Ctrl+C
         };
-
-        match read_result {
-            Ok(0) => break, // EOF
-            Err(_) => break,
-            _ => {}
-        }
 
         let input = input.trim();
 
@@ -157,6 +136,58 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
     }
 
     Ok(())
+}
+
+async fn read_line_async(shutdown: &Arc<Notify>) -> Option<String> {
+    let shutdown = shutdown.clone();
+    tokio::select! {
+        result = tokio::task::spawn_blocking(|| {
+            let mut buf = String::new();
+            let n = io::stdin().read_line(&mut buf)?;
+            Ok::<_, io::Error>((buf, n))
+        }) => {
+            match result.ok()? {
+                Ok((_, 0)) => None,
+                Ok((buf, _)) => Some(buf),
+                Err(_) => None,
+            }
+        }
+        _ = shutdown.notified() => None,
+    }
+}
+
+async fn read_input(shutdown: &Arc<Notify>) -> Option<String> {
+    let line = read_line_async(shutdown).await?;
+
+    if line.trim() == "\"\"\"" {
+        println!("{}", "  Multiline mode. Type \"\"\" on its own line to finish.".dimmed());
+        let mut lines = Vec::new();
+        loop {
+            print!("{} ", "..".dimmed());
+            io::stdout().flush().ok();
+            let next = read_line_async(shutdown).await?;
+            if next.trim() == "\"\"\"" {
+                break;
+            }
+            lines.push(next);
+        }
+        Some(lines.join(""))
+    } else if line.trim().starts_with("\"\"\"") {
+        let first = line.trim().trim_start_matches("\"\"\"");
+        let mut lines = vec![first.to_string(), "\n".to_string()];
+        loop {
+            print!("{} ", "..".dimmed());
+            io::stdout().flush().ok();
+            let next = read_line_async(shutdown).await?;
+            if next.trim() == "\"\"\"" {
+                break;
+            }
+            lines.push(next);
+        }
+        Some(lines.join(""))
+    } else {
+        Some(line)
+    }
 }
 
 async fn setup_ctrlc_handler(runtime: &Runtime) -> Arc<Notify> {
