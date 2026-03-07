@@ -10,6 +10,16 @@ pub enum CommandResult {
 }
 
 pub async fn handle(input: &str, runtime: &Runtime, detected_stack: Stack) -> CommandResult {
+    if let Some(rest) = input.strip_prefix("/search") {
+        let query = rest.trim();
+        if query.is_empty() {
+            eprintln!("{} Usage: /search <query>\n", "warn:".yellow().bold());
+        } else {
+            search_memory(runtime, query).await;
+        }
+        return CommandResult::Continue;
+    }
+
     if let Some(rest) = input.strip_prefix("/facts") {
         let arg = rest.trim();
         if arg.is_empty() {
@@ -118,11 +128,37 @@ async fn delete_fact(runtime: &Runtime, key: &str) {
     }
 }
 
+async fn search_memory(runtime: &Runtime, query: &str) {
+    match runtime.store.search_messages(query, "", "user", 10).await {
+        Ok(results) if results.is_empty() => {
+            println!("{}", "  No results found.\n".dimmed());
+        }
+        Ok(results) => {
+            println!("\n  {} \"{query}\"\n", "Search results for".bold());
+            for (role, text, _conv_id) in &results {
+                let label = if role == "user" {
+                    "you:".cyan()
+                } else {
+                    "kx:".green()
+                };
+                let preview: String = text.chars().take(120).collect();
+                let ellipsis = if text.len() > 120 { "..." } else { "" };
+                println!("  {label} {preview}{ellipsis}");
+            }
+            println!();
+        }
+        Err(e) => {
+            eprintln!("{} searching memory: {e}\n", "error:".red().bold());
+        }
+    }
+}
+
 fn print_help() {
     println!(
         r#"
   {}
   /help     Show this help
+  /search <query>  Search past conversations (FTS5)
   /stack    Show detected stack and project info
   /memory   Show memory stats and DB size
   /facts    List stored facts
