@@ -11,6 +11,17 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Security audit
+        run: cargo audit
+
   build:
     name: Build
     runs-on: ${{ matrix.os }}
