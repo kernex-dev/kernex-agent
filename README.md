@@ -15,7 +15,13 @@ CLI dev assistant powered by [Kernex](https://github.com/kernex-dev/kernex-dev).
 
 **Claude CLI must be installed.** kx uses the Claude Code CLI as its AI backend.
 
-Install it from: https://docs.anthropic.com/en/docs/claude-code
+Claude Code is Anthropic's official AI coding assistant that runs locally. To install:
+
+1. Visit [claude.ai/download](https://claude.ai/download)
+2. Download and install for your platform (macOS, Linux, Windows)
+3. Run `claude --version` to verify installation
+
+For documentation: [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code)
 
 ## Installation
 
@@ -156,6 +162,30 @@ kx is a thin CLI wrapper around the Kernex runtime:
 - **kernex-core** - Shared types and context management
 
 For details on the underlying runtime, see [kernex-dev](https://github.com/kernex-dev/kernex-dev).
+
+## Troubleshooting
+
+### "Claude CLI not found"
+
+Ensure Claude Code is installed and in your PATH:
+
+```bash
+claude --version
+```
+
+If not found, install from [claude.ai/download](https://claude.ai/download).
+
+### "Permission denied: ~/.kx"
+
+Create the directory manually:
+
+```bash
+mkdir -p ~/.kx
+```
+
+### Database locked
+
+Only one kx session per project can run at a time. Close other sessions or wait for them to complete.
 
 ## License
 
