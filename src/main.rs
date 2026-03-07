@@ -5,6 +5,7 @@ mod cli;
 mod commands;
 mod config;
 mod prompts;
+mod skills;
 mod stack;
 
 use std::path::PathBuf;
@@ -20,7 +21,7 @@ use kernex_runtime::{Runtime, RuntimeBuilder};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
-use crate::cli::{Cli, Command};
+use crate::cli::{Cli, Command, SkillsAction};
 use crate::commands::CommandResult;
 
 #[tokio::main]
@@ -44,7 +45,33 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("{}", "kx docs is not yet implemented.".yellow());
             Ok(())
         }
+        Some(Command::Skills { action }) => cmd_skills(action).await,
         None => cmd_dev(cli.message).await,
+    }
+}
+
+async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Error>> {
+    let data_dir = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".kx");
+
+    match action {
+        SkillsAction::List => {
+            skills::cli_handler::list_skills(&data_dir).await;
+            Ok(())
+        }
+        SkillsAction::Add { source, trust } => {
+            skills::cli_handler::add_skill(&data_dir, &source, &trust)
+                .await
+                .map_err(|e| e.into())
+        }
+        SkillsAction::Remove { name } => skills::cli_handler::remove_skill(&data_dir, &name)
+            .await
+            .map_err(|e| e.into()),
+        SkillsAction::Verify => {
+            skills::cli_handler::verify_skills(&data_dir).await;
+            Ok(())
+        }
     }
 }
 
@@ -71,6 +98,11 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
         system_prompt.push_str("\n\n## Project-specific instructions\n");
         system_prompt.push_str(extra);
     }
+
+    let skills_manifest = skills::manifest::SkillsManifest::load(&data_dir);
+    let loaded_skills = skills::prompt::load_skills(&data_dir, skills_manifest.list());
+    let skills_section = skills::prompt::build_skills_prompt(&loaded_skills);
+    system_prompt.push_str(&skills_section);
 
     let provider = build_provider(&project_config);
 
@@ -124,11 +156,7 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
     loop {
         let input = {
             let ed = editor.clone();
-            match tokio::task::spawn_blocking(move || {
-                ed.blocking_lock().readline("> ")
-            })
-            .await?
-            {
+            match tokio::task::spawn_blocking(move || ed.blocking_lock().readline("> ")).await? {
                 Ok(line) => line,
                 Err(ReadlineError::Interrupted) => {
                     graceful_shutdown(&runtime).await;
@@ -237,9 +265,7 @@ async fn send_message(
     let spinner = create_spinner("Thinking...");
 
     let request = Request::text("user", input);
-    let result = runtime
-        .complete_with_needs(provider, &request, needs)
-        .await;
+    let result = runtime.complete_with_needs(provider, &request, needs).await;
 
     spinner.finish_and_clear();
 
@@ -302,10 +328,7 @@ fn create_editor(history_path: &PathBuf) -> Result<DefaultEditor, Box<dyn std::e
     Ok(rl)
 }
 
-async fn save_history(
-    editor: &Arc<tokio::sync::Mutex<DefaultEditor>>,
-    history_path: &PathBuf,
-) {
+async fn save_history(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>, history_path: &PathBuf) {
     if let Some(parent) = history_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }

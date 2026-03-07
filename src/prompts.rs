@@ -2,39 +2,51 @@ use crate::stack::Stack;
 
 pub fn dev_system_prompt(stack: Stack, project_name: &str) -> String {
     let stack_rules = match stack {
-        Stack::Rust => "
+        Stack::Rust => {
+            "
 - Use idiomatic Rust. Prefer Result/Option over panics.
 - Follow clippy recommendations. Use `cargo fmt` style.
 - Prefer owned types in APIs, references internally.
-- Handle errors with thiserror or anyhow as appropriate.",
+- Handle errors with thiserror or anyhow as appropriate."
+        }
 
-        Stack::Node => "
+        Stack::Node => {
+            "
 - Use TypeScript strict mode when tsconfig is available.
 - Prefer ESM imports. Follow existing lint/format config (eslint/prettier/biome).
 - Handle async errors properly. Avoid any where possible.
-- Check package.json scripts before suggesting build/test commands.",
+- Check package.json scripts before suggesting build/test commands."
+        }
 
-        Stack::Python => "
+        Stack::Python => {
+            "
 - Follow PEP 8. Use type hints.
 - Respect the project's tooling (ruff, black, mypy, pytest).
 - Prefer pathlib over os.path. Use context managers for resources.
-- Check for virtual environment (venv, poetry, pipenv).",
+- Check for virtual environment (venv, poetry, pipenv)."
+        }
 
-        Stack::Flutter => "
+        Stack::Flutter => {
+            "
 - Follow Dart effective style. Use const constructors where possible.
 - Respect the state management pattern in use (Riverpod, Bloc, Provider, etc).
 - Keep widgets small and composable.
-- Check pubspec.yaml for dependencies before suggesting new ones.",
+- Check pubspec.yaml for dependencies before suggesting new ones."
+        }
 
-        Stack::Php => "
+        Stack::Php => {
+            "
 - Follow PSR-12 coding standards.
 - Use type declarations. Respect the framework in use (Laravel, WordPress, etc).
 - Use Composer for dependency management.
-- Sanitize all user input. Use prepared statements for DB queries.",
+- Sanitize all user input. Use prepared statements for DB queries."
+        }
 
-        Stack::Unknown => "
+        Stack::Unknown => {
+            "
 - Detect and follow the project's existing conventions.
-- Check for config files to understand the tooling before suggesting commands.",
+- Check for config files to understand the tooling before suggesting commands."
+        }
     };
 
     format!(
