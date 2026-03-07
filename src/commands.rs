@@ -291,7 +291,8 @@ async fn handle_skills_command(arg: &str) {
         let source = parts[0];
         let trust = parts.get(1).copied().unwrap_or("sandboxed");
 
-        match skills::cli_handler::add_skill(&data_dir, source, trust).await {
+        let policy = crate::skills::permissions::PermissionPolicy::default();
+        match skills::cli_handler::add_skill(&data_dir, source, trust, &policy).await {
             Ok(()) => {}
             Err(e) => eprintln!("{} {e}\n", "error:".red().bold()),
         }

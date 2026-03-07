@@ -61,7 +61,10 @@ pub async fn list_skills(data_dir: &Path) {
         println!();
     }
 
-    println!("  ({count} skill{} active)\n", if count == 1 { "" } else { "s" });
+    println!(
+        "  ({count} skill{} active)\n",
+        if count == 1 { "" } else { "s" }
+    );
 }
 
 pub async fn add_skill(
@@ -113,13 +116,16 @@ pub async fn add_skill(
     let skill_manifest = parse_skill_md(&content_str).map_err(|e| e.to_string())?;
 
     if policy.is_blocked(&skill_manifest.name) {
-        return Err(format!("skill '{}' is blocked by project config", skill_manifest.name));
+        return Err(format!(
+            "skill '{}' is blocked by project config",
+            skill_manifest.name
+        ));
     }
 
     let resolved = resolve_permissions(
         &skill_manifest.requested_permissions,
         source,
-        &policy,
+        policy,
         &skill_manifest.name,
     );
 
