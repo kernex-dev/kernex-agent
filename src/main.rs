@@ -261,12 +261,14 @@ fn create_spinner(msg: &str) -> ProgressBar {
 async fn read_multiline(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>) -> Option<String> {
     println!(
         "{}",
-        "  Multiline mode. Type \"\"\" to finish.".dimmed()
+        "  Multiline mode (\"\"\" to finish, Ctrl+C to cancel)".dimmed()
     );
     let mut lines = Vec::new();
+    let mut line_num: usize = 1;
     loop {
+        let prompt = format!("{} {} ", format!("{line_num:>3}").cyan(), "|".dimmed());
         let ed = editor.clone();
-        match tokio::task::spawn_blocking(move || ed.blocking_lock().readline(".. "))
+        match tokio::task::spawn_blocking(move || ed.blocking_lock().readline(&prompt))
             .await
             .ok()?
         {
@@ -275,10 +277,13 @@ async fn read_multiline(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>) -> Opti
                     break;
                 }
                 lines.push(line);
+                line_num += 1;
             }
             Err(_) => return None,
         }
     }
+    let count = lines.len();
+    println!("{}", format!("  ({count} lines captured)").dimmed());
     Some(lines.join("\n"))
 }
 
