@@ -1026,9 +1026,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-core"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f19b98a0adf738f15cc0bfaebe98a3f7c07b5d45629d7755da8a69b87486ffe9"
+checksum = "679b2d07b6877fbc2ab4403359bcfa5b6362a432b201dbf1c64b680644e6cfaa"
 dependencies = [
  "async-trait",
  "chrono",
