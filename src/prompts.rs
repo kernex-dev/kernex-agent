@@ -42,6 +42,30 @@ pub fn dev_system_prompt(stack: Stack, project_name: &str) -> String {
 - Sanitize all user input. Use prepared statements for DB queries."
         }
 
+        Stack::Go => {
+            "
+- Follow Go idioms. Use gofmt and golint.
+- Handle errors explicitly — never ignore returned errors.
+- Prefer composition over inheritance. Keep interfaces small.
+- Check go.mod for the Go version and existing dependencies."
+        }
+
+        Stack::Java => {
+            "
+- Follow Java conventions. Use the project's build tool (Maven or Gradle).
+- Prefer modern Java features when the version allows.
+- Use dependency injection patterns if a framework is in use (Spring, etc).
+- Check pom.xml or build.gradle for existing dependencies."
+        }
+
+        Stack::Swift => {
+            "
+- Follow Swift API Design Guidelines. Use Swift Package Manager when possible.
+- Prefer value types (structs) over reference types (classes) when appropriate.
+- Use SwiftUI idioms if the project uses SwiftUI (declarative, @State, @Binding).
+- Check Package.swift or project settings for the Swift version and dependencies."
+        }
+
         Stack::Unknown => {
             "
 - Detect and follow the project's existing conventions.
@@ -132,6 +156,30 @@ mod tests {
         assert!(prompt.contains("PSR-12"));
         assert!(prompt.contains("Composer"));
         assert!(prompt.contains("prepared statements"));
+    }
+
+    #[test]
+    fn prompt_go_has_go_rules() {
+        let prompt = dev_system_prompt(Stack::Go, "test");
+        assert!(prompt.contains("gofmt"));
+        assert!(prompt.contains("golint"));
+        assert!(prompt.contains("go.mod"));
+    }
+
+    #[test]
+    fn prompt_java_has_java_rules() {
+        let prompt = dev_system_prompt(Stack::Java, "test");
+        assert!(prompt.contains("Maven"));
+        assert!(prompt.contains("Gradle"));
+        assert!(prompt.contains("pom.xml"));
+    }
+
+    #[test]
+    fn prompt_swift_has_swift_rules() {
+        let prompt = dev_system_prompt(Stack::Swift, "test");
+        assert!(prompt.contains("Swift"));
+        assert!(prompt.contains("SwiftUI"));
+        assert!(prompt.contains("Package.swift"));
     }
 
     #[test]
