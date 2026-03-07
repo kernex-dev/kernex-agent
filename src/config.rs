@@ -81,3 +81,220 @@ impl ProjectConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_default() {
+        let config = ProjectConfig::default();
+        assert!(config.stack.is_none());
+        assert!(config.system_prompt.is_none());
+        assert!(config.provider.is_none());
+        assert!(config.skills.is_none());
+    }
+
+    #[test]
+    fn config_load_nonexistent() {
+        let tmp = std::env::temp_dir().join("__kx_config_missing__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let config = ProjectConfig::load(&tmp);
+        assert!(config.stack.is_none());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn config_load_valid() {
+        let tmp = std::env::temp_dir().join("__kx_config_valid__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        std::fs::write(
+            tmp.join(".kx.toml"),
+            r#"
+stack = "rust"
+system_prompt = "Custom prompt"
+
+[provider]
+model = "claude-sonnet"
+max_turns = 5
+timeout_secs = 120
+"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(&tmp);
+        assert_eq!(config.stack, Some("rust".to_string()));
+        assert_eq!(config.system_prompt, Some("Custom prompt".to_string()));
+        assert!(config.provider.is_some());
+        let provider = config.provider.unwrap();
+        assert_eq!(provider.model, Some("claude-sonnet".to_string()));
+        assert_eq!(provider.max_turns, Some(5));
+        assert_eq!(provider.timeout_secs, Some(120));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn config_load_with_skills() {
+        let tmp = std::env::temp_dir().join("__kx_config_skills__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        std::fs::write(
+            tmp.join(".kx.toml"),
+            r#"
+[skills]
+default_trust = "standard"
+trusted_sources = ["anthropics/", "vercel/"]
+blocked = ["bad-skill"]
+"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(&tmp);
+        assert!(config.skills.is_some());
+        let skills = config.skills.unwrap();
+        assert_eq!(skills.default_trust, Some("standard".to_string()));
+        assert_eq!(skills.trusted_sources.len(), 2);
+        assert_eq!(skills.blocked, vec!["bad-skill"]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn config_load_invalid_toml() {
+        let tmp = std::env::temp_dir().join("__kx_config_invalid__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        std::fs::write(tmp.join(".kx.toml"), "invalid { toml").unwrap();
+
+        let config = ProjectConfig::load(&tmp);
+        // Should return default on parse error
+        assert!(config.stack.is_none());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn skills_policy_default() {
+        let config = ProjectConfig::default();
+        let policy = config.skills_policy();
+        assert_eq!(policy.default_trust, TrustLevel::Sandboxed);
+        assert!(policy.trusted_sources.is_empty());
+        assert!(policy.blocked_skills.is_empty());
+    }
+
+    #[test]
+    fn skills_policy_from_config() {
+        let config = ProjectConfig {
+            skills: Some(SkillsConfig {
+                default_trust: Some("trusted".to_string()),
+                trusted_sources: vec!["acme/".to_string()],
+                blocked: vec!["blocked-skill".to_string()],
+            }),
+            ..Default::default()
+        };
+
+        let policy = config.skills_policy();
+        assert_eq!(policy.default_trust, TrustLevel::Trusted);
+        assert_eq!(policy.trusted_sources, vec!["acme/"]);
+        assert_eq!(policy.blocked_skills, vec!["blocked-skill"]);
+    }
+
+    #[test]
+    fn skills_policy_standard_trust() {
+        let config = ProjectConfig {
+            skills: Some(SkillsConfig {
+                default_trust: Some("standard".to_string()),
+                trusted_sources: vec![],
+                blocked: vec![],
+            }),
+            ..Default::default()
+        };
+
+        let policy = config.skills_policy();
+        assert_eq!(policy.default_trust, TrustLevel::Standard);
+    }
+
+    #[test]
+    fn skills_policy_invalid_trust_defaults_sandboxed() {
+        let config = ProjectConfig {
+            skills: Some(SkillsConfig {
+                default_trust: Some("invalid".to_string()),
+                trusted_sources: vec![],
+                blocked: vec![],
+            }),
+            ..Default::default()
+        };
+
+        let policy = config.skills_policy();
+        assert_eq!(policy.default_trust, TrustLevel::Sandboxed);
+    }
+
+    #[test]
+    fn resolve_stack_override_rust() {
+        let config = ProjectConfig {
+            stack: Some("rust".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config.resolve_stack(Stack::Unknown), Stack::Rust);
+    }
+
+    #[test]
+    fn resolve_stack_override_node_aliases() {
+        let config_node = ProjectConfig {
+            stack: Some("node".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_node.resolve_stack(Stack::Unknown), Stack::Node);
+
+        let config_js = ProjectConfig {
+            stack: Some("javascript".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_js.resolve_stack(Stack::Unknown), Stack::Node);
+
+        let config_ts = ProjectConfig {
+            stack: Some("typescript".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_ts.resolve_stack(Stack::Unknown), Stack::Node);
+    }
+
+    #[test]
+    fn resolve_stack_override_flutter_aliases() {
+        let config_flutter = ProjectConfig {
+            stack: Some("flutter".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_flutter.resolve_stack(Stack::Unknown), Stack::Flutter);
+
+        let config_dart = ProjectConfig {
+            stack: Some("dart".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_dart.resolve_stack(Stack::Unknown), Stack::Flutter);
+    }
+
+    #[test]
+    fn resolve_stack_uses_detected_when_no_override() {
+        let config = ProjectConfig::default();
+        assert_eq!(config.resolve_stack(Stack::Python), Stack::Python);
+        assert_eq!(config.resolve_stack(Stack::Rust), Stack::Rust);
+    }
+
+    #[test]
+    fn resolve_stack_invalid_override_uses_detected() {
+        let config = ProjectConfig {
+            stack: Some("invalid".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config.resolve_stack(Stack::Python), Stack::Python);
+    }
+}
