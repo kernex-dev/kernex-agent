@@ -249,4 +249,4 @@ Only one kx session per project can run at a time. Close other sessions or wait 
 
 ## License
 
-MIT
+Apache-2.0 OR MIT
