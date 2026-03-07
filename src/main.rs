@@ -1,5 +1,6 @@
 mod cli;
 mod commands;
+mod config;
 mod prompts;
 mod stack;
 
@@ -54,13 +55,19 @@ fn context_needs() -> ContextNeeds {
 
 async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let cwd = std::env::current_dir()?;
-    let detected_stack = stack::detect(&cwd);
+    let project_config = config::ProjectConfig::load(&cwd);
+    let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
     let project_name = stack::project_name(&cwd);
 
     let data_dir = data_dir_for(&project_name);
-    let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
 
-    let provider = ClaudeCodeProvider::new();
+    let mut system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
+    if let Some(extra) = &project_config.system_prompt {
+        system_prompt.push_str("\n\n## Project-specific instructions\n");
+        system_prompt.push_str(extra);
+    }
+
+    let provider = build_provider(&project_config);
 
     let runtime = RuntimeBuilder::new()
         .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
@@ -227,6 +234,23 @@ async fn save_history(
         let _ = std::fs::create_dir_all(parent);
     }
     let _ = editor.lock().await.save_history(history_path);
+}
+
+fn build_provider(config: &config::ProjectConfig) -> ClaudeCodeProvider {
+    match &config.provider {
+        Some(pc) if pc.max_turns.is_some() || pc.timeout_secs.is_some() || pc.model.is_some() => {
+            ClaudeCodeProvider::from_config(
+                pc.max_turns.unwrap_or(10),
+                vec![],
+                pc.timeout_secs.unwrap_or(300),
+                None,
+                3,
+                pc.model.clone().unwrap_or_default(),
+                None,
+            )
+        }
+        _ => ClaudeCodeProvider::new(),
+    }
 }
 
 async fn graceful_shutdown(runtime: &Runtime) {

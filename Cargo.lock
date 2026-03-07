@@ -986,7 +986,9 @@ dependencies = [
  "kernex-providers",
  "kernex-runtime",
  "rustyline",
+ "serde",
  "tokio",
+ "toml",
 ]
 
 [[package]]
