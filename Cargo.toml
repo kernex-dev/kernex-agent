@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 description = "CLI dev assistant powered by Kernex runtime"
 license = "MIT"
+repository = "https://github.com/kernex-dev/kernex-agent"
+homepage = "https://kernex.dev"
+documentation = "https://docs.rs/kernex-agent"
+keywords = ["ai", "agent", "cli", "assistant", "coding"]
+categories = ["development-tools", "command-line-utilities"]
+readme = "README.md"
 
 [[bin]]
 name = "kx"
