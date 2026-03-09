@@ -1041,8 +1041,10 @@ dependencies = [
  "dirs",
  "indicatif",
  "kernex-core",
+ "kernex-pipelines",
  "kernex-providers",
  "kernex-runtime",
+ "kernex-sandbox",
  "rustyline",
  "serde",
  "sha2",
@@ -1053,9 +1055,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-core"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f19b98a0adf738f15cc0bfaebe98a3f7c07b5d45629d7755da8a69b87486ffe9"
+checksum = "679b2d07b6877fbc2ab4403359bcfa5b6362a432b201dbf1c64b680644e6cfaa"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1069,9 +1071,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-memory"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c31685f76f415430c5c8ea677b328a4f3e99af9278002183ee09540830e8782d"
+checksum = "ad2ca746600372573452adad5ca050f78063eaea95faa7d22bcb456c283f4b2c"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1086,9 +1088,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-pipelines"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3eb8a87f524751992e943a46e4af30669f0ccce17029974df3843c10e2209e0"
+checksum = "d656001b3d65725781b2d74b1f9692b13adc0c26311c0300fc2c630f442582a7"
 dependencies = [
  "kernex-core",
  "serde",
@@ -1098,9 +1100,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-providers"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a5a475a4e545b0da06763aa3ce6be0fb1a62e54cbd80b780c9c21132013ac66"
+checksum = "97b070cdd89ed1da20736515762b4505dd351fa9542f77375392baff77ffcf61"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1108,6 +1110,7 @@ dependencies = [
  "kernex-core",
  "kernex-sandbox",
  "reqwest",
+ "secrecy",
  "serde",
  "serde_json",
  "thiserror",
@@ -1118,9 +1121,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-runtime"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e504ce9c5c40b45b4d8fe9cd4bda0f0a2e78c18b37781376be7e4d94c5e2fae0"
+checksum = "61a5e9b70f3d734aa540d2536da0768486123bc30c5c2d71af82f2b2361ac68b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1136,9 +1139,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-sandbox"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c80eaa0b322bbaaba46258fbf96602fefc3373d849241076c42aacb231b458d1"
+checksum = "e906b6396a1248f7aae5f42e46f4dcde515336af226939935e0ef3b0fda8c565"
 dependencies = [
  "anyhow",
  "landlock",
@@ -1148,9 +1151,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-skills"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d40fc632fc3a8c4f19c54da9a80e8afeb5ad487bd1f2c6509e8e356eda144e2"
+checksum = "76e4a63a89079611951b9dd981bf1f8b54eb003020ad63496078d089a1c2f304"
 dependencies = [
  "kernex-core",
  "serde",
@@ -1187,9 +1190,9 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libc"
-version = "0.2.182"
+version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
+checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "libm"
@@ -1535,9 +1538,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.13"
+version = "0.11.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1906b49b0c3bc04b5fe5d86a77925ae6524a19b816ae38ce1e426255f1d8a31"
+checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
 dependencies = [
  "bytes",
  "getrandom 0.3.4",
@@ -1853,6 +1856,16 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "secrecy"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bd1c54ea06cfd2f6b63219704de0b9b4f72dcc2b8fdef820be6cd799780e91e"
+dependencies = [
+ "serde",
+ "zeroize",
+]
 
 [[package]]
 name = "semver"
@@ -3207,18 +3220,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.40"
+version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a789c6e490b576db9f7e6b6d661bcc9799f7c0ac8352f56ea20193b2681532e5"
+checksum = "f2578b716f8a7a858b7f02d5bd870c14bf4ddbbcf3a4c05414ba6503640505e3"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.40"
+version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f65c489a7071a749c849713807783f70672b28094011623e200cb86dcb835953"
+checksum = "7e6cc098ea4d3bd6246687de65af3f920c430e236bee1e3bf2e441463f08a02f"
 dependencies = [
  "proc-macro2",
  "quote",

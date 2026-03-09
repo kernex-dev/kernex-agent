@@ -17,9 +17,10 @@ name = "kx"
 path = "src/main.rs"
 
 [dependencies]
-kernex-runtime = "0.3"
-kernex-core = "0.3"
-kernex-providers = "0.3"
+kernex-runtime = "0.3.2"
+kernex-core = "0.3.2"
+kernex-providers = "0.3.2"
+kernex-pipelines = "0.3.2"
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
 colored = "2"
@@ -30,3 +31,4 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 sha2 = "0.10"
 ureq = "2"
+kernex-sandbox = "0.3.2"

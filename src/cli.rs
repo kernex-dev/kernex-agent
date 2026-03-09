@@ -6,6 +6,22 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
+    /// AI provider to use (claude-code, ollama, openai, anthropic, gemini, openrouter)
+    #[arg(long, global = true, default_value = "claude-code")]
+    pub provider: String,
+
+    /// Model override (provider-specific, e.g. gpt-4o, llama3.2)
+    #[arg(long, global = true)]
+    pub model: Option<String>,
+
+    /// API key for providers that require one
+    #[arg(long, global = true)]
+    pub api_key: Option<String>,
+
+    /// Base URL override (e.g. http://localhost:11434 for Ollama)
+    #[arg(long, global = true)]
+    pub base_url: Option<String>,
+
     /// One-shot message when no subcommand is given (kx "fix the bug")
     pub message: Option<String>,
 }
@@ -21,11 +37,29 @@ pub enum Command {
     Audit,
     /// Documentation audit (detect outdated docs, archive)
     Docs,
+    /// Initialize kx for current project (installs builtin skills)
+    Init,
+    /// Run a multi-agent pipeline
+    Pipeline {
+        #[command(subcommand)]
+        action: PipelineAction,
+    },
     /// Manage installed skills
     Skills {
         #[command(subcommand)]
         action: SkillsAction,
     },
+}
+
+#[derive(Subcommand)]
+pub enum PipelineAction {
+    /// Run a named pipeline/topology
+    Run {
+        /// Pipeline name (matches topology directory name)
+        name: String,
+    },
+    /// List available pipelines
+    List,
 }
 
 #[derive(Subcommand)]
@@ -61,6 +95,7 @@ mod tests {
         let cli = cli.unwrap();
         assert!(cli.command.is_none());
         assert!(cli.message.is_none());
+        assert_eq!(cli.provider, "claude-code");
     }
 
     #[test]
@@ -106,6 +141,81 @@ mod tests {
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         assert!(matches!(cli.command, Some(Command::Docs)));
+    }
+
+    #[test]
+    fn cli_parses_init() {
+        let cli = Cli::try_parse_from(["kx", "init"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        assert!(matches!(cli.command, Some(Command::Init)));
+    }
+
+    #[test]
+    fn cli_parses_pipeline_run() {
+        let cli = Cli::try_parse_from(["kx", "pipeline", "run", "code-review"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        if let Some(Command::Pipeline { action }) = cli.command {
+            if let PipelineAction::Run { name } = action {
+                assert_eq!(name, "code-review");
+            } else {
+                panic!("Expected Run action");
+            }
+        } else {
+            panic!("Expected Pipeline command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_pipeline_list() {
+        let cli = Cli::try_parse_from(["kx", "pipeline", "list"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        if let Some(Command::Pipeline { action }) = cli.command {
+            assert!(matches!(action, PipelineAction::List));
+        } else {
+            panic!("Expected Pipeline command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_provider_flag() {
+        let cli = Cli::try_parse_from(["kx", "--provider", "ollama", "dev"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        assert_eq!(cli.provider, "ollama");
+    }
+
+    #[test]
+    fn cli_parses_model_flag() {
+        let cli = Cli::try_parse_from(["kx", "--model", "gpt-4o", "dev"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        assert_eq!(cli.model, Some("gpt-4o".to_string()));
+    }
+
+    #[test]
+    fn cli_parses_api_key_flag() {
+        let cli = Cli::try_parse_from(["kx", "--api-key", "sk-test", "dev"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        assert_eq!(cli.api_key, Some("sk-test".to_string()));
+    }
+
+    #[test]
+    fn cli_parses_base_url_flag() {
+        let cli = Cli::try_parse_from(["kx", "--base-url", "http://localhost:11434", "dev"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        assert_eq!(cli.base_url, Some("http://localhost:11434".to_string()));
+    }
+
+    #[test]
+    fn cli_provider_default_is_claude_code() {
+        let cli = Cli::try_parse_from(["kx", "dev"]);
+        assert!(cli.is_ok());
+        assert_eq!(cli.unwrap().provider, "claude-code");
     }
 
     #[test]
