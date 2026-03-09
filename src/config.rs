@@ -83,6 +83,9 @@ impl ProjectConfig {
             Some("go" | "golang") => Stack::Go,
             Some("java" | "kotlin") => Stack::Java,
             Some("swift" | "swiftui") => Stack::Swift,
+            Some("ruby" | "rails") => Stack::Ruby,
+            Some("cpp" | "c++" | "c" | "cmake") => Stack::Cpp,
+            Some("dotnet" | ".net" | "csharp" | "c#") => Stack::DotNet,
             _ => detected,
         }
     }
@@ -331,6 +334,51 @@ blocked = ["bad-skill"]
             ..Default::default()
         };
         assert_eq!(config_swiftui.resolve_stack(Stack::Unknown), Stack::Swift);
+    }
+
+    #[test]
+    fn resolve_stack_override_ruby_aliases() {
+        let config = ProjectConfig {
+            stack: Some("ruby".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config.resolve_stack(Stack::Unknown), Stack::Ruby);
+
+        let config_rails = ProjectConfig {
+            stack: Some("rails".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_rails.resolve_stack(Stack::Unknown), Stack::Ruby);
+    }
+
+    #[test]
+    fn resolve_stack_override_cpp_aliases() {
+        let config = ProjectConfig {
+            stack: Some("cpp".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config.resolve_stack(Stack::Unknown), Stack::Cpp);
+
+        let config_c = ProjectConfig {
+            stack: Some("c".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_c.resolve_stack(Stack::Unknown), Stack::Cpp);
+    }
+
+    #[test]
+    fn resolve_stack_override_dotnet_aliases() {
+        let config = ProjectConfig {
+            stack: Some("dotnet".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config.resolve_stack(Stack::Unknown), Stack::DotNet);
+
+        let config_csharp = ProjectConfig {
+            stack: Some("csharp".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(config_csharp.resolve_stack(Stack::Unknown), Stack::DotNet);
     }
 
     #[test]

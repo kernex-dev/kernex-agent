@@ -1,4 +1,8 @@
+use std::collections::BTreeSet;
 use std::path::Path;
+
+use crate::skills::manifest::{compute_sha256, SkillsManifest};
+use crate::skills::types::{InstalledSkill, Permission, TrustLevel};
 
 struct BuiltinSkill {
     name: &'static str,
@@ -56,18 +60,45 @@ const BUILTIN_SKILLS: &[BuiltinSkill] = &[
     },
 ];
 
-pub fn install_builtin_skills(skills_dir: &Path) -> Result<usize, Box<dyn std::error::Error>> {
+pub fn install_builtin_skills(data_dir: &Path) -> Result<usize, Box<dyn std::error::Error>> {
+    let skills_dir = data_dir.join("skills");
+    let mut manifest = SkillsManifest::load(data_dir);
     let mut installed = 0;
+    let now = chrono_now();
 
     for skill in BUILTIN_SKILLS {
         let skill_dir = skills_dir.join(skill.name);
         std::fs::create_dir_all(&skill_dir)?;
         let skill_path = skill_dir.join("SKILL.md");
         std::fs::write(&skill_path, skill.content)?;
+
+        let sha = compute_sha256(skill.content.as_bytes());
+        let granted = Permission::for_trust_level(TrustLevel::Trusted);
+
+        manifest.add(InstalledSkill {
+            name: skill.name.to_string(),
+            source: format!("builtin/{}", skill.name),
+            sha256: sha,
+            size_bytes: skill.content.len() as u64,
+            installed_at: now.clone(),
+            trust: TrustLevel::Trusted,
+            granted_permissions: granted,
+            denied_permissions: BTreeSet::new(),
+        });
+
         installed += 1;
     }
 
+    manifest.save(data_dir)?;
     Ok(installed)
+}
+
+fn chrono_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    format!("{secs}")
 }
 
 #[allow(dead_code)]
@@ -110,17 +141,27 @@ mod tests {
     }
 
     #[test]
-    fn install_builtin_skills_creates_files() {
+    fn install_builtin_skills_creates_files_and_manifest() {
         let tmp = std::env::temp_dir().join("__kx_builtins_test__");
         let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
 
         let count = install_builtin_skills(&tmp).unwrap();
         assert_eq!(count, 12);
 
         for skill in BUILTIN_SKILLS {
-            let path = tmp.join(skill.name).join("SKILL.md");
+            let path = tmp.join("skills").join(skill.name).join("SKILL.md");
             assert!(path.exists(), "Missing: {}", path.display());
         }
+
+        let manifest = SkillsManifest::load(&tmp);
+        assert_eq!(manifest.list().len(), 12);
+
+        let senior = manifest.find("senior-developer");
+        assert!(senior.is_some());
+        let senior = senior.unwrap();
+        assert_eq!(senior.trust, TrustLevel::Trusted);
+        assert!(senior.source.starts_with("builtin/"));
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

@@ -10,6 +10,9 @@ pub enum Stack {
     Go,
     Java,
     Swift,
+    Ruby,
+    Cpp,
+    DotNet,
     Unknown,
 }
 
@@ -24,6 +27,9 @@ impl std::fmt::Display for Stack {
             Stack::Go => write!(f, "Go"),
             Stack::Java => write!(f, "Java"),
             Stack::Swift => write!(f, "Swift/SwiftUI"),
+            Stack::Ruby => write!(f, "Ruby"),
+            Stack::Cpp => write!(f, "C/C++"),
+            Stack::DotNet => write!(f, ".NET/C#"),
             Stack::Unknown => write!(f, "Unknown"),
         }
     }
@@ -43,6 +49,9 @@ pub fn detect(project_dir: &Path) -> Stack {
         ("pyproject.toml", Stack::Python),
         ("Pipfile", Stack::Python),
         ("composer.json", Stack::Php),
+        ("Gemfile", Stack::Ruby),
+        ("CMakeLists.txt", Stack::Cpp),
+        ("Directory.Build.props", Stack::DotNet),
     ];
 
     for (file, stack) in markers {
@@ -51,7 +60,23 @@ pub fn detect(project_dir: &Path) -> Stack {
         }
     }
 
+    if has_sln_file(project_dir) {
+        return Stack::DotNet;
+    }
+
     Stack::Unknown
+}
+
+fn has_sln_file(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    entries.flatten().any(|e| {
+        e.path()
+            .extension()
+            .map(|ext| ext == "sln")
+            .unwrap_or(false)
+    })
 }
 
 pub fn project_name(project_dir: &Path) -> String {
@@ -77,6 +102,9 @@ mod tests {
         assert_eq!(Stack::Go.to_string(), "Go");
         assert_eq!(Stack::Java.to_string(), "Java");
         assert_eq!(Stack::Swift.to_string(), "Swift/SwiftUI");
+        assert_eq!(Stack::Ruby.to_string(), "Ruby");
+        assert_eq!(Stack::Cpp.to_string(), "C/C++");
+        assert_eq!(Stack::DotNet.to_string(), ".NET/C#");
         assert_eq!(Stack::Unknown.to_string(), "Unknown");
     }
 
@@ -198,6 +226,54 @@ mod tests {
         std::fs::write(tmp.join("composer.json"), "{}").unwrap();
 
         assert_eq!(detect(&tmp), Stack::Php);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn detect_ruby() {
+        let tmp = std::env::temp_dir().join("__kx_stack_ruby__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("Gemfile"), "source 'https://rubygems.org'").unwrap();
+
+        assert_eq!(detect(&tmp), Stack::Ruby);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn detect_cpp() {
+        let tmp = std::env::temp_dir().join("__kx_stack_cpp__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(
+            tmp.join("CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.10)",
+        )
+        .unwrap();
+
+        assert_eq!(detect(&tmp), Stack::Cpp);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn detect_dotnet_sln() {
+        let tmp = std::env::temp_dir().join("__kx_stack_dotnet_sln__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("MyApp.sln"), "").unwrap();
+
+        assert_eq!(detect(&tmp), Stack::DotNet);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn detect_dotnet_props() {
+        let tmp = std::env::temp_dir().join("__kx_stack_dotnet_props__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("Directory.Build.props"), "<Project>").unwrap();
+
+        assert_eq!(detect(&tmp), Stack::DotNet);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

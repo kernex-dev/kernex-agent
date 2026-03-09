@@ -365,7 +365,8 @@ fn build_provider(
     let api_key = flags
         .api_key
         .clone()
-        .or_else(|| config.provider.as_ref().and_then(|pc| pc.api_key.clone()));
+        .or_else(|| config.provider.as_ref().and_then(|pc| pc.api_key.clone()))
+        .or_else(|| env_api_key(&provider_name));
 
     let base_url = flags
         .base_url
@@ -425,6 +426,17 @@ fn check_claude_cli() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+fn env_api_key(provider: &str) -> Option<String> {
+    let var = match provider {
+        "openai" => "OPENAI_API_KEY",
+        "anthropic" => "ANTHROPIC_API_KEY",
+        "gemini" => "GEMINI_API_KEY",
+        "openrouter" => "OPENROUTER_API_KEY",
+        _ => return None,
+    };
+    std::env::var(var).ok().filter(|v| !v.is_empty())
+}
+
 async fn graceful_shutdown(runtime: &Runtime) {
     commands::close_conversation(runtime, "User exited session.").await;
     println!("{}", "Bye.".dimmed());
@@ -456,8 +468,7 @@ async fn cmd_init() -> Result<(), Box<dyn std::error::Error>> {
 
     std::fs::create_dir_all(&data_dir)?;
 
-    let skills_dir = data_dir.join("skills");
-    let installed = builtins::install_builtin_skills(&skills_dir)?;
+    let installed = builtins::install_builtin_skills(&data_dir)?;
 
     println!("{}", "kx init complete.".green().bold());
     println!("  {} {}", "Project:".dimmed(), project_name.bold());
@@ -596,73 +607,50 @@ async fn cmd_pipeline(
 }
 
 async fn cmd_audit(flags: &ProviderFlags) -> Result<(), Box<dyn std::error::Error>> {
-    let cwd = std::env::current_dir()?;
-    let project_config = config::ProjectConfig::load(&cwd);
-    let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
-    let project_name = stack::project_name(&cwd);
-    let data_dir = data_dir_for(&project_name);
-
-    let provider = build_provider(flags, &project_config)?;
-
-    if flags.name == "claude-code" {
-        check_claude_cli()?;
-    }
-
-    let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
-
-    let runtime = RuntimeBuilder::new()
-        .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
-        .system_prompt(&system_prompt)
-        .channel("audit")
-        .project(&project_name)
-        .build()
-        .await?;
-
-    let needs = context_needs();
-
-    let prompt = format!(
-        "Perform a comprehensive repository health audit for this {} project '{}'.\n\n\
-         Check and report on:\n\
-         1. **Dependencies** — outdated, vulnerable, or unused deps\n\
-         2. **Tests** — test coverage, missing tests, flaky tests\n\
-         3. **Code quality** — linting issues, dead code, complexity hotspots\n\
-         4. **Documentation** — missing or outdated docs, README completeness\n\
-         5. **Project structure** — file organization, naming conventions\n\
-         6. **Security** — hardcoded secrets, insecure patterns\n\
-         7. **CI/CD** — build config, missing checks\n\n\
-         Provide a structured report with severity levels (critical/warning/info) \
-         and actionable recommendations.",
-        detected_stack, project_name
-    );
-
-    println!(
-        "{} {} ({})\n",
-        "kx audit".green().bold(),
-        project_name.bold(),
-        detected_stack
-    );
-
-    let spinner = create_spinner("Auditing repository...");
-    let request = Request::text("user", &prompt);
-    let result = runtime
-        .complete_with_needs(provider.as_ref(), &request, &needs)
-        .await;
-    spinner.finish_and_clear();
-
-    match result {
-        Ok(response) => {
-            println!("{}\n", response.text);
-        }
-        Err(e) => {
-            eprintln!("{} audit failed: {e}", "error:".red().bold());
-        }
-    }
-
-    commands::close_conversation(&runtime, "Audit completed.").await;
-    Ok(())
+    run_oneshot_command(flags, "audit", "kx audit", |stack, name| {
+        format!(
+            "Perform a comprehensive repository health audit for this {} project '{}'.\n\n\
+             Check and report on:\n\
+             1. **Dependencies** — outdated, vulnerable, or unused deps\n\
+             2. **Tests** — test coverage, missing tests, flaky tests\n\
+             3. **Code quality** — linting issues, dead code, complexity hotspots\n\
+             4. **Documentation** — missing or outdated docs, README completeness\n\
+             5. **Project structure** — file organization, naming conventions\n\
+             6. **Security** — hardcoded secrets, insecure patterns\n\
+             7. **CI/CD** — build config, missing checks\n\n\
+             Provide a structured report with severity levels (critical/warning/info) \
+             and actionable recommendations.",
+            stack, name
+        )
+    })
+    .await
 }
 
 async fn cmd_docs(flags: &ProviderFlags) -> Result<(), Box<dyn std::error::Error>> {
+    run_oneshot_command(flags, "docs", "kx docs", |stack, name| {
+        format!(
+            "Perform a documentation audit for this {} project '{}'.\n\n\
+             Analyze and report on:\n\
+             1. **README** — completeness, accuracy, setup instructions\n\
+             2. **API docs** — missing or outdated function/module documentation\n\
+             3. **Inline comments** — misleading or stale comments\n\
+             4. **Examples** — missing usage examples, broken code snippets\n\
+             5. **Changelog** — whether changes are tracked\n\
+             6. **Architecture docs** — missing high-level design documentation\n\n\
+             For each issue found, suggest specific fixes. \
+             Flag any docs that reference code that no longer exists.",
+            stack, name
+        )
+    })
+    .await
+}
+
+async fn run_oneshot_command(
+    flags: &ProviderFlags,
+    channel: &str,
+    label: &str,
+    build_prompt: impl FnOnce(stack::Stack, &str) -> String,
+) -> Result<(), Box<dyn std::error::Error>> {
     let cwd = std::env::current_dir()?;
     let project_config = config::ProjectConfig::load(&cwd);
     let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
@@ -680,35 +668,22 @@ async fn cmd_docs(flags: &ProviderFlags) -> Result<(), Box<dyn std::error::Error
     let runtime = RuntimeBuilder::new()
         .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
         .system_prompt(&system_prompt)
-        .channel("docs")
+        .channel(channel)
         .project(&project_name)
         .build()
         .await?;
 
     let needs = context_needs();
-
-    let prompt = format!(
-        "Perform a documentation audit for this {} project '{}'.\n\n\
-         Analyze and report on:\n\
-         1. **README** — completeness, accuracy, setup instructions\n\
-         2. **API docs** — missing or outdated function/module documentation\n\
-         3. **Inline comments** — misleading or stale comments\n\
-         4. **Examples** — missing usage examples, broken code snippets\n\
-         5. **Changelog** — whether changes are tracked\n\
-         6. **Architecture docs** — missing high-level design documentation\n\n\
-         For each issue found, suggest specific fixes. \
-         Flag any docs that reference code that no longer exists.",
-        detected_stack, project_name
-    );
+    let prompt = build_prompt(detected_stack, &project_name);
 
     println!(
         "{} {} ({})\n",
-        "kx docs".green().bold(),
+        label.green().bold(),
         project_name.bold(),
         detected_stack
     );
 
-    let spinner = create_spinner("Auditing documentation...");
+    let spinner = create_spinner(&format!("Running {channel}..."));
     let request = Request::text("user", &prompt);
     let result = runtime
         .complete_with_needs(provider.as_ref(), &request, &needs)
@@ -720,11 +695,11 @@ async fn cmd_docs(flags: &ProviderFlags) -> Result<(), Box<dyn std::error::Error
             println!("{}\n", response.text);
         }
         Err(e) => {
-            eprintln!("{} docs audit failed: {e}", "error:".red().bold());
+            eprintln!("{} {channel} failed: {e}", "error:".red().bold());
         }
     }
 
-    commands::close_conversation(&runtime, "Docs audit completed.").await;
+    commands::close_conversation(&runtime, &format!("{label} completed.")).await;
     Ok(())
 }
 
