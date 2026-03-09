@@ -28,9 +28,12 @@ pub struct SkillsConfig {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ProviderConfig {
+    pub name: Option<String>,
     pub max_turns: Option<u32>,
     pub timeout_secs: Option<u64>,
     pub model: Option<String>,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
 }
 
 impl ProjectConfig {
