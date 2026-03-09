@@ -202,6 +202,9 @@ fn print_config(runtime: &Runtime, detected_stack: Stack, config: &ProjectConfig
         println!("  {} yes", "Custom prompt:".dimmed());
     }
     if let Some(pc) = &config.provider {
+        if let Some(name) = &pc.name {
+            println!("  {} {name}", "Provider:".dimmed());
+        }
         if let Some(model) = &pc.model {
             println!("  {} {model}", "Model:".dimmed());
         }

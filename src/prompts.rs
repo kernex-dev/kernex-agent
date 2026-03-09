@@ -66,6 +66,30 @@ pub fn dev_system_prompt(stack: Stack, project_name: &str) -> String {
 - Check Package.swift or project settings for the Swift version and dependencies."
         }
 
+        Stack::Ruby => {
+            "
+- Follow Ruby community style (rubocop). Use blocks and iterators idiomatically.
+- Respect the framework in use (Rails, Sinatra, etc). Check Gemfile for dependencies.
+- Use Bundler for dependency management.
+- Prefer symbols over strings for hash keys when appropriate."
+        }
+
+        Stack::Cpp => {
+            "
+- Follow the project's existing style (C or C++, version standard).
+- Use CMake or the project's build system. Check CMakeLists.txt for settings.
+- Prefer RAII and smart pointers in C++. Avoid raw new/delete.
+- Be careful with memory management, buffer overflows, and undefined behavior."
+        }
+
+        Stack::DotNet => {
+            "
+- Follow .NET naming conventions (PascalCase for public members).
+- Use the project's build system (dotnet CLI, MSBuild). Check .csproj files.
+- Prefer async/await for I/O-bound operations.
+- Use dependency injection when the framework supports it (ASP.NET Core, etc)."
+        }
+
         Stack::Unknown => {
             "
 - Detect and follow the project's existing conventions.
@@ -180,6 +204,30 @@ mod tests {
         assert!(prompt.contains("Swift"));
         assert!(prompt.contains("SwiftUI"));
         assert!(prompt.contains("Package.swift"));
+    }
+
+    #[test]
+    fn prompt_ruby_has_ruby_rules() {
+        let prompt = dev_system_prompt(Stack::Ruby, "test");
+        assert!(prompt.contains("rubocop"));
+        assert!(prompt.contains("Gemfile"));
+        assert!(prompt.contains("Bundler"));
+    }
+
+    #[test]
+    fn prompt_cpp_has_cpp_rules() {
+        let prompt = dev_system_prompt(Stack::Cpp, "test");
+        assert!(prompt.contains("CMake"));
+        assert!(prompt.contains("RAII"));
+        assert!(prompt.contains("smart pointers"));
+    }
+
+    #[test]
+    fn prompt_dotnet_has_dotnet_rules() {
+        let prompt = dev_system_prompt(Stack::DotNet, "test");
+        assert!(prompt.contains("PascalCase"));
+        assert!(prompt.contains("async/await"));
+        assert!(prompt.contains(".csproj"));
     }
 
     #[test]
