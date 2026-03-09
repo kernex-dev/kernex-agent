@@ -1,6 +1,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 #![deny(warnings)]
 
+mod builtins;
 mod cli;
 mod commands;
 mod config;
@@ -16,12 +17,13 @@ use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use kernex_core::context::ContextNeeds;
 use kernex_core::message::Request;
-use kernex_providers::claude_code::ClaudeCodeProvider;
+use kernex_core::traits::Provider;
+use kernex_providers::factory::{ProviderConfig as KxProviderConfig, ProviderFactory};
 use kernex_runtime::{Runtime, RuntimeBuilder};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
-use crate::cli::{Cli, Command, SkillsAction};
+use crate::cli::{Cli, Command, PipelineAction, SkillsAction};
 use crate::commands::CommandResult;
 
 #[tokio::main]
@@ -35,19 +37,29 @@ async fn main() {
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    let provider_flags = ProviderFlags {
+        name: cli.provider.clone(),
+        model: cli.model.clone(),
+        api_key: cli.api_key.clone(),
+        base_url: cli.base_url.clone(),
+    };
+
     match cli.command {
-        Some(Command::Dev { message }) => cmd_dev(message).await,
-        Some(Command::Audit) => {
-            eprintln!("{}", "kx audit is not yet implemented.".yellow());
-            Ok(())
-        }
-        Some(Command::Docs) => {
-            eprintln!("{}", "kx docs is not yet implemented.".yellow());
-            Ok(())
-        }
+        Some(Command::Dev { message }) => cmd_dev(message, &provider_flags).await,
+        Some(Command::Audit) => cmd_audit(&provider_flags).await,
+        Some(Command::Docs) => cmd_docs(&provider_flags).await,
+        Some(Command::Init) => cmd_init().await,
+        Some(Command::Pipeline { action }) => cmd_pipeline(action, &provider_flags).await,
         Some(Command::Skills { action }) => cmd_skills(action).await,
-        None => cmd_dev(cli.message).await,
+        None => cmd_dev(cli.message, &provider_flags).await,
     }
+}
+
+struct ProviderFlags {
+    name: String,
+    model: Option<String>,
+    api_key: Option<String>,
+    base_url: Option<String>,
 }
 
 async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Error>> {
@@ -87,7 +99,10 @@ fn context_needs() -> ContextNeeds {
     }
 }
 
-async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_dev(
+    one_shot: Option<String>,
+    flags: &ProviderFlags,
+) -> Result<(), Box<dyn std::error::Error>> {
     let cwd = std::env::current_dir()?;
     let project_config = config::ProjectConfig::load(&cwd);
     let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
@@ -106,20 +121,11 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
     let skills_section = skills::prompt::build_skills_prompt(&loaded_skills);
     system_prompt.push_str(&skills_section);
 
-    let provider = build_provider(&project_config);
+    let provider = build_provider(flags, &project_config)?;
 
-    if !ClaudeCodeProvider::check_cli().await {
-        eprintln!("{}", "error: Claude CLI not found".red().bold());
-        eprintln!();
-        eprintln!("  To fix this:");
-        eprintln!("    1. Install Claude Code: https://claude.ai/download");
-        eprintln!("    2. Verify installation: which claude");
-        eprintln!("    3. If installed, add to PATH: export PATH=\"$PATH:/path/to/claude\"");
-        eprintln!();
-        return Err("claude CLI not available".into());
+    if flags.name == "claude-code" {
+        check_claude_cli()?;
     }
-
-    check_claude_version();
 
     let runtime = RuntimeBuilder::new()
         .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
@@ -134,7 +140,7 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
     if let Some(msg) = one_shot {
         let request = Request::text("user", &msg);
         let response = runtime
-            .complete_with_needs(&provider, &request, &needs)
+            .complete_with_needs(provider.as_ref(), &request, &needs)
             .await?;
         println!("{}", response.text);
         commands::close_conversation(&runtime, "One-shot command completed.").await;
@@ -147,10 +153,11 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
     }
 
     println!(
-        "{} {} ({})",
+        "{} {} ({}) [{}]",
         "kx dev".green().bold(),
         project_name.bold(),
-        detected_stack
+        detected_stack,
+        provider.name().cyan()
     );
     println!("{}", "Type /help for commands, /quit to exit.\n".dimmed());
 
@@ -192,7 +199,7 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
             let multiline = read_multiline(&editor).await;
             match multiline {
                 Some(text) if !text.trim().is_empty() => {
-                    let ok = send_message(&runtime, &provider, &needs, &text).await;
+                    let ok = send_message(&runtime, provider.as_ref(), &needs, &text).await;
                     if !ok {
                         last_input = Some(text);
                     } else {
@@ -209,7 +216,7 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
             let rest = read_multiline(&editor).await.unwrap_or_default();
             let full = format!("{first}\n{rest}");
             if !full.trim().is_empty() {
-                let ok = send_message(&runtime, &provider, &needs, &full).await;
+                let ok = send_message(&runtime, provider.as_ref(), &needs, &full).await;
                 if !ok {
                     last_input = Some(full);
                 } else {
@@ -223,7 +230,7 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
             match &last_input {
                 Some(msg) => {
                     println!("{}", "  Retrying last message...".dimmed());
-                    let ok = send_message(&runtime, &provider, &needs, msg).await;
+                    let ok = send_message(&runtime, provider.as_ref(), &needs, msg).await;
                     if ok {
                         last_input = None;
                     }
@@ -250,7 +257,7 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
             }
         }
 
-        let ok = send_message(&runtime, &provider, &needs, trimmed).await;
+        let ok = send_message(&runtime, provider.as_ref(), &needs, trimmed).await;
         if !ok {
             last_input = Some(trimmed.to_string());
         } else {
@@ -263,7 +270,7 @@ async fn cmd_dev(one_shot: Option<String>) -> Result<(), Box<dyn std::error::Err
 
 async fn send_message(
     runtime: &Runtime,
-    provider: &ClaudeCodeProvider,
+    provider: &dyn Provider,
     needs: &ContextNeeds,
     input: &str,
 ) -> bool {
@@ -340,20 +347,81 @@ async fn save_history(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>, history_p
     let _ = editor.lock().await.save_history(history_path);
 }
 
-fn build_provider(config: &config::ProjectConfig) -> ClaudeCodeProvider {
-    match &config.provider {
-        Some(pc) if pc.max_turns.is_some() || pc.timeout_secs.is_some() || pc.model.is_some() => {
-            ClaudeCodeProvider::from_config(
-                pc.max_turns.unwrap_or(10),
-                vec![],
-                pc.timeout_secs.unwrap_or(300),
-                None,
-                3,
-                pc.model.clone().unwrap_or_default(),
-                None,
-            )
+fn build_provider(
+    flags: &ProviderFlags,
+    config: &config::ProjectConfig,
+) -> Result<Box<dyn Provider>, Box<dyn std::error::Error>> {
+    let provider_name = config
+        .provider
+        .as_ref()
+        .and_then(|pc| pc.name.clone())
+        .unwrap_or_else(|| flags.name.clone());
+
+    let model = flags
+        .model
+        .clone()
+        .or_else(|| config.provider.as_ref().and_then(|pc| pc.model.clone()));
+
+    let api_key = flags
+        .api_key
+        .clone()
+        .or_else(|| config.provider.as_ref().and_then(|pc| pc.api_key.clone()));
+
+    let base_url = flags
+        .base_url
+        .clone()
+        .or_else(|| config.provider.as_ref().and_then(|pc| pc.base_url.clone()));
+
+    let cwd = std::env::current_dir().ok();
+
+    let kx_config = KxProviderConfig {
+        base_url,
+        api_key,
+        model,
+        max_tokens: config.provider.as_ref().and_then(|pc| pc.max_turns),
+        workspace_path: cwd,
+        sandbox_profile: None,
+    };
+
+    let provider = ProviderFactory::create(&provider_name, kx_config)
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    Ok(provider)
+}
+
+fn check_claude_cli() -> Result<(), Box<dyn std::error::Error>> {
+    let output = std::process::Command::new("claude")
+        .arg("--version")
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let version_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let parts: Vec<&str> = version_str.split(|c: char| !c.is_ascii_digit()).collect();
+            let major = parts.first().and_then(|s| s.parse::<u32>().ok());
+            let minor = parts.get(1).and_then(|s| s.parse::<u32>().ok());
+
+            if let (Some(maj), Some(min)) = (major, minor) {
+                if (maj, min) < MIN_CLAUDE_VERSION {
+                    eprintln!(
+                        "{} Claude CLI {version_str} is below minimum {}.{}. Please update.",
+                        "warn:".yellow().bold(),
+                        MIN_CLAUDE_VERSION.0,
+                        MIN_CLAUDE_VERSION.1,
+                    );
+                }
+            }
+            Ok(())
         }
-        _ => ClaudeCodeProvider::new(),
+        _ => {
+            eprintln!("{}", "error: Claude CLI not found".red().bold());
+            eprintln!();
+            eprintln!("  To fix this:");
+            eprintln!("    1. Install Claude Code: https://claude.ai/download");
+            eprintln!("    2. Verify installation: which claude");
+            eprintln!("    3. If installed, add to PATH: export PATH=\"$PATH:/path/to/claude\"");
+            eprintln!();
+            Err("claude CLI not available".into())
+        }
     }
 }
 
@@ -381,31 +449,283 @@ fn show_first_run_welcome(stack: &str) {
 
 const MIN_CLAUDE_VERSION: (u32, u32) = (2, 0);
 
-fn check_claude_version() {
-    let output = std::process::Command::new("claude")
-        .arg("--version")
-        .output();
+async fn cmd_init() -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
+    let project_name = stack::project_name(&cwd);
+    let data_dir = data_dir_for(&project_name);
 
-    let version_str = match output {
-        Ok(out) => String::from_utf8_lossy(&out.stdout).trim().to_string(),
-        Err(_) => return,
-    };
+    std::fs::create_dir_all(&data_dir)?;
 
-    // Parse "2.1.70 (Claude Code)" -> (2, 1)
-    let parts: Vec<&str> = version_str.split(|c: char| !c.is_ascii_digit()).collect();
-    let major = parts.first().and_then(|s| s.parse::<u32>().ok());
-    let minor = parts.get(1).and_then(|s| s.parse::<u32>().ok());
+    let skills_dir = data_dir.join("skills");
+    let installed = builtins::install_builtin_skills(&skills_dir)?;
 
-    if let (Some(maj), Some(min)) = (major, minor) {
-        if (maj, min) < MIN_CLAUDE_VERSION {
-            eprintln!(
-                "{} Claude CLI {version_str} is below minimum {}.{}. Please update.",
-                "warn:".yellow().bold(),
-                MIN_CLAUDE_VERSION.0,
-                MIN_CLAUDE_VERSION.1,
+    println!("{}", "kx init complete.".green().bold());
+    println!("  {} {}", "Project:".dimmed(), project_name.bold());
+    println!("  {} {}", "Data dir:".dimmed(), data_dir.display());
+    println!(
+        "  {} {installed} builtin skills installed",
+        "Skills:".dimmed()
+    );
+    println!("\n  Run {} to start coding.\n", "kx dev".cyan());
+    Ok(())
+}
+
+async fn cmd_pipeline(
+    action: PipelineAction,
+    flags: &ProviderFlags,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
+    let project_config = config::ProjectConfig::load(&cwd);
+    let project_name = stack::project_name(&cwd);
+    let data_dir = data_dir_for(&project_name);
+
+    match action {
+        PipelineAction::Run { name } => {
+            let data_str = data_dir.to_str().unwrap_or("~/.kx");
+            let loaded = kernex_pipelines::load_topology(data_str, &name)?;
+
+            println!(
+                "{} {} (v{})",
+                "pipeline:".green().bold(),
+                loaded.topology.topology.name.bold(),
+                loaded.topology.topology.version
             );
+            println!(
+                "  {} {}",
+                "Description:".dimmed(),
+                loaded.topology.topology.description
+            );
+            println!(
+                "  {} {} phases, {} agents\n",
+                "Topology:".dimmed(),
+                loaded.topology.phases.len(),
+                loaded.agents.len()
+            );
+
+            let provider = build_provider(flags, &project_config)?;
+
+            let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
+            let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
+
+            let runtime = RuntimeBuilder::new()
+                .data_dir(data_str)
+                .system_prompt(&system_prompt)
+                .channel("pipeline")
+                .project(&project_name)
+                .build()
+                .await?;
+
+            let needs = context_needs();
+
+            for (i, phase) in loaded.topology.phases.iter().enumerate() {
+                let phase_num = i + 1;
+                let total = loaded.topology.phases.len();
+
+                println!(
+                    "{} [{phase_num}/{total}] {} (agent: {})",
+                    "phase:".cyan().bold(),
+                    phase.name.bold(),
+                    phase.agent
+                );
+
+                let agent_content = loaded.agent_content(&phase.agent)?;
+                let prompt = format!(
+                    "You are executing phase '{}' of pipeline '{}'.\n\n\
+                     ## Agent instructions\n{}\n\n\
+                     ## Task\nExecute this phase. Work in the current directory.",
+                    phase.name, loaded.topology.topology.name, agent_content
+                );
+
+                let spinner = create_spinner(&format!("Running {}...", phase.name));
+                let request = Request::text("pipeline", &prompt);
+                let result = runtime
+                    .complete_with_needs(provider.as_ref(), &request, &needs)
+                    .await;
+                spinner.finish_and_clear();
+
+                match result {
+                    Ok(response) => {
+                        println!("{}\n", response.text);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{} phase '{}' failed: {e}",
+                            "error:".red().bold(),
+                            phase.name
+                        );
+                        return Err(e.into());
+                    }
+                }
+            }
+
+            println!("{}", "Pipeline complete.".green().bold());
+            Ok(())
+        }
+        PipelineAction::List => {
+            let topologies_dir = data_dir.join("topologies");
+            if !topologies_dir.exists() {
+                println!(
+                    "{}",
+                    "  No pipelines found. Add topologies to ~/.kx/projects/<project>/topologies/\n"
+                        .dimmed()
+                );
+                return Ok(());
+            }
+
+            println!("\n  {}\n", "Available pipelines".bold());
+            let entries = std::fs::read_dir(&topologies_dir)?;
+            let mut found = false;
+            for entry in entries.flatten() {
+                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let toml_path = entry.path().join("TOPOLOGY.toml");
+                    if toml_path.exists() {
+                        println!("  {}", name.cyan());
+                        found = true;
+                    }
+                }
+            }
+            if !found {
+                println!("{}", "  No pipelines found.\n".dimmed());
+            } else {
+                println!();
+            }
+            Ok(())
         }
     }
+}
+
+async fn cmd_audit(flags: &ProviderFlags) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
+    let project_config = config::ProjectConfig::load(&cwd);
+    let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
+    let project_name = stack::project_name(&cwd);
+    let data_dir = data_dir_for(&project_name);
+
+    let provider = build_provider(flags, &project_config)?;
+
+    if flags.name == "claude-code" {
+        check_claude_cli()?;
+    }
+
+    let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
+
+    let runtime = RuntimeBuilder::new()
+        .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
+        .system_prompt(&system_prompt)
+        .channel("audit")
+        .project(&project_name)
+        .build()
+        .await?;
+
+    let needs = context_needs();
+
+    let prompt = format!(
+        "Perform a comprehensive repository health audit for this {} project '{}'.\n\n\
+         Check and report on:\n\
+         1. **Dependencies** — outdated, vulnerable, or unused deps\n\
+         2. **Tests** — test coverage, missing tests, flaky tests\n\
+         3. **Code quality** — linting issues, dead code, complexity hotspots\n\
+         4. **Documentation** — missing or outdated docs, README completeness\n\
+         5. **Project structure** — file organization, naming conventions\n\
+         6. **Security** — hardcoded secrets, insecure patterns\n\
+         7. **CI/CD** — build config, missing checks\n\n\
+         Provide a structured report with severity levels (critical/warning/info) \
+         and actionable recommendations.",
+        detected_stack, project_name
+    );
+
+    println!(
+        "{} {} ({})\n",
+        "kx audit".green().bold(),
+        project_name.bold(),
+        detected_stack
+    );
+
+    let spinner = create_spinner("Auditing repository...");
+    let request = Request::text("user", &prompt);
+    let result = runtime
+        .complete_with_needs(provider.as_ref(), &request, &needs)
+        .await;
+    spinner.finish_and_clear();
+
+    match result {
+        Ok(response) => {
+            println!("{}\n", response.text);
+        }
+        Err(e) => {
+            eprintln!("{} audit failed: {e}", "error:".red().bold());
+        }
+    }
+
+    commands::close_conversation(&runtime, "Audit completed.").await;
+    Ok(())
+}
+
+async fn cmd_docs(flags: &ProviderFlags) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
+    let project_config = config::ProjectConfig::load(&cwd);
+    let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
+    let project_name = stack::project_name(&cwd);
+    let data_dir = data_dir_for(&project_name);
+
+    let provider = build_provider(flags, &project_config)?;
+
+    if flags.name == "claude-code" {
+        check_claude_cli()?;
+    }
+
+    let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
+
+    let runtime = RuntimeBuilder::new()
+        .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
+        .system_prompt(&system_prompt)
+        .channel("docs")
+        .project(&project_name)
+        .build()
+        .await?;
+
+    let needs = context_needs();
+
+    let prompt = format!(
+        "Perform a documentation audit for this {} project '{}'.\n\n\
+         Analyze and report on:\n\
+         1. **README** — completeness, accuracy, setup instructions\n\
+         2. **API docs** — missing or outdated function/module documentation\n\
+         3. **Inline comments** — misleading or stale comments\n\
+         4. **Examples** — missing usage examples, broken code snippets\n\
+         5. **Changelog** — whether changes are tracked\n\
+         6. **Architecture docs** — missing high-level design documentation\n\n\
+         For each issue found, suggest specific fixes. \
+         Flag any docs that reference code that no longer exists.",
+        detected_stack, project_name
+    );
+
+    println!(
+        "{} {} ({})\n",
+        "kx docs".green().bold(),
+        project_name.bold(),
+        detected_stack
+    );
+
+    let spinner = create_spinner("Auditing documentation...");
+    let request = Request::text("user", &prompt);
+    let result = runtime
+        .complete_with_needs(provider.as_ref(), &request, &needs)
+        .await;
+    spinner.finish_and_clear();
+
+    match result {
+        Ok(response) => {
+            println!("{}\n", response.text);
+        }
+        Err(e) => {
+            eprintln!("{} docs audit failed: {e}", "error:".red().bold());
+        }
+    }
+
+    commands::close_conversation(&runtime, "Docs audit completed.").await;
+    Ok(())
 }
 
 fn data_dir_for(project_name: &str) -> PathBuf {
