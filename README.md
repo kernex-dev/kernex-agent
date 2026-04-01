@@ -293,13 +293,41 @@ Where `{project-name}` is derived from the directory name. Each project maintain
 - Stored facts
 - Input history (readline)
 
+## Providers
+
+kx defaults to Claude Code CLI as its AI backend. The underlying `kernex-providers` crate supports additional backends:
+
+| Flag | Provider | Requires |
+|------|----------|---------|
+| `--provider claude-code` | Claude Code CLI (default) | Claude CLI installed |
+| `--provider anthropic` | Anthropic API | `ANTHROPIC_API_KEY` |
+| `--provider openai` | OpenAI API | `OPENAI_API_KEY` |
+| `--provider ollama` | Ollama (local) | Ollama running at `localhost:11434` |
+| `--provider gemini` | Google Gemini | `GEMINI_API_KEY` |
+| `--provider openrouter` | OpenRouter | `OPENROUTER_API_KEY` |
+
+Provider is auto-detected if `--provider` is omitted. Override the model with `--model <name>`.
+
+You can also set defaults via environment variables:
+
+```bash
+export KERNEX_PROVIDER=anthropic
+export KERNEX_MODEL=claude-opus-4-6-20251001
+```
+
 ## Architecture
 
 kx is a thin CLI wrapper around the Kernex runtime:
 
-- **kernex-runtime** - Core engine for agent lifecycle and message handling
-- **kernex-providers** - Claude Code CLI integration
-- **kernex-core** - Shared types and context management
+- **kernex-runtime** - Core engine: `Runtime::run()` drives the agentic loop, `RuntimeBuilder` wires all subsystems
+- **kernex-providers** - AI backends: Claude Code CLI, Anthropic, OpenAI, Ollama, Gemini, OpenRouter
+- **kernex-core** - Shared types (`Request`, `Response`, `Context`), `HookRunner` trait for tool lifecycle events
+- **kernex-memory** - SQLite-backed persistent memory with conversation history and reward-based learning
+- **kernex-skills** - Skill loader for `SKILL.md` files (Skills.sh compatible format)
+
+The `HookRunner` trait lets you intercept tool calls before and after execution (`pre_tool` / `post_tool` / `on_stop`). kx uses this for `--verbose` output and session summaries.
+
+For the full implementation spec (provider resolution, runtime wiring, hook runner, KAIROS scheduler), see [kernex-dev/docs/kernex-agent.md](https://github.com/kernex-dev/kernex-dev/blob/main/docs/kernex-agent.md).
 
 For details on the underlying runtime, see [kernex-dev](https://github.com/kernex-dev/kernex-dev).
 
