@@ -488,13 +488,10 @@ fn api_key_var(provider: &str) -> &'static str {
 }
 
 fn env_api_key(provider: &str) -> Option<String> {
-    let var = match provider {
-        "openai" => "OPENAI_API_KEY",
-        "anthropic" => "ANTHROPIC_API_KEY",
-        "gemini" => "GEMINI_API_KEY",
-        "openrouter" => "OPENROUTER_API_KEY",
-        _ => return None,
-    };
+    let var = api_key_var(provider);
+    if var == "API_KEY" {
+        return None;
+    }
     std::env::var(var).ok().filter(|v| !v.is_empty())
 }
 
