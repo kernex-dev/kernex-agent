@@ -4,6 +4,13 @@ use std::path::Path;
 use crate::skills::manifest::{compute_sha256, SkillsManifest};
 use crate::skills::types::{InstalledSkill, Permission, TrustLevel};
 
+#[cfg(not(test))]
+use std::io::Read as _;
+
+#[cfg(not(test))]
+const BUILTIN_SKILLS_RAW_BASE: &str =
+    "https://raw.githubusercontent.com/kernex-dev/kernex-dev/main/examples/skills/builtin";
+
 struct BuiltinSkill {
     name: &'static str,
     content: &'static str,
@@ -67,19 +74,20 @@ pub fn install_builtin_skills(data_dir: &Path) -> Result<usize, Box<dyn std::err
     let now = chrono_now();
 
     for skill in BUILTIN_SKILLS {
+        let content = fetch_skill_content(skill.name, skill.content);
         let skill_dir = skills_dir.join(skill.name);
         std::fs::create_dir_all(&skill_dir)?;
         let skill_path = skill_dir.join("SKILL.md");
-        std::fs::write(&skill_path, skill.content)?;
+        std::fs::write(&skill_path, content.as_bytes())?;
 
-        let sha = compute_sha256(skill.content.as_bytes());
+        let sha = compute_sha256(content.as_bytes());
         let granted = Permission::for_trust_level(TrustLevel::Trusted);
 
         manifest.add(InstalledSkill {
             name: skill.name.to_string(),
             source: format!("builtin/{}", skill.name),
             sha256: sha,
-            size_bytes: skill.content.len() as u64,
+            size_bytes: content.len() as u64,
             installed_at: now.clone(),
             trust: TrustLevel::Trusted,
             granted_permissions: granted,
@@ -91,6 +99,36 @@ pub fn install_builtin_skills(data_dir: &Path) -> Result<usize, Box<dyn std::err
 
     manifest.save(data_dir)?;
     Ok(installed)
+}
+
+/// Fetch a skill's SKILL.md from the kernex-dev GitHub repo.
+/// Falls back to the embedded bytes if the network is unavailable or the
+/// response is malformed. Tests always use the embedded path.
+fn fetch_skill_content(name: &str, fallback: &'static str) -> String {
+    #[cfg(not(test))]
+    {
+        let url = format!("{BUILTIN_SKILLS_RAW_BASE}/{name}/SKILL.md");
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(5))
+            .build();
+        if let Ok(resp) = agent.get(&url).call() {
+            if resp.status() == 200 {
+                let mut body = String::new();
+                if resp
+                    .into_reader()
+                    .take(512 * 1024)
+                    .read_to_string(&mut body)
+                    .is_ok()
+                    && !body.is_empty()
+                {
+                    return body;
+                }
+            }
+        }
+    }
+    #[cfg(test)]
+    let _ = name;
+    fallback.to_string()
 }
 
 fn chrono_now() -> String {
