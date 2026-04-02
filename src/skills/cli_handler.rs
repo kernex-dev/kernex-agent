@@ -91,10 +91,15 @@ pub async fn add_skill(
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(5))
         .build();
-    let response = agent
-        .get(&url)
-        .call()
-        .map_err(|e| format!("failed to fetch skill: {e}"))?;
+    let response = agent.get(&url).call().map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("timed out") || msg.contains("timeout") {
+            "failed to fetch skill: request timed out (5s). Check your connection or try again."
+                .to_string()
+        } else {
+            format!("failed to fetch skill: {e}")
+        }
+    })?;
 
     if response.status() != 200 {
         return Err(format!(
