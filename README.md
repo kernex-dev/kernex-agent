@@ -315,6 +315,8 @@ kx defaults to Claude Code CLI as its AI backend. The underlying `kernex-provide
 | `--provider fireworks` | Fireworks AI | `FIREWORKS_API_KEY` |
 | `--provider xai` | xAI (Grok) | `XAI_API_KEY` |
 
+**AWS Bedrock** is available as an optional compile-time feature. Build with `--features bedrock` to enable `--provider bedrock`. Requires standard AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`). Bedrock is not included in the 11 built-in provider count above.
+
 Provider is auto-detected if `--provider` is omitted. Override the model with `--model <name>`.
 
 You can also set defaults via environment variables:
@@ -331,7 +333,7 @@ kx is a thin CLI wrapper around the Kernex runtime:
 - **kernex-runtime** - Core engine: `Runtime::run()` drives the agentic loop, `RuntimeBuilder` wires all subsystems
 - **kernex-providers** - AI backends: Claude Code CLI, Anthropic, OpenAI, Ollama, Gemini, OpenRouter, Groq, Mistral, DeepSeek, Fireworks, xAI (11 built-in; AWS Bedrock optional)
 - **kernex-core** - Shared types (`Request`, `Response`, `Context`), `HookRunner` trait for tool lifecycle events
-- **kernex-memory** - SQLite-backed persistent memory with conversation history and reward-based learning
+- **kernex-memory** - SQLite-backed persistent memory with conversation history and reward-based learning (transitive via kernex-runtime)
 - **kernex-skills** - Skill loader for `SKILL.md` files (Skills.sh compatible format)
 
 The `HookRunner` trait lets you intercept tool calls before and after execution (`pre_tool` / `post_tool` / `on_stop`). kx uses this for `--verbose` output and session summaries.
