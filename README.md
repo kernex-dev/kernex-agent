@@ -309,6 +309,11 @@ kx defaults to Claude Code CLI as its AI backend. The underlying `kernex-provide
 | `--provider ollama` | Ollama (local) | Ollama running at `localhost:11434` |
 | `--provider gemini` | Google Gemini | `GEMINI_API_KEY` |
 | `--provider openrouter` | OpenRouter | `OPENROUTER_API_KEY` |
+| `--provider groq` | Groq | `GROQ_API_KEY` |
+| `--provider mistral` | Mistral | `MISTRAL_API_KEY` |
+| `--provider deepseek` | DeepSeek | `DEEPSEEK_API_KEY` |
+| `--provider fireworks` | Fireworks AI | `FIREWORKS_API_KEY` |
+| `--provider xai` | xAI (Grok) | `XAI_API_KEY` |
 
 Provider is auto-detected if `--provider` is omitted. Override the model with `--model <name>`.
 
@@ -324,7 +329,7 @@ export KERNEX_MODEL=claude-opus-4-6-20251001
 kx is a thin CLI wrapper around the Kernex runtime:
 
 - **kernex-runtime** - Core engine: `Runtime::run()` drives the agentic loop, `RuntimeBuilder` wires all subsystems
-- **kernex-providers** - AI backends: Claude Code CLI, Anthropic, OpenAI, Ollama, Gemini, OpenRouter
+- **kernex-providers** - AI backends: Claude Code CLI, Anthropic, OpenAI, Ollama, Gemini, OpenRouter, Groq, Mistral, DeepSeek, Fireworks, xAI (11 built-in; AWS Bedrock optional)
 - **kernex-core** - Shared types (`Request`, `Response`, `Context`), `HookRunner` trait for tool lifecycle events
 - **kernex-memory** - SQLite-backed persistent memory with conversation history and reward-based learning
 - **kernex-skills** - Skill loader for `SKILL.md` files (Skills.sh compatible format)
