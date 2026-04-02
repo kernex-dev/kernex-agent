@@ -6,12 +6,12 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// AI provider to use (claude-code, ollama, openai, anthropic, gemini, openrouter)
-    #[arg(long, global = true, default_value = "claude-code")]
+    /// AI provider to use (claude-code, anthropic, openai, ollama, gemini, openrouter, groq, mistral, deepseek, fireworks, xai)
+    #[arg(short = 'p', long, global = true, default_value = "claude-code")]
     pub provider: String,
 
     /// Model override (provider-specific, e.g. gpt-4o, llama3.2)
-    #[arg(long, global = true)]
+    #[arg(short = 'm', long, global = true)]
     pub model: Option<String>,
 
     /// API key for providers that require one
@@ -21,6 +21,26 @@ pub struct Cli {
     /// Base URL override (e.g. http://localhost:11434 for Ollama)
     #[arg(long, global = true)]
     pub base_url: Option<String>,
+
+    /// Override the active project scope (default: current directory name)
+    #[arg(long, global = true)]
+    pub project: Option<String>,
+
+    /// Channel identifier for memory scoping (default: cli)
+    #[arg(long, global = true)]
+    pub channel: Option<String>,
+
+    /// Max agentic loop turns per request (default: 50)
+    #[arg(long, global = true)]
+    pub max_turns: Option<usize>,
+
+    /// Disable persistent memory for this session
+    #[arg(long, global = true)]
+    pub no_memory: bool,
+
+    /// Print tool calls and hook events to stderr
+    #[arg(long, global = true)]
+    pub verbose: bool,
 
     /// One-shot message when no subcommand is given (kx "fix the bug")
     pub message: Option<String>,
@@ -420,5 +440,57 @@ mod tests {
         let result = Cli::try_parse_from(["kx", "--help"]);
         // --help causes early exit
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parses_provider_short_flag() {
+        let cli = Cli::try_parse_from(["kx", "-p", "ollama", "dev"]).unwrap();
+        assert_eq!(cli.provider, "ollama");
+    }
+
+    #[test]
+    fn cli_parses_model_short_flag() {
+        let cli = Cli::try_parse_from(["kx", "-m", "llama3.2", "dev"]).unwrap();
+        assert_eq!(cli.model, Some("llama3.2".to_string()));
+    }
+
+    #[test]
+    fn cli_parses_project_flag() {
+        let cli = Cli::try_parse_from(["kx", "--project", "my-app", "dev"]).unwrap();
+        assert_eq!(cli.project, Some("my-app".to_string()));
+    }
+
+    #[test]
+    fn cli_parses_channel_flag() {
+        let cli = Cli::try_parse_from(["kx", "--channel", "ci", "dev"]).unwrap();
+        assert_eq!(cli.channel, Some("ci".to_string()));
+    }
+
+    #[test]
+    fn cli_parses_max_turns_flag() {
+        let cli = Cli::try_parse_from(["kx", "--max-turns", "20", "dev"]).unwrap();
+        assert_eq!(cli.max_turns, Some(20));
+    }
+
+    #[test]
+    fn cli_parses_no_memory_flag() {
+        let cli = Cli::try_parse_from(["kx", "--no-memory", "dev"]).unwrap();
+        assert!(cli.no_memory);
+    }
+
+    #[test]
+    fn cli_parses_verbose_flag() {
+        let cli = Cli::try_parse_from(["kx", "--verbose", "dev"]).unwrap();
+        assert!(cli.verbose);
+    }
+
+    #[test]
+    fn cli_flags_default_false() {
+        let cli = Cli::try_parse_from(["kx", "dev"]).unwrap();
+        assert!(!cli.no_memory);
+        assert!(!cli.verbose);
+        assert!(cli.project.is_none());
+        assert!(cli.channel.is_none());
+        assert!(cli.max_turns.is_none());
     }
 }
