@@ -74,6 +74,21 @@ pub enum Command {
         #[command(subcommand)]
         action: CronAction,
     },
+    /// Run kx as a headless HTTP server for remote agent execution
+    Serve {
+        /// Host address to bind
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Port to listen on
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+        /// Bearer auth token (or set KERNEX_AUTH_TOKEN env var)
+        #[arg(long)]
+        auth_token: Option<String>,
+        /// Max concurrent agent jobs
+        #[arg(long, default_value_t = 4)]
+        workers: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -419,6 +434,63 @@ mod tests {
             }
         } else {
             panic!("Expected Cron command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_serve_defaults() {
+        let cli = Cli::try_parse_from(["kx", "serve", "--auth-token", "secret"]).unwrap();
+        if let Some(Command::Serve {
+            host,
+            port,
+            auth_token,
+            workers,
+        }) = cli.command
+        {
+            assert_eq!(host, "127.0.0.1");
+            assert_eq!(port, 8080);
+            assert_eq!(auth_token, Some("secret".to_string()));
+            assert_eq!(workers, 4);
+        } else {
+            panic!("Expected Serve command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_serve_custom_host_port() {
+        let cli = Cli::try_parse_from([
+            "kx",
+            "serve",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "9000",
+            "--workers",
+            "8",
+        ])
+        .unwrap();
+        if let Some(Command::Serve {
+            host,
+            port,
+            workers,
+            ..
+        }) = cli.command
+        {
+            assert_eq!(host, "0.0.0.0");
+            assert_eq!(port, 9000);
+            assert_eq!(workers, 8);
+        } else {
+            panic!("Expected Serve command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_serve_no_auth_token() {
+        let cli = Cli::try_parse_from(["kx", "serve"]).unwrap();
+        if let Some(Command::Serve { auth_token, .. }) = cli.command {
+            assert!(auth_token.is_none());
+        } else {
+            panic!("Expected Serve command");
         }
     }
 
