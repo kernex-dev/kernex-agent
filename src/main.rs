@@ -15,16 +15,19 @@ mod utils;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use clap::Parser;
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
 use kernex_core::context::ContextNeeds;
+use kernex_core::hooks::{HookOutcome, HookRunner};
 use kernex_core::message::Request;
 use kernex_core::traits::Provider;
 use kernex_providers::factory::{ProviderConfig as KxProviderConfig, ProviderFactory};
 use kernex_runtime::{Runtime, RuntimeBuilder};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use serde_json::Value;
 
 use crate::cli::{Cli, Command, CronAction, PipelineAction, SkillsAction};
 use crate::commands::CommandResult;
@@ -45,6 +48,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         model: cli.model.clone(),
         api_key: cli.api_key.clone(),
         base_url: cli.base_url.clone(),
+        project: cli.project.clone(),
+        channel: cli.channel.clone(),
+        max_turns: cli.max_turns,
+        no_memory: cli.no_memory,
+        verbose: cli.verbose,
     };
 
     match cli.command {
@@ -59,11 +67,39 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+#[derive(Debug)]
+struct CliHookRunner {
+    verbose: bool,
+}
+
+#[async_trait]
+impl HookRunner for CliHookRunner {
+    async fn pre_tool(&self, tool_name: &str, _input: &Value) -> HookOutcome {
+        if self.verbose {
+            eprintln!("[tool] {tool_name}");
+        }
+        HookOutcome::Allow
+    }
+
+    async fn post_tool(&self, _tool_name: &str, _result: &str, is_error: bool) {
+        if self.verbose && is_error {
+            eprintln!("[tool error] {_tool_name}");
+        }
+    }
+
+    async fn on_stop(&self, _final_text: &str) {}
+}
+
 struct ProviderFlags {
     name: String,
     model: Option<String>,
     api_key: Option<String>,
     base_url: Option<String>,
+    project: Option<String>,
+    channel: Option<String>,
+    max_turns: Option<usize>,
+    no_memory: bool,
+    verbose: bool,
 }
 
 async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Error>> {
@@ -93,12 +129,16 @@ async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Erro
     }
 }
 
-fn context_needs() -> ContextNeeds {
-    ContextNeeds {
-        recall: true,
-        summaries: true,
-        profile: true,
-        ..Default::default()
+fn context_needs(no_memory: bool) -> ContextNeeds {
+    if no_memory {
+        ContextNeeds::default()
+    } else {
+        ContextNeeds {
+            recall: true,
+            summaries: true,
+            profile: true,
+            ..Default::default()
+        }
     }
 }
 
@@ -109,7 +149,10 @@ async fn cmd_dev(
     let cwd = std::env::current_dir()?;
     let project_config = config::ProjectConfig::load(&cwd);
     let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
-    let project_name = stack::project_name(&cwd);
+    let project_name = flags
+        .project
+        .clone()
+        .unwrap_or_else(|| stack::project_name(&cwd));
 
     let data_dir = data_dir_for(&project_name);
 
@@ -140,14 +183,17 @@ async fn cmd_dev(
         RuntimeBuilder::new()
             .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
             .system_prompt(&system_prompt)
-            .channel("cli")
+            .channel(flags.channel.as_deref().unwrap_or("cli"))
             .project(&project_name)
+            .hook_runner(Arc::new(CliHookRunner {
+                verbose: flags.verbose,
+            }))
             .build()
             .await?,
     );
 
-    let needs = context_needs();
-    scheduler::spawn(runtime.clone(), provider.clone(), context_needs(), 60);
+    let needs = context_needs(flags.no_memory);
+    scheduler::spawn(runtime.clone(), provider.clone(), context_needs(false), 60);
 
     if let Some(msg) = one_shot {
         let request = Request::text("user", &msg);
@@ -401,7 +447,10 @@ fn build_provider(
         base_url,
         api_key,
         model,
-        max_tokens: config.provider.as_ref().and_then(|pc| pc.max_turns),
+        max_tokens: flags
+            .max_turns
+            .map(|n| n as u32)
+            .or_else(|| config.provider.as_ref().and_then(|pc| pc.max_turns)),
         workspace_path: cwd,
         ..Default::default()
     };
@@ -410,7 +459,7 @@ fn build_provider(
         let msg = e.to_string();
         if msg.contains("unknown") || msg.contains("unsupported") || msg.contains("not found") {
             format!(
-                "unknown provider '{}'. Valid choices: claude-code, anthropic, openai, gemini, openrouter, ollama",
+                "unknown provider '{}'. Valid choices: claude-code, anthropic, openai, ollama, gemini, openrouter, groq, mistral, deepseek, fireworks, xai",
                 provider_name
             )
         } else {
@@ -432,6 +481,11 @@ fn default_model(provider: &str) -> &'static str {
         "gemini" => "gemini-2.0-flash",
         "openrouter" => "anthropic/claude-sonnet-4-5",
         "ollama" => "llama3.2",
+        "groq" => "llama-3.3-70b-versatile",
+        "mistral" => "mistral-large-latest",
+        "deepseek" => "deepseek-chat",
+        "fireworks" => "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        "xai" => "grok-2-latest",
         _ => "claude-code",
     }
 }
@@ -501,6 +555,11 @@ fn api_key_var(provider: &str) -> &'static str {
         "anthropic" => "ANTHROPIC_API_KEY",
         "gemini" => "GEMINI_API_KEY",
         "openrouter" => "OPENROUTER_API_KEY",
+        "groq" => "GROQ_API_KEY",
+        "mistral" => "MISTRAL_API_KEY",
+        "deepseek" => "DEEPSEEK_API_KEY",
+        "fireworks" => "FIREWORKS_API_KEY",
+        "xai" => "XAI_API_KEY",
         _ => "API_KEY",
     }
 }
@@ -622,7 +681,7 @@ async fn cmd_pipeline(
                 }
             }
 
-            let needs = context_needs();
+            let needs = context_needs(flags.no_memory);
 
             let handoff_dir = cwd.join(".kx-pipeline").join(&name);
             std::fs::create_dir_all(&handoff_dir)?;
@@ -765,10 +824,13 @@ async fn run_oneshot_command(
         .system_prompt(&system_prompt)
         .channel(channel)
         .project(&project_name)
+        .hook_runner(Arc::new(CliHookRunner {
+            verbose: flags.verbose,
+        }))
         .build()
         .await?;
 
-    let needs = context_needs();
+    let needs = context_needs(flags.no_memory);
     let prompt = build_prompt(detected_stack, &project_name);
 
     println!(
