@@ -132,11 +132,7 @@ fn fetch_skill_content(name: &str, fallback: &'static str) -> String {
 }
 
 fn chrono_now() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    format!("{secs}")
+    crate::utils::iso_timestamp()
 }
 
 #[allow(dead_code)]
