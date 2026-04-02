@@ -10,6 +10,7 @@ mod prompts;
 mod scheduler;
 mod skills;
 mod stack;
+mod utils;
 
 use std::path::PathBuf;
 use std::sync::Arc;
