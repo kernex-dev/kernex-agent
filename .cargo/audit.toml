@@ -1,0 +1,9 @@
+[advisories]
+# RUSTSEC-2023-0071: Marvin Attack timing sidechannel in the rsa crate.
+# This advisory has no upstream fix (rsa 0.9.x is unpatched).
+# rsa enters the dependency tree via sqlx-mysql, pulled in transitively
+# through kernex-runtime -> kernex-memory -> sqlx (sqlite only).
+# sqlx-macros-core compiles sqlx-mysql at build time even when only the
+# sqlite feature is enabled. MySQL is never used or activated at runtime.
+# Risk is accepted because the vulnerable code path is never executed.
+ignore = ["RUSTSEC-2023-0071"]
