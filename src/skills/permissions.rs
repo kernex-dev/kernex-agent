@@ -18,7 +18,6 @@ pub struct PermissionPolicy {
     #[serde(default)]
     pub trusted_sources: Vec<String>,
     #[serde(default)]
-    #[allow(dead_code)]
     pub blocked_skills: Vec<String>,
     #[serde(default)]
     pub overrides: HashMap<String, SkillOverride>,
@@ -36,7 +35,6 @@ impl Default for PermissionPolicy {
 }
 
 impl PermissionPolicy {
-    #[allow(dead_code)]
     pub fn is_blocked(&self, skill_name: &str) -> bool {
         self.blocked_skills.iter().any(|b| b == skill_name)
     }
@@ -50,17 +48,8 @@ impl PermissionPolicy {
 
 #[derive(Debug, Clone)]
 pub struct ResolvedPermissions {
-    #[allow(dead_code)]
-    pub trust: TrustLevel,
     pub granted: BTreeSet<Permission>,
     pub denied: BTreeSet<Permission>,
-}
-
-impl ResolvedPermissions {
-    #[allow(dead_code)]
-    pub fn has(&self, perm: Permission) -> bool {
-        self.granted.contains(&perm)
-    }
 }
 
 pub fn resolve_permissions(
@@ -103,11 +92,7 @@ pub fn resolve_permissions(
         .filter(|p| !granted.contains(p))
         .collect();
 
-    ResolvedPermissions {
-        trust,
-        granted,
-        denied,
-    }
+    ResolvedPermissions { granted, denied }
 }
 
 #[cfg(test)]
@@ -153,7 +138,6 @@ mod tests {
 
         let resolved = resolve_permissions(&requested, "random/skill", &policy, "test-skill");
 
-        assert_eq!(resolved.trust, TrustLevel::Sandboxed);
         assert!(resolved.granted.contains(&Permission::ContextFiles));
         assert!(!resolved.granted.contains(&Permission::SuggestEdits));
         assert!(resolved.denied.contains(&Permission::SuggestEdits));
@@ -172,7 +156,6 @@ mod tests {
 
         let resolved = resolve_permissions(&requested, "anthropics/skills", &policy, "test-skill");
 
-        assert_eq!(resolved.trust, TrustLevel::Trusted);
         assert!(resolved.granted.contains(&Permission::ContextFiles));
         assert!(resolved.granted.contains(&Permission::SuggestCommands));
         assert!(resolved.denied.is_empty());
@@ -197,7 +180,6 @@ mod tests {
 
         let resolved = resolve_permissions(&requested, "random/repo", &policy, "special-skill");
 
-        assert_eq!(resolved.trust, TrustLevel::Trusted);
         assert!(resolved.granted.contains(&Permission::SuggestCommands));
     }
 
@@ -227,15 +209,14 @@ mod tests {
     }
 
     #[test]
-    fn resolved_has_permission() {
+    fn resolved_contains_permission() {
         let mut granted = BTreeSet::new();
         granted.insert(Permission::ContextFiles);
         let resolved = ResolvedPermissions {
-            trust: TrustLevel::Sandboxed,
             granted,
             denied: BTreeSet::new(),
         };
-        assert!(resolved.has(Permission::ContextFiles));
-        assert!(!resolved.has(Permission::SuggestEdits));
+        assert!(resolved.granted.contains(&Permission::ContextFiles));
+        assert!(!resolved.granted.contains(&Permission::SuggestEdits));
     }
 }

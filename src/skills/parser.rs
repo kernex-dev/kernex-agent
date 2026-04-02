@@ -6,15 +6,10 @@ use super::types::{Permission, SkillManifest, SkillSource, MAX_SKILL_NAME_LEN, M
 #[derive(Debug, Clone)]
 pub enum SkillParseError {
     MissingFrontmatter,
-    #[allow(dead_code)]
-    InvalidYaml(String),
     MissingField(String),
     InvalidName(String),
     InvalidSource(String),
-    TooLarge {
-        size: u64,
-        max: u64,
-    },
+    TooLarge { size: u64, max: u64 },
     InvalidPermission(String),
 }
 
@@ -24,7 +19,6 @@ impl fmt::Display for SkillParseError {
             Self::MissingFrontmatter => {
                 write!(f, "missing YAML frontmatter (expected --- delimiters)")
             }
-            Self::InvalidYaml(msg) => write!(f, "invalid YAML frontmatter: {msg}"),
             Self::MissingField(field) => write!(f, "missing required field: {field}"),
             Self::InvalidName(msg) => write!(f, "invalid skill name: {msg}"),
             Self::InvalidSource(msg) => write!(f, "invalid skill source: {msg}"),

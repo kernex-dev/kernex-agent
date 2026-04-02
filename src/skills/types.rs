@@ -29,18 +29,7 @@ pub enum Permission {
 }
 
 impl Permission {
-    #[allow(dead_code)]
-    pub fn description(self) -> &'static str {
-        match self {
-            Self::ContextFiles => "Reference project files",
-            Self::ContextGit => "Reference git history/status",
-            Self::SuggestEdits => "Suggest code modifications",
-            Self::SuggestCommands => "Suggest shell commands",
-            Self::SuggestNetwork => "Suggest network requests",
-        }
-    }
-
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn risk_level(self) -> RiskLevel {
         match self {
             Self::ContextFiles | Self::ContextGit => RiskLevel::Low,
@@ -81,7 +70,7 @@ impl fmt::Display for Permission {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RiskLevel {
     Low,
@@ -89,6 +78,7 @@ pub enum RiskLevel {
     High,
 }
 
+#[cfg(test)]
 impl fmt::Display for RiskLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -123,7 +113,6 @@ impl fmt::Display for TrustLevel {
 }
 
 /// Parsed content of a SKILL.md file (frontmatter + body).
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SkillManifest {
     pub name: String,
