@@ -4,9 +4,7 @@ use std::path::Path;
 use colored::Colorize;
 
 use super::audit::{log_event, AuditEvent};
-use super::manifest::{
-    compute_sha256, skill_dir, skill_file_path, verify_skill, SkillsManifest, VerifyResult,
-};
+use super::manifest::{compute_sha256, skill_dir, verify_skill, SkillsManifest, VerifyResult};
 use super::parser::{parse_skill_md, parse_source, validate_skill_size};
 use super::permissions::{resolve_permissions, PermissionPolicy};
 use super::types::{InstalledSkill, TrustLevel};
@@ -312,12 +310,6 @@ pub async fn verify_skills(data_dir: &Path) {
             "WARN".yellow().bold()
         );
     }
-}
-
-#[allow(dead_code)]
-pub fn skill_file(data_dir: &Path, name: &str) -> Option<String> {
-    let path = skill_file_path(data_dir, name);
-    std::fs::read_to_string(path).ok()
 }
 
 fn truncate_hash(hash: &str) -> &str {

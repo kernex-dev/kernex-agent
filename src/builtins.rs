@@ -135,19 +135,17 @@ fn chrono_now() -> String {
     crate::utils::iso_timestamp()
 }
 
-#[allow(dead_code)]
-pub fn builtin_count() -> usize {
-    BUILTIN_SKILLS.len()
-}
-
-#[allow(dead_code)]
-pub fn builtin_names() -> Vec<&'static str> {
-    BUILTIN_SKILLS.iter().map(|s| s.name).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn builtin_count() -> usize {
+        BUILTIN_SKILLS.len()
+    }
+
+    fn builtin_names() -> Vec<&'static str> {
+        BUILTIN_SKILLS.iter().map(|s| s.name).collect()
+    }
 
     #[test]
     fn all_builtins_have_content() {
