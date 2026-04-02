@@ -529,6 +529,10 @@ async fn cmd_init() -> Result<(), Box<dyn std::error::Error>> {
 
     std::fs::create_dir_all(&data_dir)?;
 
+    println!(
+        "  {} builtin skills from kernex-dev...",
+        "Fetching".dimmed()
+    );
     let installed = builtins::install_builtin_skills(&data_dir)?;
 
     println!("{}", "kx init complete.".green().bold());
