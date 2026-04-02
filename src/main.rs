@@ -5,7 +5,9 @@ mod builtins;
 mod cli;
 mod commands;
 mod config;
+mod loader;
 mod prompts;
+mod scheduler;
 mod skills;
 mod stack;
 
@@ -23,7 +25,7 @@ use kernex_runtime::{Runtime, RuntimeBuilder};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
-use crate::cli::{Cli, Command, PipelineAction, SkillsAction};
+use crate::cli::{Cli, Command, CronAction, PipelineAction, SkillsAction};
 use crate::commands::CommandResult;
 
 #[tokio::main]
@@ -51,6 +53,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some(Command::Init) => cmd_init().await,
         Some(Command::Pipeline { action }) => cmd_pipeline(action, &provider_flags).await,
         Some(Command::Skills { action }) => cmd_skills(action).await,
+        Some(Command::Cron { action }) => cmd_cron(action).await,
         None => cmd_dev(cli.message, &provider_flags).await,
     }
 }
@@ -94,8 +97,7 @@ fn context_needs() -> ContextNeeds {
         recall: true,
         summaries: true,
         profile: true,
-        pending_tasks: false,
-        outcomes: false,
+        ..Default::default()
     }
 }
 
@@ -111,6 +113,13 @@ async fn cmd_dev(
     let data_dir = data_dir_for(&project_name);
 
     let mut system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
+
+    let claude_md = loader::SystemPromptLoader::new(&cwd).load();
+    if !claude_md.is_empty() {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&claude_md);
+    }
+
     if let Some(extra) = &project_config.system_prompt {
         system_prompt.push_str("\n\n## Project-specific instructions\n");
         system_prompt.push_str(extra);
@@ -121,21 +130,23 @@ async fn cmd_dev(
     let skills_section = skills::prompt::build_skills_prompt(&loaded_skills);
     system_prompt.push_str(&skills_section);
 
-    let provider = build_provider(flags, &project_config)?;
+    let (raw_provider, model_label) = build_provider(flags, &project_config)?;
+    let provider: Arc<dyn Provider> = Arc::from(raw_provider);
 
-    if flags.name == "claude-code" {
-        check_claude_cli()?;
-    }
+    check_provider(provider.as_ref()).await?;
 
-    let runtime = RuntimeBuilder::new()
-        .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
-        .system_prompt(&system_prompt)
-        .channel("cli")
-        .project(&project_name)
-        .build()
-        .await?;
+    let runtime = Arc::new(
+        RuntimeBuilder::new()
+            .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
+            .system_prompt(&system_prompt)
+            .channel("cli")
+            .project(&project_name)
+            .build()
+            .await?,
+    );
 
     let needs = context_needs();
+    scheduler::spawn(runtime.clone(), provider.clone(), context_needs(), 60);
 
     if let Some(msg) = one_shot {
         let request = Request::text("user", &msg);
@@ -157,7 +168,7 @@ async fn cmd_dev(
         "kx dev".green().bold(),
         project_name.bold(),
         detected_stack,
-        provider.name().cyan()
+        model_label.cyan()
     );
     println!("{}", "Type /help for commands, /quit to exit.\n".dimmed());
 
@@ -350,7 +361,7 @@ async fn save_history(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>, history_p
 fn build_provider(
     flags: &ProviderFlags,
     config: &config::ProjectConfig,
-) -> Result<Box<dyn Provider>, Box<dyn std::error::Error>> {
+) -> Result<(Box<dyn Provider>, String), Box<dyn std::error::Error>> {
     let provider_name = config
         .provider
         .as_ref()
@@ -375,18 +386,36 @@ fn build_provider(
 
     let cwd = std::env::current_dir().ok();
 
+    let label = display_model(&provider_name, model.as_deref());
+
     let kx_config = KxProviderConfig {
         base_url,
         api_key,
         model,
         max_tokens: config.provider.as_ref().and_then(|pc| pc.max_turns),
         workspace_path: cwd,
-        sandbox_profile: None,
+        ..Default::default()
     };
 
     let provider = ProviderFactory::create(&provider_name, kx_config)
         .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-    Ok(provider)
+    Ok((provider, label))
+}
+
+fn display_model(provider: &str, model: Option<&str>) -> String {
+    let m = model.unwrap_or_else(|| default_model(provider));
+    format!("{provider}/{m}")
+}
+
+fn default_model(provider: &str) -> &'static str {
+    match provider {
+        "anthropic" => "claude-3-7-sonnet-20250219",
+        "openai" => "gpt-4o",
+        "gemini" => "gemini-2.0-flash",
+        "openrouter" => "anthropic/claude-sonnet-4-5",
+        "ollama" => "llama3.2",
+        _ => "claude-code",
+    }
 }
 
 fn check_claude_cli() -> Result<(), Box<dyn std::error::Error>> {
@@ -423,6 +452,38 @@ fn check_claude_cli() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!();
             Err("claude CLI not available".into())
         }
+    }
+}
+
+async fn check_provider(provider: &dyn Provider) -> Result<(), Box<dyn std::error::Error>> {
+    if provider.name() == "claude-code" {
+        return check_claude_cli();
+    }
+
+    if !provider.is_available().await {
+        let msg = if provider.name() == "ollama" {
+            "Ollama server not reachable. Start it with: ollama serve".to_string()
+        } else if provider.requires_api_key() {
+            let var = api_key_var(provider.name());
+            format!(
+                "Provider '{}' unavailable. Set {var} or pass --api-key.",
+                provider.name()
+            )
+        } else {
+            format!("Provider '{}' is not available.", provider.name())
+        };
+        return Err(msg.into());
+    }
+    Ok(())
+}
+
+fn api_key_var(provider: &str) -> &'static str {
+    match provider {
+        "openai" => "OPENAI_API_KEY",
+        "anthropic" => "ANTHROPIC_API_KEY",
+        "gemini" => "GEMINI_API_KEY",
+        "openrouter" => "OPENROUTER_API_KEY",
+        _ => "API_KEY",
     }
 }
 
@@ -513,7 +574,8 @@ async fn cmd_pipeline(
                 loaded.agents.len()
             );
 
-            let provider = build_provider(flags, &project_config)?;
+            let (provider, _model_label) = build_provider(flags, &project_config)?;
+            check_provider(provider.as_ref()).await?;
 
             let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
             let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
@@ -657,11 +719,8 @@ async fn run_oneshot_command(
     let project_name = stack::project_name(&cwd);
     let data_dir = data_dir_for(&project_name);
 
-    let provider = build_provider(flags, &project_config)?;
-
-    if flags.name == "claude-code" {
-        check_claude_cli()?;
-    }
+    let (provider, _model_label) = build_provider(flags, &project_config)?;
+    check_provider(provider.as_ref()).await?;
 
     let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
 
@@ -700,6 +759,88 @@ async fn run_oneshot_command(
     }
 
     commands::close_conversation(&runtime, &format!("{label} completed.")).await;
+    Ok(())
+}
+
+async fn cmd_cron(action: CronAction) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
+    let project_name = stack::project_name(&cwd);
+    let data_dir = data_dir_for(&project_name);
+
+    let runtime = RuntimeBuilder::new()
+        .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
+        .system_prompt("")
+        .channel("cron")
+        .project(&project_name)
+        .build()
+        .await?;
+
+    match action {
+        CronAction::Create {
+            description,
+            at,
+            repeat,
+        } => {
+            let id = runtime
+                .store
+                .create_task(
+                    "cli",
+                    "user",
+                    "cli",
+                    &description,
+                    &at,
+                    repeat.as_deref(),
+                    "scheduled",
+                    &project_name,
+                )
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            println!("{} {}", "scheduled:".green().bold(), &id[..8.min(id.len())]);
+            println!("  {} {}", "task:".dimmed(), description);
+            println!("  {} {}", "at:".dimmed(), at);
+            if let Some(r) = repeat {
+                println!("  {} {}", "repeat:".dimmed(), r);
+            }
+        }
+        CronAction::List => {
+            let tasks = runtime
+                .store
+                .get_tasks_for_sender("user")
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            if tasks.is_empty() {
+                println!("{}", "  No scheduled tasks.\n".dimmed());
+            } else {
+                println!("\n  {}\n", "Scheduled tasks".bold());
+                for (id, description, due_at, repeat, _task_type, _project) in &tasks {
+                    let short = &id[..8.min(id.len())];
+                    let repeat_label = repeat
+                        .as_deref()
+                        .map(|r| format!(" [{r}]"))
+                        .unwrap_or_default();
+                    println!("  {} {}{}", short.cyan(), description, repeat_label);
+                    println!("       {} {}", "due:".dimmed(), due_at);
+                }
+                println!();
+            }
+        }
+        CronAction::Delete { id } => {
+            let cancelled = runtime
+                .store
+                .cancel_task(&id, "user")
+                .await
+                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+            if cancelled {
+                println!("{} {}", "cancelled:".green().bold(), id);
+            } else {
+                eprintln!(
+                    "{} No pending task found with ID prefix: {id}",
+                    "error:".red().bold()
+                );
+            }
+        }
+    }
+
     Ok(())
 }
 

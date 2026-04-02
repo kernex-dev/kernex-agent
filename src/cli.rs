@@ -49,6 +49,11 @@ pub enum Command {
         #[command(subcommand)]
         action: SkillsAction,
     },
+    /// Manage scheduled tasks (cron-style self-scheduling)
+    Cron {
+        #[command(subcommand)]
+        action: CronAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -81,6 +86,28 @@ pub enum SkillsAction {
     },
     /// Verify integrity of installed skills
     Verify,
+}
+
+#[derive(Subcommand)]
+pub enum CronAction {
+    /// Schedule a new task for autonomous execution
+    Create {
+        /// What the agent should do when the task runs
+        description: String,
+        /// When to run (ISO 8601 datetime, e.g. "2026-04-03T09:00:00")
+        #[arg(long)]
+        at: String,
+        /// Repeat interval: daily, weekly, monthly, weekdays
+        #[arg(long)]
+        repeat: Option<String>,
+    },
+    /// List all pending scheduled tasks
+    List,
+    /// Cancel a scheduled task by ID prefix
+    Delete {
+        /// Task ID prefix (first 8+ characters shown by cron list)
+        id: String,
+    },
 }
 
 #[cfg(test)]
@@ -289,6 +316,89 @@ mod tests {
             assert!(matches!(action, SkillsAction::Verify));
         } else {
             panic!("Expected Skills command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_cron_list() {
+        let cli = Cli::try_parse_from(["kx", "cron", "list"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        if let Some(Command::Cron { action }) = cli.command {
+            assert!(matches!(action, CronAction::List));
+        } else {
+            panic!("Expected Cron command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_cron_create() {
+        let cli = Cli::try_parse_from([
+            "kx",
+            "cron",
+            "create",
+            "run the test suite",
+            "--at",
+            "2026-04-03T09:00:00",
+        ]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        if let Some(Command::Cron { action }) = cli.command {
+            if let CronAction::Create {
+                description,
+                at,
+                repeat,
+            } = action
+            {
+                assert_eq!(description, "run the test suite");
+                assert_eq!(at, "2026-04-03T09:00:00");
+                assert!(repeat.is_none());
+            } else {
+                panic!("Expected Create action");
+            }
+        } else {
+            panic!("Expected Cron command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_cron_create_with_repeat() {
+        let cli = Cli::try_parse_from([
+            "kx",
+            "cron",
+            "create",
+            "run lints",
+            "--at",
+            "2026-04-03T08:00:00",
+            "--repeat",
+            "daily",
+        ]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        if let Some(Command::Cron { action }) = cli.command {
+            if let CronAction::Create { repeat, .. } = action {
+                assert_eq!(repeat, Some("daily".to_string()));
+            } else {
+                panic!("Expected Create action");
+            }
+        } else {
+            panic!("Expected Cron command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_cron_delete() {
+        let cli = Cli::try_parse_from(["kx", "cron", "delete", "abc12345"]);
+        assert!(cli.is_ok());
+        let cli = cli.unwrap();
+        if let Some(Command::Cron { action }) = cli.command {
+            if let CronAction::Delete { id } = action {
+                assert_eq!(id, "abc12345");
+            } else {
+                panic!("Expected Delete action");
+            }
+        } else {
+            panic!("Expected Cron command");
         }
     }
 
