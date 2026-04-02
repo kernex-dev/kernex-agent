@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="favicon-kernex.png" alt="Kernex" width="80">
+</p>
+
 # kx
 
 CLI dev assistant powered by [Kernex](https://github.com/kernex-dev/kernex-dev).
