@@ -581,16 +581,34 @@ async fn cmd_pipeline(
             let (provider, _model_label) = build_provider(flags, &project_config)?;
             check_provider(provider.as_ref()).await?;
 
-            let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
-            let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
-
-            let runtime = RuntimeBuilder::new()
-                .data_dir(data_str)
-                .system_prompt(&system_prompt)
-                .channel("pipeline")
-                .project(&project_name)
-                .build()
+            // Pre-build one Runtime per unique agent so each runs with its own system prompt.
+            let mut agent_runtimes: std::collections::HashMap<String, Runtime> =
+                std::collections::HashMap::new();
+            for phase in &loaded.topology.phases {
+                build_agent_runtime(
+                    data_str,
+                    &loaded,
+                    &phase.agent,
+                    &project_name,
+                    &mut agent_runtimes,
+                )
                 .await?;
+                match &phase.phase_type {
+                    kernex_pipelines::PhaseType::CorrectiveLoop => {
+                        if let Some(ref retry) = phase.retry {
+                            build_agent_runtime(
+                                data_str,
+                                &loaded,
+                                &retry.fix_agent,
+                                &project_name,
+                                &mut agent_runtimes,
+                            )
+                            .await?;
+                        }
+                    }
+                    _ => {}
+                }
+            }
 
             let needs = context_needs();
 
@@ -614,20 +632,17 @@ async fn cmd_pipeline(
                     check_pre_validation(pre_val, &cwd)?;
                 }
 
-                let agent_content = loaded.agent_content(&phase.agent)?;
                 let prompt = build_phase_prompt(
                     &phase.name,
                     &loaded.topology.topology.name,
-                    agent_content,
                     prev_output.as_deref(),
                 );
 
                 let output = run_phase_with_retry(
-                    &runtime,
+                    &agent_runtimes,
                     provider.as_ref(),
                     &needs,
                     phase,
-                    &loaded,
                     &cwd,
                     &prompt,
                 )
@@ -856,14 +871,11 @@ async fn cmd_cron(action: CronAction) -> Result<(), Box<dyn std::error::Error>> 
 fn build_phase_prompt(
     phase_name: &str,
     pipeline_name: &str,
-    agent_content: &str,
     prev_output: Option<&str>,
 ) -> String {
     let mut prompt = format!(
-        "You are executing phase '{}' of pipeline '{}'.\n\n\
-         ## Agent instructions\n{}\n\n\
-         ## Task\nExecute this phase. Work in the current directory.",
-        phase_name, pipeline_name, agent_content
+        "Execute phase '{}' of pipeline '{}'. Work in the current directory.",
+        phase_name, pipeline_name
     );
     if let Some(prev) = prev_output {
         prompt.push_str("\n\n## Previous phase output\n");
@@ -944,15 +956,40 @@ fn matches_glob_pattern(name: &str, pattern: &str) -> bool {
     }
 }
 
+async fn build_agent_runtime(
+    data_str: &str,
+    loaded: &kernex_pipelines::LoadedTopology,
+    agent_name: &str,
+    project_name: &str,
+    runtimes: &mut std::collections::HashMap<String, Runtime>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if runtimes.contains_key(agent_name) {
+        return Ok(());
+    }
+    let content = loaded.agent_content(agent_name)?;
+    let runtime = RuntimeBuilder::new()
+        .data_dir(data_str)
+        .system_prompt(content)
+        .channel("pipeline")
+        .project(project_name)
+        .build()
+        .await?;
+    runtimes.insert(agent_name.to_string(), runtime);
+    Ok(())
+}
+
 async fn run_phase_with_retry(
-    runtime: &Runtime,
+    runtimes: &std::collections::HashMap<String, Runtime>,
     provider: &dyn Provider,
     needs: &ContextNeeds,
     phase: &kernex_pipelines::Phase,
-    loaded: &kernex_pipelines::LoadedTopology,
     cwd: &std::path::Path,
     prompt: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    let runtime = runtimes
+        .get(phase.agent.as_str())
+        .ok_or_else(|| format!("No runtime for agent '{}'", phase.agent))?;
+
     let mut output = execute_single_phase(runtime, provider, needs, &phase.name, prompt).await?;
 
     match &phase.phase_type {
@@ -970,6 +1007,10 @@ async fn run_phase_with_retry(
         None => return Ok(output),
     };
 
+    let fix_runtime = runtimes
+        .get(retry.fix_agent.as_str())
+        .ok_or_else(|| format!("No runtime for fix agent '{}'", retry.fix_agent))?;
+
     for attempt in 0..retry.max {
         let missing = missing_post_validation_paths(&post_paths, cwd);
         if missing.is_empty() {
@@ -985,18 +1026,15 @@ async fn run_phase_with_retry(
             missing.join(", ")
         );
 
-        let fix_content = loaded.agent_content(&retry.fix_agent)?;
         let fix_prompt = format!(
-            "Fix agent for phase '{}'. The following outputs are missing:\n{}\n\n\
-             ## Fix agent instructions\n{}\n\n\
+            "The following outputs from phase '{}' are missing:\n{}\n\n\
              Correct the issue so all required outputs are produced.",
             phase.name,
             missing.join("\n"),
-            fix_content
         );
 
         if let Err(e) =
-            execute_single_phase(runtime, provider, needs, &retry.fix_agent, &fix_prompt).await
+            execute_single_phase(fix_runtime, provider, needs, &retry.fix_agent, &fix_prompt).await
         {
             eprintln!(
                 "{} fix agent '{}' failed: {e}",
