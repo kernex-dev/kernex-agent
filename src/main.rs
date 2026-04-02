@@ -593,20 +593,17 @@ async fn cmd_pipeline(
                     &mut agent_runtimes,
                 )
                 .await?;
-                match &phase.phase_type {
-                    kernex_pipelines::PhaseType::CorrectiveLoop => {
-                        if let Some(ref retry) = phase.retry {
-                            build_agent_runtime(
-                                data_str,
-                                &loaded,
-                                &retry.fix_agent,
-                                &project_name,
-                                &mut agent_runtimes,
-                            )
-                            .await?;
-                        }
+                if phase.phase_type == kernex_pipelines::PhaseType::CorrectiveLoop {
+                    if let Some(ref retry) = phase.retry {
+                        build_agent_runtime(
+                            data_str,
+                            &loaded,
+                            &retry.fix_agent,
+                            &project_name,
+                            &mut agent_runtimes,
+                        )
+                        .await?;
                     }
-                    _ => {}
                 }
             }
 
@@ -868,11 +865,7 @@ async fn cmd_cron(action: CronAction) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-fn build_phase_prompt(
-    phase_name: &str,
-    pipeline_name: &str,
-    prev_output: Option<&str>,
-) -> String {
+fn build_phase_prompt(phase_name: &str, pipeline_name: &str, prev_output: Option<&str>) -> String {
     let mut prompt = format!(
         "Execute phase '{}' of pipeline '{}'. Work in the current directory.",
         phase_name, pipeline_name

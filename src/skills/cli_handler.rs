@@ -90,7 +90,11 @@ pub async fn add_skill(
 
     println!("  {} {}", "Fetching:".dimmed(), url);
 
-    let response = ureq::get(&url)
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(5))
+        .build();
+    let response = agent
+        .get(&url)
         .call()
         .map_err(|e| format!("failed to fetch skill: {e}"))?;
 
