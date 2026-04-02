@@ -594,6 +594,11 @@ async fn cmd_pipeline(
 
             let needs = context_needs();
 
+            let handoff_dir = cwd.join(".kx-pipeline").join(&name);
+            std::fs::create_dir_all(&handoff_dir)?;
+
+            let mut prev_output: Option<String> = None;
+
             for (i, phase) in loaded.topology.phases.iter().enumerate() {
                 let phase_num = i + 1;
                 let total = loaded.topology.phases.len();
@@ -605,34 +610,34 @@ async fn cmd_pipeline(
                     phase.agent
                 );
 
+                if let Some(ref pre_val) = phase.pre_validation {
+                    check_pre_validation(pre_val, &cwd)?;
+                }
+
                 let agent_content = loaded.agent_content(&phase.agent)?;
-                let prompt = format!(
-                    "You are executing phase '{}' of pipeline '{}'.\n\n\
-                     ## Agent instructions\n{}\n\n\
-                     ## Task\nExecute this phase. Work in the current directory.",
-                    phase.name, loaded.topology.topology.name, agent_content
+                let prompt = build_phase_prompt(
+                    &phase.name,
+                    &loaded.topology.topology.name,
+                    agent_content,
+                    prev_output.as_deref(),
                 );
 
-                let spinner = create_spinner(&format!("Running {}...", phase.name));
-                let request = Request::text("pipeline", &prompt);
-                let result = runtime
-                    .complete_with_needs(provider.as_ref(), &request, &needs)
-                    .await;
-                spinner.finish_and_clear();
+                let output = run_phase_with_retry(
+                    &runtime,
+                    provider.as_ref(),
+                    &needs,
+                    phase,
+                    &loaded,
+                    &cwd,
+                    &prompt,
+                )
+                .await?;
 
-                match result {
-                    Ok(response) => {
-                        println!("{}\n", response.text);
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "{} phase '{}' failed: {e}",
-                            "error:".red().bold(),
-                            phase.name
-                        );
-                        return Err(e.into());
-                    }
-                }
+                let handoff_file = handoff_dir.join(format!("{}.md", phase.name));
+                std::fs::write(&handoff_file, output.as_bytes())?;
+
+                println!("{}\n", output);
+                prev_output = Some(output);
             }
 
             println!("{}", "Pipeline complete.".green().bold());
@@ -846,6 +851,189 @@ async fn cmd_cron(action: CronAction) -> Result<(), Box<dyn std::error::Error>> 
     }
 
     Ok(())
+}
+
+fn build_phase_prompt(
+    phase_name: &str,
+    pipeline_name: &str,
+    agent_content: &str,
+    prev_output: Option<&str>,
+) -> String {
+    let mut prompt = format!(
+        "You are executing phase '{}' of pipeline '{}'.\n\n\
+         ## Agent instructions\n{}\n\n\
+         ## Task\nExecute this phase. Work in the current directory.",
+        phase_name, pipeline_name, agent_content
+    );
+    if let Some(prev) = prev_output {
+        prompt.push_str("\n\n## Previous phase output\n");
+        prompt.push_str(prev);
+    }
+    prompt
+}
+
+fn check_pre_validation(
+    validation: &kernex_pipelines::ValidationConfig,
+    cwd: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match &validation.validation_type {
+        kernex_pipelines::ValidationType::FileExists => {
+            for path in &validation.paths {
+                if !cwd.join(path).exists() {
+                    return Err(format!(
+                        "Pre-validation failed: required file '{}' not found",
+                        path
+                    )
+                    .into());
+                }
+            }
+        }
+        kernex_pipelines::ValidationType::FilePatterns => {
+            for pattern in &validation.patterns {
+                if !dir_contains_pattern(cwd, pattern) {
+                    return Err(format!(
+                        "Pre-validation failed: no file matching '{}' found",
+                        pattern
+                    )
+                    .into());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn missing_post_validation_paths(paths: &[String], cwd: &std::path::Path) -> Vec<String> {
+    paths
+        .iter()
+        .filter(|p| !cwd.join(p.as_str()).exists())
+        .cloned()
+        .collect()
+}
+
+fn dir_contains_pattern(dir: &std::path::Path, pattern: &str) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+        if name.starts_with('.') {
+            continue;
+        }
+        if path.is_dir() {
+            if dir_contains_pattern(&path, pattern) {
+                return true;
+            }
+        } else if matches_glob_pattern(&name, pattern) {
+            return true;
+        }
+    }
+    false
+}
+
+fn matches_glob_pattern(name: &str, pattern: &str) -> bool {
+    if !pattern.contains('*') {
+        return name == pattern;
+    }
+    let parts: Vec<&str> = pattern.splitn(2, '*').collect();
+    match parts.as_slice() {
+        [prefix, suffix] => name.starts_with(prefix) && name.ends_with(suffix),
+        _ => name == pattern,
+    }
+}
+
+async fn run_phase_with_retry(
+    runtime: &Runtime,
+    provider: &dyn Provider,
+    needs: &ContextNeeds,
+    phase: &kernex_pipelines::Phase,
+    loaded: &kernex_pipelines::LoadedTopology,
+    cwd: &std::path::Path,
+    prompt: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut output = execute_single_phase(runtime, provider, needs, &phase.name, prompt).await?;
+
+    match &phase.phase_type {
+        kernex_pipelines::PhaseType::CorrectiveLoop => {}
+        _ => return Ok(output),
+    }
+
+    let retry = match &phase.retry {
+        Some(r) => r,
+        None => return Ok(output),
+    };
+
+    let post_paths = match &phase.post_validation {
+        Some(p) => p.clone(),
+        None => return Ok(output),
+    };
+
+    for attempt in 0..retry.max {
+        let missing = missing_post_validation_paths(&post_paths, cwd);
+        if missing.is_empty() {
+            return Ok(output);
+        }
+
+        eprintln!(
+            "{} post-validation: {} path(s) missing (attempt {}/{}): {}",
+            "warn:".yellow().bold(),
+            missing.len(),
+            attempt + 1,
+            retry.max,
+            missing.join(", ")
+        );
+
+        let fix_content = loaded.agent_content(&retry.fix_agent)?;
+        let fix_prompt = format!(
+            "Fix agent for phase '{}'. The following outputs are missing:\n{}\n\n\
+             ## Fix agent instructions\n{}\n\n\
+             Correct the issue so all required outputs are produced.",
+            phase.name,
+            missing.join("\n"),
+            fix_content
+        );
+
+        if let Err(e) =
+            execute_single_phase(runtime, provider, needs, &retry.fix_agent, &fix_prompt).await
+        {
+            eprintln!(
+                "{} fix agent '{}' failed: {e}",
+                "warn:".yellow().bold(),
+                retry.fix_agent
+            );
+        }
+
+        output = execute_single_phase(runtime, provider, needs, &phase.name, prompt).await?;
+    }
+
+    let missing = missing_post_validation_paths(&post_paths, cwd);
+    if !missing.is_empty() {
+        return Err(format!(
+            "Phase '{}' post-validation failed after {} retries. Missing: {}",
+            phase.name,
+            retry.max,
+            missing.join(", ")
+        )
+        .into());
+    }
+
+    Ok(output)
+}
+
+async fn execute_single_phase(
+    runtime: &Runtime,
+    provider: &dyn Provider,
+    needs: &ContextNeeds,
+    label: &str,
+    prompt: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let spinner = create_spinner(&format!("Running {label}..."));
+    let request = Request::text("pipeline", prompt);
+    let result = runtime.complete_with_needs(provider, &request, needs).await;
+    spinner.finish_and_clear();
+    Ok(result?.text)
 }
 
 fn data_dir_for(project_name: &str) -> PathBuf {
