@@ -57,7 +57,16 @@ pub async fn handle(
             CommandResult::Continue
         }
         "/stack" => {
-            let cwd = std::env::current_dir().unwrap_or_default();
+            let cwd = match std::env::current_dir() {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!(
+                        "{} could not get working directory: {e}",
+                        "error:".red().bold()
+                    );
+                    return CommandResult::Continue;
+                }
+            };
             let name = stack::project_name(&cwd);
             println!(
                 "\n  {} {}\n  {} {}\n  {} {}\n",
@@ -181,7 +190,16 @@ async fn print_history(runtime: &Runtime) {
 }
 
 fn print_config(runtime: &Runtime, detected_stack: Stack, config: &ProjectConfig) {
-    let cwd = std::env::current_dir().unwrap_or_default();
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!(
+                "{} could not get working directory: {e}",
+                "error:".red().bold()
+            );
+            return;
+        }
+    };
     let has_config = cwd.join(".kx.toml").exists();
 
     println!("\n  {}", "Active configuration".bold());
