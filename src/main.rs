@@ -398,8 +398,17 @@ fn build_provider(
         ..Default::default()
     };
 
-    let provider = ProviderFactory::create(&provider_name, kx_config)
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let provider = ProviderFactory::create(&provider_name, kx_config).map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("unknown") || msg.contains("unsupported") || msg.contains("not found") {
+            format!(
+                "unknown provider '{}'. Valid choices: claude-code, anthropic, openai, gemini, openrouter, ollama",
+                provider_name
+            )
+        } else {
+            msg
+        }
+    })?;
     Ok((provider, label))
 }
 
