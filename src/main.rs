@@ -8,6 +8,7 @@ mod config;
 mod loader;
 mod prompts;
 mod scheduler;
+mod serve;
 mod skills;
 mod stack;
 mod utils;
@@ -31,6 +32,7 @@ use serde_json::Value;
 
 use crate::cli::{Cli, Command, CronAction, PipelineAction, SkillsAction};
 use crate::commands::CommandResult;
+use crate::serve::cmd_serve;
 
 #[tokio::main]
 async fn main() {
@@ -63,13 +65,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some(Command::Pipeline { action }) => cmd_pipeline(action, &provider_flags).await,
         Some(Command::Skills { action }) => cmd_skills(action).await,
         Some(Command::Cron { action }) => cmd_cron(action).await,
+        Some(Command::Serve {
+            host,
+            port,
+            auth_token,
+            workers,
+        }) => cmd_serve(host, port, auth_token, workers, &provider_flags).await,
         None => cmd_dev(cli.message, &provider_flags).await,
     }
 }
 
 #[derive(Debug)]
-struct CliHookRunner {
-    verbose: bool,
+pub(crate) struct CliHookRunner {
+    pub(crate) verbose: bool,
 }
 
 #[async_trait]
@@ -90,16 +98,17 @@ impl HookRunner for CliHookRunner {
     async fn on_stop(&self, _final_text: &str) {}
 }
 
-struct ProviderFlags {
-    name: String,
-    model: Option<String>,
-    api_key: Option<String>,
-    base_url: Option<String>,
-    project: Option<String>,
-    channel: Option<String>,
-    max_turns: Option<usize>,
-    no_memory: bool,
-    verbose: bool,
+#[derive(Clone)]
+pub(crate) struct ProviderFlags {
+    pub(crate) name: String,
+    pub(crate) model: Option<String>,
+    pub(crate) api_key: Option<String>,
+    pub(crate) base_url: Option<String>,
+    pub(crate) project: Option<String>,
+    pub(crate) channel: Option<String>,
+    pub(crate) max_turns: Option<usize>,
+    pub(crate) no_memory: bool,
+    pub(crate) verbose: bool,
 }
 
 async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Error>> {
@@ -129,7 +138,7 @@ async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Erro
     }
 }
 
-fn context_needs(no_memory: bool) -> ContextNeeds {
+pub(crate) fn context_needs(no_memory: bool) -> ContextNeeds {
     if no_memory {
         ContextNeeds::default()
     } else {
@@ -413,7 +422,7 @@ async fn save_history(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>, history_p
     let _ = editor.lock().await.save_history(history_path);
 }
 
-fn build_provider(
+pub(crate) fn build_provider(
     flags: &ProviderFlags,
     config: &config::ProjectConfig,
 ) -> Result<(Box<dyn Provider>, String), Box<dyn std::error::Error>> {
@@ -1144,7 +1153,7 @@ async fn execute_single_phase(
     Ok(result?.text)
 }
 
-fn data_dir_for(project_name: &str) -> PathBuf {
+pub(crate) fn data_dir_for(project_name: &str) -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".kx")
