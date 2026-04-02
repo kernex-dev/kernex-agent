@@ -173,6 +173,14 @@ async fn cmd_dev(
     );
     println!("{}", "Type /help for commands, /quit to exit.\n".dimmed());
 
+    if skills_manifest.list().is_empty() {
+        println!(
+            "  {} No skills installed. Run {} to set up builtin skills.\n",
+            "tip:".yellow(),
+            "kx init".cyan().bold()
+        );
+    }
+
     let history_path = data_dir.join("history.txt");
     let editor = Arc::new(tokio::sync::Mutex::new(create_editor(&history_path)?));
     let mut last_input: Option<String> = None;
