@@ -147,6 +147,69 @@ For pasting code blocks or multi-line content:
   (3 lines captured)
 ```
 
+## Serve Mode
+
+`kx serve` runs kx as a headless HTTP daemon. Use it on a VPS or CI box to accept agent jobs from external triggers, webhooks, or cron jobs without an active terminal session.
+
+```bash
+kx serve --auth-token mysecrettoken
+kx serve --host 0.0.0.0 --port 9000 --auth-token mysecrettoken --workers 8
+```
+
+The auth token can also be set via environment variable:
+
+```bash
+export KERNEX_AUTH_TOKEN=mysecrettoken
+kx serve
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--host` | `127.0.0.1` | Bind address |
+| `--port` | `8080` | Listen port |
+| `--auth-token` | (required) | Bearer token for API authentication |
+| `--workers` | `4` | Max concurrent agent jobs |
+
+Provider flags (`--provider`, `--model`, `--api-key`, etc.) work the same as in interactive mode and set the default for all jobs.
+
+### API Endpoints
+
+All endpoints except `/health` require `Authorization: Bearer <token>`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check (no auth required) |
+| `POST` | `/run` | Submit an agent job |
+| `GET` | `/jobs` | List recent jobs (default limit: 50) |
+| `GET` | `/jobs/{id}` | Get job status and output |
+| `POST` | `/webhook/{event}` | Trigger a job from a webhook |
+
+### Example
+
+```bash
+# Submit a job
+curl -s -X POST http://localhost:8080/run \
+  -H "Authorization: Bearer mysecrettoken" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "summarize recent git changes"}' | jq .
+# {"job_id":"b3f1..."}
+
+# Poll for result
+curl -s http://localhost:8080/jobs/b3f1... \
+  -H "Authorization: Bearer mysecrettoken" | jq .status
+# "done"
+
+# Webhook trigger (e.g. from GitHub Actions)
+curl -s -X POST http://localhost:8080/webhook/deploy \
+  -H "Authorization: Bearer mysecrettoken" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "run post-deploy checks"}'
+```
+
+Jobs run asynchronously. The response to `/run` is a `job_id`; poll `/jobs/{id}` until status is `done` or `failed`.
+
 ## Commands
 
 | Command | Description |
