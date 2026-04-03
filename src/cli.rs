@@ -7,19 +7,25 @@ pub struct Cli {
     pub command: Option<Command>,
 
     /// AI provider to use (claude-code, anthropic, openai, ollama, gemini, openrouter, groq, mistral, deepseek, fireworks, xai)
-    #[arg(short = 'p', long, global = true, default_value = "claude-code")]
+    #[arg(
+        short = 'p',
+        long,
+        global = true,
+        default_value = "claude-code",
+        env = "KERNEX_PROVIDER"
+    )]
     pub provider: String,
 
     /// Model override (provider-specific, e.g. gpt-4o, llama3.2)
-    #[arg(short = 'm', long, global = true)]
+    #[arg(short = 'm', long, global = true, env = "KERNEX_MODEL")]
     pub model: Option<String>,
 
     /// API key for providers that require one
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "KERNEX_API_KEY")]
     pub api_key: Option<String>,
 
     /// Base URL override (e.g. http://localhost:11434 for Ollama)
-    #[arg(long, global = true)]
+    #[arg(long, global = true, env = "KERNEX_BASE_URL")]
     pub base_url: Option<String>,
 
     /// Override the active project scope (default: current directory name)
@@ -83,7 +89,7 @@ pub enum Command {
         #[arg(long, default_value_t = 8080)]
         port: u16,
         /// Bearer auth token (or set KERNEX_AUTH_TOKEN env var)
-        #[arg(long)]
+        #[arg(long, env = "KERNEX_AUTH_TOKEN")]
         auth_token: Option<String>,
         /// Max concurrent agent jobs
         #[arg(long, default_value_t = 4)]
