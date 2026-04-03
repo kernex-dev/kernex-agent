@@ -16,11 +16,11 @@ jobs:
     name: CI Gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.3.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.1
       - run: cargo clippy --locked -- -D warnings
       - run: cargo test --locked
       - run: cargo fmt --check
@@ -31,7 +31,7 @@ jobs:
     name: Vulnerability Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.3.1
       - name: Trivy filesystem scan
         uses: aquasecurity/trivy-action@v0.35.0
         with:
@@ -52,7 +52,7 @@ jobs:
       attestations: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.3.1
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
