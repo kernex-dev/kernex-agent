@@ -34,6 +34,13 @@ services:
     volumes:
       # Persistent data directory
       - kx_data:/home/kx/.kx
+      # Skills for headless serve-mode workflows — read-only, mounted at runtime
+      - type: bind
+        source: ../deploy/skills
+        target: /home/kx/.kx/skills
+        read_only: true
+        bind:
+          create_host_path: false
       # Claude subscription credentials — read-only, never modified by container
       - type: bind
         source: ${CLAUDE_CREDENTIALS_PATH}
