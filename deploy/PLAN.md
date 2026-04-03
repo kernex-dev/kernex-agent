@@ -31,6 +31,7 @@
 | Validation gate (Layer 3) | DONE | `reality-checker` auto-runs as final step in all workflows; `Flagged` status on NEEDS WORK/BLOCKED verdict |
 | `trigger` keyword parsing | DONE | Pipe-delimited and YAML list formats; surfaced in Level 1 prompt and full skill prompt |
 | `toolbox` parsing and registration | DONE | `[toolbox.NAME]` TOML sections parsed into `SkillTool`; surfaced as TOOL comments in prompts |
+| Community skills autonomy pass | DONE | All 4 skills pass validate_skill.py + manual autonomy checklist |
 
 ---
 
@@ -487,6 +488,7 @@ These skills are publish-ready candidates. All require evals/evals.json and a pa
 | Write | `geo-auditor` | GEOAutopilot (5-tier weighted scoring model) | DONE |
 | Write | `geo-schema-generator` | GEOAutopilot (Schema.org generation engine) | DONE |
 | Write evals | All 4 above | evals/evals.json | DONE |
+| Autonomy checklist | All 4 above | validate_skill.py + manual audit | DONE |
 | Publish | All 4 | Skills.sh + awesome-agent-skills repo | PENDING |
 
 ---

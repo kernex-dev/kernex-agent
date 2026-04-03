@@ -1,6 +1,6 @@
 ---
 name: interface-auditor
-description: Audit interfaces for antipatterns using 168 principles with 1-10 severity scoring. Identify cognitive overload, inconsistency, visual hierarchy failures. Use for pre-launch checks and redesign scoping.
+description: Audit interfaces for antipatterns using 168 principles with 1-10 severity scoring. Identify cognitive overload, inconsistency, visual hierarchy failures. Use for pre-launch and redesign scoping.
 metadata:
   author: kernex-dev
   version: "1.0"
