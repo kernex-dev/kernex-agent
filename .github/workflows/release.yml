@@ -21,8 +21,8 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -- -D warnings
-      - run: cargo test
+      - run: cargo clippy --locked -- -D warnings
+      - run: cargo test --locked
       - run: cargo fmt --check
 
   # Scan Rust dependencies and the repo filesystem for known CVEs.
