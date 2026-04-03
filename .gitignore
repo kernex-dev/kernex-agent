@@ -4,6 +4,8 @@
 # Environment and secrets
 .env
 .env.*
+!.env.example
+!deploy/.env.example
 *.pem
 *.key
 *.p12
