@@ -23,6 +23,7 @@ logs/
 # Editor
 .idea/
 .vscode/
+!.vscode/extensions.json
 *.swp
 *.swo
 *~
