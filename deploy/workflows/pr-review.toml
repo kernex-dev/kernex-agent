@@ -1,0 +1,36 @@
+name = "pr-review"
+description = "Multi-agent PR review: code quality, security, and readiness gate. Pass the PR diff or description as input."
+
+[[steps]]
+id = "code-review"
+skill = "senior-developer"
+input = """
+Review this pull request for code quality, patterns, error handling, and test coverage.
+PR context: {input}
+"""
+mode = "evaluate"
+
+[[steps]]
+id = "security-review"
+skill = "security-engineer"
+input = """
+Security review for this pull request.
+PR context: {input}
+"""
+mode = "evaluate"
+
+[[steps]]
+id = "readiness-gate"
+skill = "reality-checker"
+input = """
+Based on these reviews, determine if this PR is ready to merge.
+
+Code review findings:
+{code-review.output}
+
+Security review findings:
+{security-review.output}
+
+Return SHIP IT only if both reviews show no blockers.
+"""
+depends_on = ["code-review", "security-review"]
