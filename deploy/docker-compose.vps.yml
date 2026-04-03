@@ -1,6 +1,10 @@
 # VPS deployment — public server with a domain and automatic TLS via Caddy.
 # Requires DOMAIN and ACME_EMAIL set in .env
 #
+# IMPORTANT: Caddy binds to ports 80 and 443. If your server already runs Traefik
+# or another reverse proxy on those ports, this file will conflict. Use
+# docker-compose.traefik.yml instead.
+#
 # Usage:
 #   cp .env.example .env   # fill in all fields including DOMAIN and ACME_EMAIL
 #   docker compose -f docker-compose.vps.yml up -d

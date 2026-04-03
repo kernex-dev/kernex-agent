@@ -14,12 +14,31 @@ No build step required — pull the pre-built image from GHCR.
 
 ---
 
+## Pulling the Image from GHCR
+
+The image is published publicly at `ghcr.io/kernex-dev/kernex-agent:latest`. No authentication
+is required to pull it. If you receive a 401 or 403, check that:
+
+1. The package visibility is set to **Public** at
+   `github.com/orgs/kernex-dev/packages/container/kernex-agent/settings`
+2. If your org restricts public package creation, the org owner must enable it at
+   `github.com/organizations/<org>/settings/member_privileges`
+
+---
+
 ## Prerequisites
 
 - Docker + Docker Compose v2
-- A Claude subscription (for `claude-code` provider)
-  OR an API key from Anthropic, OpenAI, Groq, Mistral, DeepSeek, Fireworks, or xAI
+- An API key from Anthropic, OpenAI, Groq, Mistral, DeepSeek, Fireworks, or xAI
+  (recommended for server deployments — see security note below)
 - For VPS path: a domain with an A record pointing to your server
+
+> **Security note for server deployments:** The `claude-code` provider uses OAuth credentials
+> tied to your personal Claude subscription. These credentials are stored in
+> `~/.claude/.credentials.json` and are intended for interactive desktop sessions.
+> Mounting them into a server container means a credential leak would expose your personal
+> account. For any server or VPS deployment, use an API key provider (`anthropic`, `openai`,
+> `groq`, etc.) with a scoped key that can be rotated independently.
 
 ---
 
@@ -84,6 +103,11 @@ curl http://localhost:8080/health
 ## Path B: VPS with Domain and TLS
 
 Best for: running kx as a persistent API endpoint accessible from anywhere.
+
+> **Note for VPS servers already running Traefik (or another reverse proxy):**
+> This compose file includes Caddy, which binds to ports 80 and 443. If those ports are
+> already in use, the container will fail to start. Use `docker-compose.traefik.yml` instead,
+> which binds kx to a local port only and expects Traefik to route traffic to it.
 
 ### 1. Point DNS
 
@@ -155,7 +179,7 @@ curl -s -X POST https://api.yourdomain.com/run \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "input": "Review this Express handler for SQL injection: app.get(\"/user\", (req, res) => { db.query(\"SELECT * FROM users WHERE id = \" + req.query.id) })",
+    "message": "Review this Express handler for SQL injection: app.get(\"/user\", (req, res) => { db.query(\"SELECT * FROM users WHERE id = \" + req.query.id) })",
     "skills": ["security-engineer"]
   }' | jq .
 ```
@@ -167,7 +191,7 @@ curl -s -X POST https://api.yourdomain.com/run \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "input": "Add user authentication with JWT to our Express API",
+    "message": "Add user authentication with JWT to our Express API",
     "workflow": "feature-design"
   }' | jq .
 ```
