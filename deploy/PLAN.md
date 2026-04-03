@@ -12,17 +12,23 @@
 | `kx serve` core (HTTP daemon) | DONE | Axum 0.8, Bearer auth, job queue |
 | Docker deployment files | DONE | Dockerfile, docker-compose, Caddyfile |
 | Security hardening | DONE | Non-root, read-only FS, TLS 1.3, rate limiting |
-| Parser bug (TOML vs YAML) | CRITICAL | Skills silently fail to load — blocks everything |
-| Builtin description rewrites | BLOCKED | Waiting on parser fix |
-| Skills loading in serve mode | NOT STARTED | `run_agent` uses hardcoded system prompt |
-| Two-mode skill architecture | NOT STARTED | Task skills vs persona/evaluation skills |
-| `skill-factory` builtin | NOT STARTED | Meta-skill for building new skills |
+| Parser bug (TOML vs YAML) | DONE | Both formats handled; `metadata.domain` extracted |
+| `skill-factory` builtin | DONE | 13th builtin, YAML format, registered in builtins.rs |
+| Skills loading in serve mode | DONE | `src/serve/skills.rs`, Level 1 prompt, two-mode base |
+| Two-mode skill architecture | DONE | `task` / `evaluate`+`review` modes in `build_serve_system_prompt` |
+| 7 task skills in `deploy/skills/` | DONE | reality-checker, senior-developer, backend-architect, agents-orchestrator, devops-automator, security-engineer, api-tester |
+| 4 reviewer persona skills | DONE | enterprise-buyer, developer-dx, security-skeptic, non-technical-stakeholder |
+| `workflow-runner` skill | DONE | `deploy/skills/workflow-runner/SKILL.md` |
+| evals/evals.json | DONE | 29 test cases across all 13 deploy skills |
+| Skills volume mount in docker-compose | DONE | `deploy/skills` mounted at `/home/kx/.kx/skills` |
+| Builtin description rewrites | PENDING | Parser fix done, rewrites not yet started |
+| Domain skills (uxui, geo) | DONE | 4 skills: uxui-evaluator, interface-auditor, geo-auditor, geo-schema-generator |
 | Workflow file system | NOT STARTED | No named workflow support |
-| `workflow-runner` skill | NOT STARTED | Serve-context orchestrator and validation gate |
-| Validation gate (anti-hallucination) | NOT STARTED | No output validation before job completion |
-| `validate_skill.py` integration | NOT STARTED | Available in skills_research/, not wired up |
+| Validation gate (Phase 3 active) | NOT STARTED | `Flagged` status reserved, runtime logic pending |
+| `validate_skill.py` integration | NOT STARTED | Available at `deploy/skills/validate_skill.py` |
 | Webhook HMAC verification | NOT STARTED | All webhooks share the same bearer token |
 | Job persistence | NOT STARTED | In-memory only, lost on restart |
+| `/health` job stats | NOT STARTED | Returns static `{status: ok}` only |
 | `/health` job stats | NOT STARTED | Returns static `{status: ok}` only |
 
 ---
@@ -457,6 +463,24 @@ operations — script output is ground truth, not model inference.
 GitHub Actions release pipeline for GHCR image publishing on release tags.
 Not required for private VPS deployment.
 
+### Phase 5: Community Skills (publishable to Skills.sh + awesome-agent-skills)
+
+Market research on the top 20 agent skills by install count (2026) reveals:
+- Meta-skills and opinionated framework-specific skills dominate. Generic "help me code" skills have low repeat usage.
+- The top skills share one trait: they encode a concrete protocol, not open-ended behavior.
+- Three opportunity gaps with no dominant player: UX/UI audit, design-to-code with anti-AI aesthetics, GEO optimization.
+
+These skills are publish-ready candidates. All require evals/evals.json and a passing autonomy checklist before submission.
+
+| Step | Skill | Source | Status |
+|------|-------|--------|--------|
+| Write | `uxui-evaluator` | uxuiprinciples-web (168 principles, 6 domains) | DONE |
+| Write | `interface-auditor` | interfaceaudit-web (antipattern taxonomy, 1-10 severity) | DONE |
+| Write | `geo-auditor` | GEOAutopilot (5-tier weighted scoring model) | DONE |
+| Write | `geo-schema-generator` | GEOAutopilot (Schema.org generation engine) | DONE |
+| Write evals | All 4 above | evals/evals.json | DONE |
+| Publish | All 4 | Skills.sh + awesome-agent-skills repo | PENDING |
+
 ---
 
 ## Skills Reference
@@ -473,7 +497,16 @@ Not required for private VPS deployment.
 | `reality-checker` | task | Validation gate -- last step in every workflow |
 | `senior-developer` | task | General code and logic tasks |
 
-### Evaluation Skills (new, `deploy/skills/reviewers/`)
+### Domain-Specific Skills (Phase 5, community-publishable)
+
+| Skill | Domain | Source | Differentiator |
+|---|---|---|---|
+| `uxui-evaluator` | review | uxuiprinciples-web | 168-principle taxonomy, principle codes, business impact metrics |
+| `interface-auditor` | review | interfaceaudit-web | Antipattern detection, 1-10 severity scoring, UX smell patterns |
+| `geo-auditor` | task | GEOAutopilot | 5-tier weighted GEO model, AI crawler audit, action plan |
+| `geo-schema-generator` | task | GEOAutopilot | Schema.org JSON-LD generation, quality scoring, deployment-ready |
+
+### Evaluation Skills (`deploy/skills/reviewers/`)
 
 | Skill | Domain | Archetype |
 |---|---|---|
@@ -482,7 +515,7 @@ Not required for private VPS deployment.
 | `security-skeptic-reviewer` | review | Security-first engineer |
 | `non-technical-stakeholder` | review | Business owner reading technical content |
 
-### Orchestration Skills (new, `deploy/skills/`)
+### Orchestration Skills (`deploy/skills/`)
 
 | Skill | Domain | Role |
 |---|---|---|

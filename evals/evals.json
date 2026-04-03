@@ -1,0 +1,340 @@
+{
+  "version": "1.0",
+  "description": "Evaluation suite for deploy/skills/ — validates structured JSON output and key field presence",
+  "evals": [
+    {
+      "skill": "reality-checker",
+      "id": "rc-01",
+      "name": "flags unverified claims as NEEDS WORK",
+      "input": "The API is working correctly and all endpoints return proper status codes.",
+      "expect": {
+        "verdict": "NEEDS WORK",
+        "required_fields": ["verdict", "grade", "verified", "gaps", "conditions", "summary"],
+        "grade_not": ["A"],
+        "gaps_non_empty": true
+      }
+    },
+    {
+      "skill": "reality-checker",
+      "id": "rc-02",
+      "name": "returns SHIP IT when evidence is provided",
+      "input": "Test suite ran: 47 passed, 0 failed. Auth integration test covers login, token refresh, and logout. cargo audit reports no open vulnerabilities.",
+      "expect": {
+        "verdict": "SHIP IT",
+        "required_fields": ["verdict", "grade", "verified", "gaps", "conditions", "summary"],
+        "verified_non_empty": true
+      }
+    },
+    {
+      "skill": "reality-checker",
+      "id": "rc-03",
+      "name": "returns BLOCKED with grade F when no evidence provided",
+      "input": "Done.",
+      "expect": {
+        "verdict": "BLOCKED",
+        "grade": "F",
+        "required_fields": ["verdict", "grade", "verified", "gaps", "conditions", "summary"]
+      }
+    },
+    {
+      "skill": "senior-developer",
+      "id": "sd-01",
+      "name": "produces structured output for a feature request",
+      "input": "Add a function isPrime(n: number): boolean to a TypeScript utility file.",
+      "expect": {
+        "task_type": "feature",
+        "required_fields": ["task_type", "changes", "issues_found", "rationale", "test_suggestions"],
+        "changes_non_empty": true,
+        "test_suggestions_non_empty": true
+      }
+    },
+    {
+      "skill": "senior-developer",
+      "id": "sd-02",
+      "name": "identifies security issue in code review",
+      "input": "Review this Express handler: app.get('/user', (req, res) => { db.query('SELECT * FROM users WHERE id = ' + req.query.id).then(r => res.json(r)) })",
+      "expect": {
+        "task_type": "review",
+        "required_fields": ["task_type", "changes", "issues_found", "rationale", "test_suggestions"],
+        "issues_found_non_empty": true,
+        "issues_contains_keyword": "injection"
+      }
+    },
+    {
+      "skill": "backend-architect",
+      "id": "ba-01",
+      "name": "produces data model before API endpoints",
+      "input": "Design a simple URL shortener service. Users can create short links and get redirect counts.",
+      "expect": {
+        "required_fields": ["domain_summary", "data_model", "api_endpoints", "decisions", "risks"],
+        "data_model_non_empty": true,
+        "api_endpoints_non_empty": true,
+        "decisions_non_empty": true
+      }
+    },
+    {
+      "skill": "backend-architect",
+      "id": "ba-02",
+      "name": "includes auth on every endpoint",
+      "input": "Design a multi-tenant project management API with workspaces and tasks.",
+      "expect": {
+        "required_fields": ["domain_summary", "data_model", "api_endpoints", "decisions", "risks"],
+        "all_endpoints_have_auth": true
+      }
+    },
+    {
+      "skill": "agents-orchestrator",
+      "id": "ao-01",
+      "name": "decomposes PR review into parallel phase 1 tasks",
+      "input": "Review a pull request: check code quality, security issues, and test coverage.",
+      "expect": {
+        "required_fields": ["goal", "phases", "aggregation", "risks"],
+        "phases_non_empty": true,
+        "has_parallel_phase": true
+      }
+    },
+    {
+      "skill": "agents-orchestrator",
+      "id": "ao-02",
+      "name": "returns single-phase plan for simple task",
+      "input": "Generate unit tests for a single pure function.",
+      "expect": {
+        "required_fields": ["goal", "phases", "aggregation", "risks"],
+        "phases_count_lte": 2
+      }
+    },
+    {
+      "skill": "devops-automator",
+      "id": "da-01",
+      "name": "produces runnable GitHub Actions config for Rust project",
+      "input": "Create a GitHub Actions CI pipeline for a Rust project: build, test, clippy, fmt check.",
+      "expect": {
+        "required_fields": ["target", "stack_detected", "artifacts", "manual_steps", "decisions"],
+        "artifacts_non_empty": true,
+        "target_contains": "GitHub Actions",
+        "artifacts_no_hardcoded_secrets": true
+      }
+    },
+    {
+      "skill": "devops-automator",
+      "id": "da-02",
+      "name": "lists manual steps that cannot be automated",
+      "input": "Generate a Dockerfile and deployment script for a Node.js app that connects to a Postgres database.",
+      "expect": {
+        "required_fields": ["target", "stack_detected", "artifacts", "manual_steps", "decisions"],
+        "artifacts_non_empty": true
+      }
+    },
+    {
+      "skill": "security-engineer",
+      "id": "se-01",
+      "name": "identifies SQL injection as CRITICAL",
+      "input": "Review: app.get('/user', (req, res) => { db.query('SELECT * FROM users WHERE id = ' + req.query.id) })",
+      "expect": {
+        "required_fields": ["scope", "stack", "findings", "gaps", "summary"],
+        "has_critical_finding": true,
+        "finding_contains_keyword": "injection"
+      }
+    },
+    {
+      "skill": "security-engineer",
+      "id": "se-02",
+      "name": "does not invent findings when code is clean",
+      "input": "Review: const userId = req.params.id; const user = await db.findById(userId);",
+      "expect": {
+        "required_fields": ["scope", "stack", "findings", "gaps", "summary"],
+        "no_critical_findings": true
+      }
+    },
+    {
+      "skill": "api-tester",
+      "id": "at-01",
+      "name": "generates auth failure test case for every authenticated endpoint",
+      "input": "Generate tests for POST /api/jobs — requires bearer auth, returns {id, status: 'queued'}.",
+      "expect": {
+        "required_fields": ["api_surface", "test_cases", "coverage_gaps", "summary"],
+        "test_cases_non_empty": true,
+        "has_auth_failure_test": true
+      }
+    },
+    {
+      "skill": "api-tester",
+      "id": "at-02",
+      "name": "includes at least one validation error test",
+      "input": "Generate tests for POST /api/users with required fields: email (valid format), name (non-empty).",
+      "expect": {
+        "required_fields": ["api_surface", "test_cases", "coverage_gaps", "summary"],
+        "has_validation_error_test": true
+      }
+    },
+    {
+      "skill": "enterprise-buyer-reviewer",
+      "id": "eb-01",
+      "name": "identifies missing SLA as a procurement blocker",
+      "input": "kx is an open source CLI dev assistant. MIT license. No enterprise support tier.",
+      "expect": {
+        "required_fields": ["persona", "verdict", "overall_score", "criteria_scores", "blockers", "due_diligence", "strengths", "summary"],
+        "blockers_non_empty": true,
+        "blockers_contains_keyword": "support"
+      }
+    },
+    {
+      "skill": "developer-dx-reviewer",
+      "id": "dx-01",
+      "name": "evaluates onboarding friction",
+      "input": "kx installs via cargo install. First run: kx dev. Requires ANTHROPIC_API_KEY env var.",
+      "expect": {
+        "required_fields": ["persona", "verdict", "overall_score", "criteria_scores", "friction_points", "strengths", "wishlist", "summary"],
+        "friction_points_non_empty": true
+      }
+    },
+    {
+      "skill": "security-skeptic-reviewer",
+      "id": "ss-01",
+      "name": "flags data exfiltration risk for tool sending prompts to external APIs",
+      "input": "kx sends developer prompts to third-party AI provider APIs (Anthropic, OpenAI, etc.).",
+      "expect": {
+        "required_fields": ["persona", "verdict", "overall_risk", "threat_findings", "missing_controls", "approved_with_conditions", "summary"],
+        "threat_findings_non_empty": true,
+        "has_data_exposure_finding": true
+      }
+    },
+    {
+      "skill": "non-technical-stakeholder",
+      "id": "nts-01",
+      "name": "translates technical description into plain business language",
+      "input": "kx is a Rust CLI that wraps LLM provider APIs with a REPL interface and automatic stack detection.",
+      "expect": {
+        "required_fields": ["persona", "recommendation", "business_summary", "value_proposition", "cost_summary", "risks_plain", "adoption_plan", "decision_required", "next_step"],
+        "business_summary_no_jargon": true
+      }
+    },
+    {
+      "skill": "workflow-runner",
+      "id": "wr-01",
+      "name": "reports failure when reality-checker returns BLOCKED",
+      "input": "workflow: [{id: 'validate', skill: 'reality-checker', input: 'Done.'}]",
+      "expect": {
+        "required_fields": ["workflow", "status", "steps", "final_output", "failure_reason"],
+        "status": "failed",
+        "failure_reason_non_null": true
+      }
+    },
+    {
+      "skill": "workflow-runner",
+      "id": "wr-02",
+      "name": "completes successfully when all steps pass",
+      "input": "workflow: [{id: 'design', skill: 'backend-architect', input: 'Design a health check endpoint'}, {id: 'validate', skill: 'reality-checker', input: 'output from design step', depends_on: ['design']}]",
+      "expect": {
+        "required_fields": ["workflow", "status", "steps", "final_output", "failure_reason"],
+        "steps_non_empty": true
+      }
+    }
+    ,
+    {
+      "skill": "uxui-evaluator",
+      "id": "ue-01",
+      "name": "flags Cognitive Load violation on overloaded dashboard",
+      "input": "Dashboard with 15 KPI cards, 4 filter dropdowns, a data table with 12 columns, and 3 sidebar action buttons all visible simultaneously on first load. No grouping or progressive disclosure.",
+      "expect": {
+        "required_fields": ["interface_type", "scope", "findings", "strengths", "priority_fixes", "gaps", "overall_grade", "summary"],
+        "findings_non_empty": true,
+        "has_critical_finding": true,
+        "critical_principle_code": "F.1.1.02",
+        "overall_grade_not": ["A", "B"]
+      }
+    },
+    {
+      "skill": "uxui-evaluator",
+      "id": "ue-02",
+      "name": "applies Part V AI principles to AI assistant interface",
+      "input": "AI writing assistant: generates text suggestions inline. No label indicating output is AI-generated. No confidence level shown. No way to dismiss or reject a suggestion without accepting it first.",
+      "expect": {
+        "required_fields": ["interface_type", "scope", "findings", "strengths", "priority_fixes", "gaps", "overall_grade", "summary"],
+        "interface_type": "ai-assistant",
+        "findings_non_empty": true,
+        "has_principle_prefix": "S.1.3",
+        "has_critical_finding": true
+      }
+    },
+    {
+      "skill": "interface-auditor",
+      "id": "ia-01",
+      "name": "marks checkout form with 22 fields as launch blocker",
+      "input": "Checkout form with 22 fields: billing address (6), shipping address (6), card number, expiry, CVV, name on card, email, phone, promo code, gift message, newsletter opt-in, terms checkbox. All on one page. No inline validation. Submit button at bottom only.",
+      "expect": {
+        "required_fields": ["interface_type", "scope", "score", "findings", "ux_smells", "gaps", "grade", "launch_blocker", "summary"],
+        "launch_blocker": true,
+        "score_critical_gte": 2,
+        "grade_not": ["A", "B"],
+        "ux_smells_contains": "Form Graveyard"
+      }
+    },
+    {
+      "skill": "interface-auditor",
+      "id": "ia-02",
+      "name": "does not invent violations on a clean single-action screen",
+      "input": "Modal dialog with a single input field (email address), a clear label, inline validation on blur, a primary CTA button (44px height, full-width), and a visible close button. No other elements.",
+      "expect": {
+        "required_fields": ["interface_type", "scope", "score", "findings", "ux_smells", "gaps", "grade", "launch_blocker", "summary"],
+        "launch_blocker": false,
+        "score_critical_lte": 0,
+        "grade_in": ["A", "B"]
+      }
+    },
+    {
+      "skill": "geo-auditor",
+      "id": "ga-01",
+      "name": "scores Poor and lists critical blockers when all AI crawlers are blocked and schema is absent",
+      "input": "Site robots.txt disallows: Googlebot, gptbot, claudebot, perplexitybot, ccbot, anthropic-ai, chatgpt-user, bytespider. No JSON-LD on any page. Homepage is 320 words with one H1. No meta description. No sitemap.xml.",
+      "expect": {
+        "required_fields": ["url", "overall_score", "band", "tiers", "critical_blockers", "action_plan", "summary"],
+        "band": "poor",
+        "overall_score_lte": 25,
+        "critical_blockers_non_empty": true,
+        "action_plan_non_empty": true,
+        "tiers_required": ["robots_txt", "schema_org", "content_quality", "ai_readiness"]
+      }
+    },
+    {
+      "skill": "geo-auditor",
+      "id": "ga-02",
+      "name": "scores Good or higher when crawlers allowed, schema present, content strong",
+      "input": "Site allows all AI crawlers in robots.txt (gptbot, claudebot, perplexitybot, google-extended, ccbot, chatgpt-user). Has Organization + SoftwareApplication JSON-LD with name, description, url, image, applicationCategory. Homepage is 1,400 words with H1, H2, H3 structure, 12 statistics with percentages, meta description 120 chars. Has sitemap.xml.",
+      "expect": {
+        "required_fields": ["url", "overall_score", "band", "tiers", "critical_blockers", "action_plan", "summary"],
+        "band_not": ["poor"],
+        "overall_score_gte": 55,
+        "critical_blockers_empty": true
+      }
+    },
+    {
+      "skill": "geo-schema-generator",
+      "id": "gs-01",
+      "name": "generates SoftwareApplication + Organization schemas for a SaaS CLI tool",
+      "input": "kx is an open source CLI AI assistant for developers. MIT license. Free. Supports 11 AI providers including Claude, GPT-4, and Gemini. Built in Rust. GitHub: github.com/kernex-dev/kernex-agent. Version 0.2.0.",
+      "expect": {
+        "required_fields": ["entity_type", "schemas_generated", "quality_score", "artifacts", "deployment_instructions", "missing_data_required", "geo_score_impact"],
+        "entity_type": "SoftwareApplication",
+        "schemas_generated_contains": "SoftwareApplication",
+        "schemas_generated_contains_org": "Organization",
+        "quality_score_gte": 75,
+        "artifacts_non_empty": true,
+        "artifact_has_json_ld": true,
+        "artifact_has_placement": true
+      }
+    },
+    {
+      "skill": "geo-schema-generator",
+      "id": "gs-02",
+      "name": "refuses to generate placeholder schemas when no context is provided",
+      "input": "Generate schema for my website.",
+      "expect": {
+        "required_fields": ["entity_type", "schemas_generated", "quality_score", "artifacts", "deployment_instructions", "missing_data_required", "geo_score_impact"],
+        "missing_data_required_non_empty": true,
+        "no_placeholder_values": true,
+        "artifacts_empty_or_incomplete": true
+      }
+    }
+  ]
+}
