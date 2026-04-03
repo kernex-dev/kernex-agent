@@ -8,7 +8,7 @@ No build step required — pull the pre-built image from GHCR.
 ## What You Get
 
 - A running HTTP API that accepts agent jobs
-- 13 pre-loaded skills (developer, security, architecture, GEO, UX)
+- 16 pre-loaded skills (developer, security, architecture, GEO, UX, reviewer personas)
 - 4 pre-loaded workflows (PR review, feature design, security audit, GEO audit)
 - Bearer token auth, TLS (VPS path), and structured JSON responses
 
