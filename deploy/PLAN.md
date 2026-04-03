@@ -29,6 +29,8 @@
 | `/health` job stats | DONE | Returns queued/running/done/flagged/failed/total counts |
 | `kx skills lint` subcommand | DONE | Content validation: required fields, sections, anti-patterns |
 | Validation gate (Layer 3) | DONE | `reality-checker` auto-runs as final step in all workflows; `Flagged` status on NEEDS WORK/BLOCKED verdict |
+| `trigger` keyword parsing | DONE | Pipe-delimited and YAML list formats; surfaced in Level 1 prompt and full skill prompt |
+| `toolbox` parsing and registration | DONE | `[toolbox.NAME]` TOML sections parsed into `SkillTool`; surfaced as TOOL comments in prompts |
 
 ---
 
