@@ -60,10 +60,15 @@ pub fn build_serve_system_prompt(
         };
 
         let domain_tag = parsed.domain.map(|d| format!(" [{d}]")).unwrap_or_default();
+        let trigger_tag = if parsed.triggers.is_empty() {
+            String::new()
+        } else {
+            format!(" triggers: {}", parsed.triggers.join(", "))
+        };
 
         skill_lines.push(format!(
-            "- **{}**{} [{}]: {}",
-            parsed.name, domain_tag, installed.trust, parsed.description
+            "- **{}**{} [{}]: {}{}",
+            parsed.name, domain_tag, installed.trust, parsed.description, trigger_tag
         ));
     }
 
