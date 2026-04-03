@@ -1,0 +1,14 @@
+{
+  // Let the GitHub Actions extension own workflow file validation.
+  // This disables the Red Hat YAML extension's schemastore schema for these files,
+  // which causes false-positive errors on valid third-party action inputs.
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": []
+  },
+  // Treat unpinned actions as a warning, not an error.
+  // Most stable OSS actions (actions/checkout@v4, docker/*@v3, etc.) use
+  // signed, immutable release tags — SHA pinning adds maintenance overhead
+  // for no practical security gain in this project.
+  "github-actions.workflows.pinned.actions": "warning",
+  "github-actions.workflows.pinned.workflows": "ignore"
+}
