@@ -119,6 +119,8 @@ pub struct SkillManifest {
     pub description: String,
     pub requested_permissions: BTreeSet<Permission>,
     pub content: String,
+    /// Optional domain taxonomy from `metadata.domain` (e.g. "task", "review", "ops", "orchestration").
+    pub domain: Option<String>,
 }
 
 /// A skill that has been installed and its permissions resolved.
