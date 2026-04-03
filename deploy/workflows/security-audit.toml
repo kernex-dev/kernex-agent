@@ -1,0 +1,42 @@
+name = "security-audit"
+description = "Full security audit: vulnerability scan, hardened CI pipeline, and readiness gate. Pass the codebase description or a file/directory path as input."
+
+[[steps]]
+id = "vulnerability-scan"
+skill = "security-engineer"
+input = """
+Audit this codebase for security vulnerabilities.
+Rate each finding by severity (CRITICAL, HIGH, MEDIUM, LOW).
+Include OWASP category and remediation for each finding.
+Target: {input}
+"""
+
+[[steps]]
+id = "secure-pipeline"
+skill = "devops-automator"
+input = """
+Generate a hardened CI/CD pipeline configuration that addresses these security findings.
+Include secret scanning, dependency auditing, and SAST steps.
+
+Security findings:
+{vulnerability-scan.output}
+
+Original target: {input}
+"""
+depends_on = ["vulnerability-scan"]
+
+[[steps]]
+id = "audit-gate"
+skill = "reality-checker"
+input = """
+Review these security audit results and determine if the codebase is safe to deploy.
+
+Vulnerability findings:
+{vulnerability-scan.output}
+
+Proposed secure pipeline:
+{secure-pipeline.output}
+
+Return BLOCKED if any CRITICAL findings are unaddressed.
+"""
+depends_on = ["vulnerability-scan", "secure-pipeline"]

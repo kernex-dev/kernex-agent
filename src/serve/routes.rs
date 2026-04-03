@@ -22,6 +22,8 @@ pub struct RunBody {
     pub skills: Option<Vec<String>>,
     /// Execution mode: "task" (default) or "evaluate"/"review".
     pub mode: Option<String>,
+    /// Named workflow to execute from the workflows directory.
+    pub workflow: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +96,7 @@ pub async fn handle_run(
         verbose: state.default_flags.verbose,
         skills: body.skills,
         mode: body.mode,
+        workflow: body.workflow,
     };
 
     state.tx.send(req).await.map_err(|_| {
@@ -155,6 +158,7 @@ pub async fn handle_webhook(
             max_turns: None,
             skills: None,
             mode: None,
+            workflow: None,
         }),
     )
     .await

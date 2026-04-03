@@ -47,6 +47,9 @@ pub struct JobRequest {
     pub skills: Option<Vec<String>>,
     /// Execution mode: "task" (default) or "evaluate"/"review" for persona/assessment jobs.
     pub mode: Option<String>,
+    /// Named workflow to execute. If set, `message` is used as the workflow input and
+    /// each step is dispatched as a separate agent call.
+    pub workflow: Option<String>,
 }
 
 pub type JobStore = Arc<RwLock<HashMap<String, Job>>>;
