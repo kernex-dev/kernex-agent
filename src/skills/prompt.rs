@@ -6,13 +6,14 @@ use colored::Colorize;
 use super::audit::{log_event, AuditEvent};
 use super::manifest::skill_file_path;
 use super::parser::parse_skill_md;
-use super::types::{InstalledSkill, Permission};
+use super::types::{InstalledSkill, Permission, SkillTool};
 
 pub struct LoadedSkill {
     pub installed: InstalledSkill,
     pub content: String,
     pub domain: Option<String>,
     pub triggers: Vec<String>,
+    pub toolbox: Vec<SkillTool>,
 }
 
 pub fn load_skills(data_dir: &Path, manifest_skills: &[InstalledSkill]) -> Vec<LoadedSkill> {
@@ -59,6 +60,7 @@ pub fn load_skills(data_dir: &Path, manifest_skills: &[InstalledSkill]) -> Vec<L
             content: parsed.content,
             domain: parsed.domain,
             triggers: parsed.triggers,
+            toolbox: parsed.toolbox,
         });
     }
 
@@ -110,6 +112,22 @@ pub fn build_skills_prompt(skills: &[LoadedSkill]) -> String {
             out.push_str(&format!(
                 "<!-- TRIGGERS: {} -->\n",
                 skill.triggers.join(", ")
+            ));
+        }
+        for tool in &skill.toolbox {
+            let args_str = if tool.args.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", tool.args.join(" "))
+            };
+            let params_str = tool
+                .parameters_schema
+                .as_deref()
+                .map(|p| format!(" params: {p}"))
+                .unwrap_or_default();
+            out.push_str(&format!(
+                "<!-- TOOL: {} | {} | cmd: {}{}{} -->\n",
+                tool.name, tool.description, tool.command, args_str, params_str
             ));
         }
         out.push_str(&format!(
@@ -170,6 +188,7 @@ mod tests {
             content: content.to_string(),
             domain: None,
             triggers: vec![],
+            toolbox: vec![],
         }
     }
 

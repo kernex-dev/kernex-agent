@@ -112,6 +112,21 @@ impl fmt::Display for TrustLevel {
     }
 }
 
+/// A single tool entry from a `[toolbox.NAME]` TOML section in a SKILL.md file.
+#[derive(Debug, Clone)]
+pub struct SkillTool {
+    /// The tool's key name (the `NAME` in `[toolbox.NAME]`).
+    pub name: String,
+    /// Human-readable description of what the tool does.
+    pub description: String,
+    /// The executable to invoke (e.g. "npm", "semgrep").
+    pub command: String,
+    /// Default arguments prepended before any agent-supplied parameters.
+    pub args: Vec<String>,
+    /// Raw inline TOML table string for the JSON Schema parameters definition.
+    pub parameters_schema: Option<String>,
+}
+
 /// Parsed content of a SKILL.md file (frontmatter + body).
 #[derive(Debug, Clone)]
 pub struct SkillManifest {
@@ -124,6 +139,8 @@ pub struct SkillManifest {
     /// Trigger phrases from the `trigger` frontmatter field (pipe-delimited).
     /// Used to help agents identify when this skill is relevant.
     pub triggers: Vec<String>,
+    /// Tools declared in `[toolbox.NAME]` sections.
+    pub toolbox: Vec<SkillTool>,
 }
 
 /// A skill that has been installed and its permissions resolved.

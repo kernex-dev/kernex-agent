@@ -66,9 +66,21 @@ pub fn build_serve_system_prompt(
             format!(" triggers: {}", parsed.triggers.join(", "))
         };
 
+        let tool_tag = if parsed.toolbox.is_empty() {
+            String::new()
+        } else {
+            let names = parsed
+                .toolbox
+                .iter()
+                .map(|t| t.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(" tools: [{names}]")
+        };
+
         skill_lines.push(format!(
-            "- **{}**{} [{}]: {}{}",
-            parsed.name, domain_tag, installed.trust, parsed.description, trigger_tag
+            "- **{}**{} [{}]: {}{}{}",
+            parsed.name, domain_tag, installed.trust, parsed.description, trigger_tag, tool_tag
         ));
     }
 
