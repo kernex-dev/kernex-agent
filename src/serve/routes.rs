@@ -84,10 +84,21 @@ pub async fn handle_health(State(state): State<AppState>) -> Json<HealthResponse
     })
 }
 
+const MAX_MESSAGE_BYTES: usize = 65_536; // 64 KiB
+
 pub async fn handle_run(
     State(state): State<AppState>,
     Json(body): Json<RunBody>,
 ) -> Result<Json<JobIdResponse>, (StatusCode, Json<ErrorResponse>)> {
+    if body.message.len() > MAX_MESSAGE_BYTES {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(ErrorResponse {
+                error: format!("message exceeds {MAX_MESSAGE_BYTES} byte limit"),
+            }),
+        ));
+    }
+
     let job_id = Uuid::new_v4().to_string();
     let provider = body
         .provider
@@ -336,6 +347,11 @@ mod tests {
         assert_eq!(body.message, "hello");
         assert_eq!(body.provider, Some("ollama".to_string()));
         assert!(body.model.is_none());
+    }
+
+    #[test]
+    fn message_size_limit_constant() {
+        assert_eq!(MAX_MESSAGE_BYTES, 65_536);
     }
 
     #[test]
