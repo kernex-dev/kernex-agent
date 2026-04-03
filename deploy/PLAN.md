@@ -1,7 +1,7 @@
 # kx serve — VPS Implementation Plan
 
-> Tracks all planned and completed work for headless server deployment,
-> skills infrastructure, and workflow management.
+> Single source of truth for all planned and completed work.
+> Last updated: 2026-04-03
 
 ---
 
@@ -12,15 +12,128 @@
 | `kx serve` core (HTTP daemon) | DONE | Axum 0.8, Bearer auth, job queue |
 | Docker deployment files | DONE | Dockerfile, docker-compose, Caddyfile |
 | Security hardening | DONE | Non-root, read-only FS, TLS 1.3, rate limiting |
-| Parser bug (TOML vs YAML) | CRITICAL | Skills silently fail to load in CLI and serve |
+| Parser bug (TOML vs YAML) | CRITICAL | Skills silently fail to load — blocks everything |
+| Builtin description rewrites | BLOCKED | Waiting on parser fix |
 | Skills loading in serve mode | NOT STARTED | `run_agent` uses hardcoded system prompt |
 | Two-mode skill architecture | NOT STARTED | Task skills vs persona/evaluation skills |
+| `skill-factory` builtin | NOT STARTED | Meta-skill for building new skills |
 | Workflow file system | NOT STARTED | No named workflow support |
 | `workflow-runner` skill | NOT STARTED | Serve-context orchestrator and validation gate |
 | Validation gate (anti-hallucination) | NOT STARTED | No output validation before job completion |
+| `validate_skill.py` integration | NOT STARTED | Available in skills_research/, not wired up |
 | Webhook HMAC verification | NOT STARTED | All webhooks share the same bearer token |
 | Job persistence | NOT STARTED | In-memory only, lost on restart |
 | `/health` job stats | NOT STARTED | Returns static `{status: ok}` only |
+
+---
+
+## Pre-Phase: Standards and Artifacts
+
+### Skill Format Standard (YAML-style only for new skills)
+
+The official Agent Skills spec (`agentskills.io`, adopted by Anthropic and 26+ platforms)
+uses YAML-style frontmatter. All new skills — including everything in `deploy/skills/` —
+use this format:
+
+```yaml
+---
+name: skill-name
+description: What it does and when to trigger. Max 200 chars.
+metadata:
+  author: kernex-dev
+  version: "1.0"
+  domain: ops
+---
+
+# Skill Name
+
+2-3 sentence overview.
+
+## Workflow
+## Output Format
+## Examples
+## Edge Cases
+```
+
+The `metadata.domain` field uses a fixed taxonomy: `task`, `review`, `ops`, `orchestration`.
+In serve mode this enables routing: evaluation workflows load `domain: review` skills only.
+
+Existing builtins use TOML-style (`name = "..."`) which the parser cannot read. They are
+not changing format — the parser will be extended to handle both. New skills use YAML only.
+
+### Skill Directory Structure
+
+```
+skill-name/
+├── SKILL.md          # Required
+├── scripts/          # Optional: deterministic Python/Bash operations
+├── references/       # Optional: domain guides, templates, API refs
+├── assets/           # Optional: static files
+└── evals/
+    └── evals.json    # Required for deploy/ skills: test cases
+```
+
+Scripts are token-efficient: the code never enters context, only execution output does.
+Any operation that should produce identical output every time belongs in a script.
+
+### evals/evals.json Format
+
+Every skill in `deploy/skills/` ships with test cases:
+
+```json
+{
+  "skill_name": "skill-name",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "realistic messy user prompt with context",
+      "expected_output": "description of expected result",
+      "files": []
+    }
+  ]
+}
+```
+
+### Description Formula (200-char budget)
+
+```
+First 80 chars: what it does (agent reads this first)
+Next 60 chars:  when to use it (trigger contexts)
+Last 60 chars:  key phrases or explicit NOT-trigger boundaries
+```
+
+Pattern: `[Action verb] + [specific output] + [trigger contexts/phrases]`
+
+All 12 existing builtin descriptions need to be rewritten to this formula after the parser fix.
+Current descriptions are 60-90 chars and too abstract to trigger reliably.
+
+### Autonomy Checklist (required before shipping any skill)
+
+```
+[ ] Every step has a clear, unambiguous action
+[ ] No step requires user input to proceed (or has a default fallback)
+[ ] Output format is fully specified with a template
+[ ] Edge cases have explicit handling — not "ask the user"
+[ ] Completion criteria are defined
+[ ] Deterministic operations are in scripts/, not instructions
+[ ] Error states have recovery paths
+[ ] Tested with 3+ realistic prompts without human input
+[ ] Description triggers reliably on natural-language requests
+[ ] evals/evals.json exists with 2+ test cases
+```
+
+### skills_research/ Artifact Disposition
+
+`skills_research/` is a scratch directory with finished artifacts. Move them:
+
+| File | Move to |
+|---|---|
+| `SKILL.md` (skill-factory) | `builtins/skill-factory/SKILL.md` |
+| `validate_skill.py` | `deploy/skills/validate_skill.py` |
+| `autonomy-guide.md` | `deploy/skills/references/autonomy-guide.md` |
+| `description-patterns.md` | `deploy/skills/references/description-patterns.md` |
+| `templates.md` | `deploy/skills/references/templates.md` |
+| `skills-playbook.md` | Keep as reference, do not deploy |
 
 ---
 
@@ -28,65 +141,87 @@
 
 ### The Problem
 
-`src/skills/parser.rs` expects YAML-style key-value pairs:
-```yaml
-name: skill-name
-description: What this skill does
+`src/skills/parser.rs:48` — `extract_key_value()` looks for `:` as separator:
+
+```rust
+fn extract_key_value(line: &str) -> Option<(&str, &str)> {
+    let colon_pos = line.find(':')?;
 ```
 
 All 12 builtins use TOML-style assignment:
 ```toml
-name = "skill-name"
-description = "What this skill does"
+name = "devops-automator"
+description = "DevOps and infrastructure..."
 ```
 
-`extract_key_value()` at `parser.rs:48` looks for `:` as separator. It never finds `:` in
-`name = "..."`, so `name` stays `None`, `parse_skill_md()` returns `MissingField("name")`,
-and `load_skills()` silently skips every builtin with a warning. Skills are installed by
-`kx init` (which bypasses parsing entirely) but **never injected into the system prompt**.
+`line.find(':')` returns `None` on `name = "..."`. `name` stays `None`.
+`parse_skill_md()` returns `MissingField("name")`. `load_skills()` emits a warning
+and skips every builtin silently. **Skills are installed but never loaded into any prompt.**
+
+Running `skills_research/validate_skill.py` on any existing builtin confirms this:
+every one fails with "Missing required 'name' field."
+
+The install path (`builtins.rs:86`) bypasses parsing entirely — it hardcodes the name
+from the struct literal. This is why `kx init` succeeds but skills never activate.
 
 ### The Fix
 
-Extend `parse_frontmatter()` to handle both `key: value` and `key = "value"` scalar forms.
-One targeted change in `parser.rs`. All existing builtins start working immediately. No
-skill files need to change.
+Extend `parse_frontmatter()` to handle both scalar forms:
 
-New skills (`deploy/skills/`, `workflow-runner`) will use the official YAML-style format
-aligned with the Anthropic spec. Both formats will be supported indefinitely for
-forward-compatibility.
+```rust
+// Handle: key: value  (YAML-style)
+// Handle: key = "value"  (TOML-style, existing builtins)
+fn extract_key_value(line: &str) -> Option<(&str, &str)> {
+    if let Some(pos) = line.find(':') {
+        // YAML: key: value
+        let key = line[..pos].trim();
+        if !key.is_empty() && !key.contains(' ') && !key.contains('=') {
+            return Some((key, line[pos + 1..].trim()));
+        }
+    }
+    if let Some(pos) = line.find('=') {
+        // TOML: key = "value"
+        let key = line[..pos].trim();
+        if !key.is_empty() && !key.contains(' ') {
+            let val = line[pos + 1..].trim().trim_matches('"').trim_matches('\'');
+            return Some((key, val));
+        }
+    }
+    None
+}
+```
 
-**This fix must land before any other skills work. Everything below depends on it.**
+Also add `metadata` as a parseable block key (for `domain` extraction). Add
+`metadata.domain` to `SkillManifest` as `pub domain: Option<String>`.
+
+Update parser tests to cover both formats. Verify all 12 builtins parse cleanly.
+
+**This fix must land before any other skills work.**
 
 ---
 
 ## Skill Architecture: Two Modes
 
-Skills in kx operate in one of two distinct modes. Mixing them in the same job degrades
-both quality and token efficiency.
+Skills operate in one of two modes. Mixing them in the same job degrades quality,
+wastes tokens, and breaks validation.
 
 ### Mode 1: Task Execution
 
-The agent asks: **"What should I produce?"**
+Agent asks: **"What should I produce?"**
 
-The skill grants the agent a role, capabilities, and procedures. Output is an artifact:
-code, a report, a configuration file, a structured analysis.
-
-All 12 existing builtins are task skills. Examples:
-- `devops-automator` produces pipelines, Dockerfiles, infra config
-- `security-engineer` produces audit reports and vulnerability findings
-- `senior-developer` produces code changes and reviews
+The skill grants a role, capabilities, and procedures. Output is an artifact:
+code, report, config file, analysis. All 12 existing builtins are task skills.
 
 ### Mode 2: Persona Evaluation
 
-The agent asks: **"How would this person respond?"**
+Agent asks: **"How would this person respond?"**
 
-The skill installs a behavioral archetype with a specific perspective, cognitive biases,
-and decision framework. The agent does not produce or improve content. It evaluates
-content as that persona would and returns structured feedback.
+The skill installs a behavioral archetype. The agent evaluates content as that persona
+would and returns structured feedback. It does not produce or improve content.
 
-This is the architectural pattern behind agentic persona systems used in market research,
-UX testing, and pre-launch content review. The agent simulates an audience member, not
-an author.
+This is the architectural pattern behind agentic persona systems: simulating audience
+response before content goes live, stress-testing proposals, pre-launch messaging review.
+The agent simulates an audience member, not an author.
 
 ### Why the Separation Matters
 
@@ -94,38 +229,38 @@ an author.
 |---|---|
 | Token consumption | Task context + persona context = 2x overhead for half the quality |
 | Accuracy | A persona skill told to "also fix it" loses perspective anchoring |
-| Hallucination risk | Open-ended generation in an evaluation context produces invented data |
+| Hallucination risk | Open-ended generation in evaluation context produces invented data |
 | Reproducibility | Mixed-mode jobs produce different outputs on identical inputs |
-
-**The `workflow-runner` skill is the enforcer.** It knows which mode is active and
-prevents cross-contamination. A task workflow cannot accidentally call a persona skill
-in generation mode, and an evaluation workflow cannot slip into content production.
 
 ### Persona Skill Format
 
-Persona skills use the same SKILL.md format. The difference is in the body content.
+Same SKILL.md structure. The body content makes the mode explicit:
 
 ```yaml
 ---
 name: enterprise-buyer-reviewer
-description: Evaluates proposals, docs, or product copy from the perspective of an
-  enterprise procurement buyer focused on vendor risk, compliance, and TCO. Returns
-  structured feedback only -- does not rewrite or improve content.
+description: Evaluates proposals and messaging from the perspective of an enterprise
+  procurement buyer focused on vendor risk and compliance. Returns structured JSON
+  feedback only -- does not rewrite or generate content.
+metadata:
+  author: kernex-dev
+  version: "1.0"
+  domain: review
 ---
 
 # Enterprise Buyer Reviewer
 
-You are simulating how a senior enterprise buyer evaluates the content they receive.
-You do NOT rewrite, improve, or generate content. You read it as a buyer would.
+Simulate how a senior enterprise buyer evaluates the content received.
+Do NOT rewrite, improve, or generate content. Evaluate as a buyer would.
 
 ## Profile
 
 - 12+ years procurement and vendor management at Fortune 500 companies
 - Primary concern: reducing vendor risk, not adopting new technology
-- Decision blockers: unclear SLAs, missing compliance documentation, pricing ambiguity
+- Decision blockers: unclear SLAs, missing compliance docs, pricing ambiguity
 - Trust signals: audit certifications, named references, clear escalation paths
 
-## Evaluation Output (always return this schema)
+## Output Schema (always return this exact JSON)
 
 ```json
 {
@@ -140,257 +275,171 @@ You do NOT rewrite, improve, or generate content. You read it as a buyer would.
 
 ## Behavioral Constraints
 
-- You never suggest edits or improvements
-- Your feedback is specific, not generic
-- If the content is outside your role, say so explicitly
-- You do not validate or praise -- you evaluate
+- Never suggest edits or improvements
+- Feedback must be specific, not generic ("the pricing section", not "some areas")
+- If content is outside your role, say so explicitly
+- Do not validate or praise — evaluate
 ```
-
-### Serve Mode Persona Skills (Starter Set)
-
-| Skill | Archetype | Use Case |
-|---|---|---|
-| `enterprise-buyer-reviewer` | Enterprise procurement buyer | Pre-launch messaging review |
-| `developer-dx-reviewer` | Developer evaluating API/SDK quality | API design and docs review |
-| `security-skeptic-reviewer` | Security-first engineer reviewing proposals | Pre-publish security posture review |
-| `non-technical-stakeholder` | Business owner reading a technical document | Executive summary and proposal review |
 
 ---
 
-## Token Efficiency Strategy
+## Token Efficiency Architecture
 
-Token consumption is the primary operational cost for automated workflows. Every
-architectural decision should be evaluated against token impact.
+Token cost is the primary operational cost of automated workflows. Every design
+decision should be evaluated against token impact.
 
-### Skill Loading Policy: Explicit Only
+### Skill Loading: Explicit Only
 
-Load no skills unless explicitly requested. Never load all installed skills for every job.
+Load no skills unless explicitly requested. Never load all installed skills per job.
 
-Priority chain for skill resolution:
+Resolution chain:
 ```
 request.skills > workflow.skills > none
 ```
 
-A job with no `skills` field runs with the base system prompt only. This is correct for
-simple tasks that do not need specialist context.
+A job with no `skills` field runs with the base system prompt only.
 
-### Level 1 Discovery: Metadata Only
+### Level 1/2/3 Discovery
 
-When skills are loaded, only inject `name` and `description` into the system prompt
-initially (~100 tokens per skill). The full skill body (Level 2) is made available on
-request -- the agent reads it via the bash/file tool when it determines the skill is
-relevant.
+| Level | Content | Token cost | When |
+|---|---|---|---|
+| 1 | `name` + `description` only | 30-100 per skill | Always, for listed skills |
+| 2 | Full SKILL.md body | 2,000-5,000 per skill | Agent reads on demand via tool |
+| 3 | `scripts/` output, `references/` | Variable, output only | Agent invokes scripts |
 
-This means: 5 skills injected at Level 1 costs ~500 tokens. The same 5 skills injected
-at Level 2 (full body) costs ~5000-15000 tokens. For most jobs, Level 1 is sufficient.
+Default: inject Level 1 metadata only. The agent reads the full body (Level 2) via
+a file/bash tool when it determines the skill is needed. Script code (Level 3) never
+enters context — only the execution output does.
 
-### Skill Description Quality
-
-The description field is the most token-efficient part of a skill. A well-written
-description prevents the agent from loading the full skill body unnecessarily.
-
-Rules for description quality:
-- Max 200 characters for the summary line
-- State explicitly what the skill does AND when NOT to use it
-- For persona skills: state that it evaluates, does not generate
-- No filler phrases ("powerful", "comprehensive", "advanced")
+Example: 5 skills at Level 1 = ~250-500 tokens. Same 5 at Level 2 = ~10,000-25,000 tokens.
 
 ### Workflow Skill Budgets
 
-Each workflow TOML should specify a `max_skills` count. This acts as a hard ceiling
-on how many skills can be active simultaneously, preventing token overrun from
-misconfigured workflows.
+Each workflow TOML defines a `max_skills` ceiling:
 
 ```toml
 [workflow]
-name        = "deploy-verify"
-max_skills  = 3
-skills      = ["devops-automator", "security-engineer", "reality-checker"]
+name       = "deploy-verify"
+max_skills = 3
+skills     = ["devops-automator", "security-engineer", "reality-checker"]
 ```
+
+This prevents token overrun from misconfigured or over-specified workflows.
+
+### Description Quality as Token Optimization
+
+A precise description prevents unnecessary Level 2 loads. If the agent can determine
+from the description that a skill is not relevant, it never reads the body.
+
+Rules:
+- Max 200 characters, use the full budget
+- State explicitly what the skill does AND when NOT to use it
+- For persona skills: state that it evaluates, does not generate
+- No filler: "powerful", "comprehensive", "advanced" waste characters
 
 ---
 
 ## Quality and Anti-Hallucination Architecture
 
-The reliability architecture has three layers. Each layer is independent and composable.
+Three independent layers. Each is composable with the others.
 
 ### Layer 1: Bounded Context (Structural)
 
 Serve mode is inherently bounded:
-- `no_memory: true` on every job -- no cross-job contamination
+- `no_memory: true` per job — no cross-job contamination
 - Skills provide vertical context, not open retrieval
-- No internet access unless a skill explicitly grants it (none of the planned skills do)
+- No internet access unless a skill explicitly enables it (none of the planned skills do)
 - Persona skills add a second constraint: evaluation mode, not generation mode
 
-This means the agent reasons from the skill content and the job message only.
-"Disciplined, bounded reasoning rather than noise."
+The agent reasons from skill content and the job message only.
 
 ### Layer 2: Structured Output (Schematic)
 
-Unstructured prose output is the primary source of drift and invented detail.
-Structured output forces the agent to conform to a schema, making validation
-mechanical rather than interpretive.
+Unstructured prose is the primary source of drift and invented detail. Structured output
+forces conformance to a schema, making validation mechanical not interpretive.
 
-For task jobs: the `workflow-runner` skill instructs the agent to return a structured
-summary alongside any artifacts produced.
+For task jobs: `workflow-runner` instructs the agent to return a structured summary
+alongside artifacts.
 
-For evaluation jobs: persona skills define a mandatory JSON schema (see example above).
-The agent cannot return narrative feedback -- it must populate the schema fields.
+For evaluation jobs: persona skills define a mandatory JSON output schema. The agent
+cannot return narrative feedback — it must populate schema fields.
 
-The job response should carry a `mode` field so callers know what schema to expect:
+Job response carries a `mode` field so callers know what schema to expect:
 ```json
 {
   "job_id": "...",
   "status": "done",
   "mode": "evaluate",
-  "output": { ... }   // structured, schema-validated
+  "output": { ... }
 }
 ```
 
 ### Layer 3: Validation Gate (Active)
 
-The `reality-checker` builtin acts as a validation gate before a job is marked `done`.
-
-In any workflow that produces artifacts or evaluation outputs, `reality-checker` runs
-as the final step. It verifies:
-- Claims in the output are grounded in the provided context
+`reality-checker` runs as the final step in every workflow. It verifies:
+- Claims are grounded in the provided context
 - No invented references, URLs, version numbers, or statistics
-- The output format matches what was requested
-- For evaluation jobs: all schema fields are populated with specific, not generic, content
+- Output format matches what was requested
+- For evaluation jobs: all schema fields are populated with specific content
 
 If `reality-checker` flags an issue, the job status is set to `flagged` (new status),
-not `done`. The caller receives the output with a `validation_warnings` array.
+not `done`. The caller receives output with a `validation_warnings` array.
 
-This requires adding `flagged` to the `JobStatus` enum in `src/serve/jobs.rs`.
+This requires adding `Flagged` to `JobStatus` in `src/serve/jobs.rs`.
 
----
+### Autonomy as Anti-Hallucination
 
-## Architecture: Serve Mode Skills + Workflows
-
-### 1. Parser Fix (Pre-Phase 1)
-
-File: `src/skills/parser.rs` -- `parse_frontmatter()`
-
-Add handling for `key = "value"` (strip quotes, treat as equivalent to `key: value`).
-New skills use YAML-style. Both forms supported permanently.
-
-### 2. Skills Loading in `run_agent`
-
-File: `src/serve/mod.rs`
-
-```rust
-// Current (hardcoded):
-let system_prompt = "You are a helpful AI assistant running in headless server mode.";
-
-// Target:
-let skills = load_serve_skills(&data_dir, req.skills.as_deref()).await?;
-let system_prompt = build_serve_system_prompt(&skills, req.mode.as_deref());
-```
-
-`build_serve_system_prompt()` injects Level 1 metadata only. The agent reads full
-skill bodies via tool calls when needed.
-
-### 3. `RunBody` Changes
-
-File: `src/serve/routes.rs`
-
-```rust
-pub struct RunBody {
-    pub message: String,
-    pub workflow: Option<String>,         // NEW: named workflow to load
-    pub skills:   Option<Vec<String>>,    // NEW: explicit skill list
-    pub mode:     Option<String>,         // NEW: "task" | "evaluate" (default: "task")
-    pub provider: Option<String>,
-    pub model:    Option<String>,
-    pub project:  Option<String>,
-    pub channel:  Option<String>,
-    pub max_turns: Option<usize>,
-}
-```
-
-### 4. Workflow File System
-
-Named, reusable job configurations stored in `deploy/workflows/` (version-controlled).
-
-Schema (`workflows/<name>.toml`):
-```toml
-[workflow]
-name        = "deploy-verify"
-description = "Run after every production deployment"
-mode        = "task"
-skills      = ["devops-automator", "security-engineer", "reality-checker"]
-max_skills  = 3
-project     = "production"
-channel     = "deploy"
-max_turns   = 15
-```
-
-Priority chain:
-```
-request.skills > workflow.skills > none
-request.mode   > workflow.mode   > "task"
-request.project > workflow.project > serve default
-request.max_turns > workflow.max_turns > serve default
-```
-
-### 5. `workflow-runner` Skill
-
-This is the only skill that understands the kx serve context. It:
-- Knows the job ID, channel, project, and mode
-- Enforces mode separation (task vs evaluate)
-- Instructs the agent to use structured output
-- Invokes `reality-checker` as the final gate before reporting done
-- Formats all output for programmatic consumption
-
-Without this skill, modes bleed into each other and output is unpredictable.
-
-### 6. `deploy/skills/` Strategy
-
-Do not copy builtin skill files into `deploy/skills/`. Mount `builtins/` directly.
-
-In `docker-compose.yml`:
-```yaml
-volumes:
-  - ./skills:/home/kx/.kx/skills/serve:ro     # serve-specific persona skills
-  - ../builtins:/home/kx/.kx/skills/builtins:ro  # task skills (no duplication)
-```
-
-`deploy/skills/` contains only serve-specific skills that do not belong in builtins:
-persona skills, `workflow-runner`, and any domain-specific task skills.
+Skills written to the autonomy standard (see checklist above) prevent hallucination at
+the skill level. Specific instructions beat vague ones: the more concrete the expected
+output format, the less room the model has to invent. Scripts handle deterministic
+operations — script output is ground truth, not model inference.
 
 ---
 
 ## Implementation Roadmap
 
-### Pre-Phase: Parser Fix (unblocks all skills work)
+### Pre-Phase 0: Move Artifacts
+
+| Step | Action |
+|---|---|
+| Copy `skills_research/SKILL.md` | to `builtins/skill-factory/SKILL.md` |
+| Copy `skills_research/validate_skill.py` | to `deploy/skills/validate_skill.py` |
+| Copy `skills_research/*.md` (3 guides) | to `deploy/skills/references/` |
+| Confirm `skills_research/` is in `.gitignore` or remove it | cleanup |
+
+### Pre-Phase 1: Parser Fix
 
 | Step | File | Change |
 |---|---|---|
-| Handle `key = "value"` in `parse_frontmatter` | `skills/parser.rs` | Small |
-| Update parser tests for both formats | `skills/parser.rs` | Small |
-| Verify all 12 builtins parse cleanly | manual test | Verify |
+| Extend `extract_key_value()` for `key = "value"` | `skills/parser.rs` | Small |
+| Add `domain: Option<String>` to `SkillManifest` | `skills/types.rs` | Small |
+| Parse `metadata:` block, extract `domain` | `skills/parser.rs` | Small |
+| Update parser tests for both formats + domain | `skills/parser.rs` | Small |
+| Run all 12 builtins through `validate_skill.py` | manual | Verify |
+| Rewrite all 12 builtin descriptions to 200-char formula | `builtins/*/SKILL.md` | Medium |
 
 ### Phase 1: Skills Loading in Serve Mode
 
 | Step | File | Change |
 |---|---|---|
-| Add `skills`, `mode` to `RunBody` and `JobRequest` | `routes.rs`, `jobs.rs` | Small |
-| New `serve/skills.rs`: load named skills from data dir | `serve/skills.rs` | Medium |
-| Build serve system prompt (Level 1 metadata only) | `serve/skills.rs` | Medium |
-| Update `run_agent` to use loaded skills + mode | `serve/mod.rs` | Small |
-| Update `docker-compose.yml` with skills volume mounts | `docker-compose.yml` | Small |
+| Add `skills`, `mode` fields to `RunBody` and `JobRequest` | `routes.rs`, `jobs.rs` | Small |
+| New `serve/skills.rs`: load named skills, build Level 1 prompt | new file | Medium |
+| Update `run_agent` to use loaded skills and mode | `serve/mod.rs` | Small |
+| Add `Flagged` variant to `JobStatus` | `jobs.rs` | Small |
+| Create `deploy/skills/` directory structure | `deploy/skills/` | Small |
+| Write 7 task skill files (from builtins, YAML format) | `deploy/skills/` | Medium |
+| Add skills volume mounts to `docker-compose.yml` | `docker-compose.yml` | Small |
 
 ### Phase 2: Workflow System + Mode Enforcement
 
 | Step | File | Change |
 |---|---|---|
-| New `serve/workflow.rs`: TOML schema + loader | `serve/workflow.rs` | Medium |
+| New `serve/workflow.rs`: TOML schema + loader | new file | Medium |
 | Add `workflow` field to `RunBody`, merge in `handle_run` | `routes.rs` | Small |
-| Add `flagged` to `JobStatus` enum | `jobs.rs` | Small |
 | Write `workflow-runner` skill | `deploy/skills/workflow-runner/SKILL.md` | Medium |
 | Write 4 persona/evaluation skills | `deploy/skills/reviewers/` | Medium |
 | Create `deploy/workflows/` with 4 starter workflows | `deploy/workflows/` | Small |
-| Update `docker-compose.yml` with workflows volume | `docker-compose.yml` | Small |
+| Add workflows volume mount to `docker-compose.yml` | `docker-compose.yml` | Small |
 
 ### Phase 3: Operational Improvements
 
@@ -399,7 +448,8 @@ persona skills, `workflow-runner`, and any domain-specific task skills.
 | `/health` with job counts (queued/running/done/flagged/failed) | `routes.rs` | Small | High |
 | Webhook HMAC verification (per-source secrets) | `routes.rs`, `jobs.rs` | Medium | Medium |
 | Job persistence (SQLite in data volume) | `jobs.rs`, `serve/mod.rs` | Large | Medium |
-| `trigger` keyword parsing in skill parser | `skills/parser.rs` | Small | Low |
+| Port `validate_skill.py` to `kx skills verify` Rust command | `skills/cli_handler.rs` | Medium | Medium |
+| `trigger` keyword parsing | `skills/parser.rs` | Small | Low |
 | `toolbox` parsing and registration | `skills/parser.rs`, `types.rs` | Large | Low |
 
 ### Phase 4: Maintainer Only
@@ -409,85 +459,93 @@ Not required for private VPS deployment.
 
 ---
 
-## Architectural Decisions (Closed)
-
-| # | Question | Decision | Reason |
-|---|---|---|---|
-| 1 | Load all skills or listed only? | Listed only | Cheaper, predictable, no token overrun |
-| 2 | Workflow storage location? | `deploy/workflows/` (version-controlled) | Reproducible, auditable |
-| 3 | `trigger` activation? | Explicit listing only | Safer for automated workflows |
-| 4 | Job persistence format? | SQLite, Phase 3 | Not needed to ship Phase 1-2 |
-| 5 | Webhook HMAC secrets? | Per-event secrets | Matches GitHub/Slack pattern |
-| 6 | `deploy/skills/` vs symlink builtins? | Mount builtins directly | No drift, no duplication |
-| 7 | Skill loading levels? | Level 1 (metadata) by default, Level 2 on demand | Token efficiency |
-| 8 | Structured output for eval jobs? | Mandatory JSON schema in persona skill bodies | Anti-hallucination |
-| 9 | Validation gate? | `reality-checker` as final step in all workflows | Grounded outputs |
-| 10 | Mixed task/persona in one job? | Not allowed -- mode is set per job/workflow | Quality separation |
-
----
-
 ## Skills Reference
 
 ### Task Skills (7 of 12 builtins, serve-appropriate)
 
-| Skill | Role |
-|---|---|
-| `agents-orchestrator` | Multi-step, multi-skill workflow coordination |
-| `devops-automator` | Deployment checks, CI/CD, infra management |
-| `security-engineer` | Security audits, vulnerability scanning |
-| `backend-architect` | API design, service architecture reviews |
-| `api-tester` | Endpoint testing, integration verification |
-| `reality-checker` | Validation gate -- runs last in every workflow |
-| `senior-developer` | General code and logic tasks |
-
-### Evaluation Skills (serve-specific, `deploy/skills/reviewers/`)
-
-| Skill | Archetype | When to use |
+| Skill | Domain | Role |
 |---|---|---|
-| `enterprise-buyer-reviewer` | Enterprise procurement buyer | Messaging and proposal review |
-| `developer-dx-reviewer` | Developer evaluating API or SDK | API design and documentation review |
-| `security-skeptic-reviewer` | Security-first engineer | Pre-publish security posture review |
-| `non-technical-stakeholder` | Business owner reading technical content | Executive summary and proposal review |
+| `agents-orchestrator` | task | Multi-step, multi-skill coordination |
+| `devops-automator` | task | Deployment checks, CI/CD, infra |
+| `security-engineer` | task | Security audits, vulnerability scanning |
+| `backend-architect` | task | API design, service architecture |
+| `api-tester` | task | Endpoint testing, integration verification |
+| `reality-checker` | task | Validation gate -- last step in every workflow |
+| `senior-developer` | task | General code and logic tasks |
 
-### Orchestration Skills (serve-specific, `deploy/skills/`)
+### Evaluation Skills (new, `deploy/skills/reviewers/`)
 
-| Skill | Role |
-|---|---|
-| `workflow-runner` | Serve context orchestrator: mode enforcement, output structure, validation gate |
+| Skill | Domain | Archetype |
+|---|---|---|
+| `enterprise-buyer-reviewer` | review | Enterprise procurement buyer |
+| `developer-dx-reviewer` | review | Developer evaluating API or SDK quality |
+| `security-skeptic-reviewer` | review | Security-first engineer |
+| `non-technical-stakeholder` | review | Business owner reading technical content |
+
+### Orchestration Skills (new, `deploy/skills/`)
+
+| Skill | Domain | Role |
+|---|---|---|
+| `workflow-runner` | orchestration | Mode enforcement, structured output, validation gate |
+
+### Meta-Skills (new builtin)
+
+| Skill | Domain | Role |
+|---|---|---|
+| `skill-factory` | ops | Builds new skills following the 8-step authoring workflow |
 
 ---
 
-## Research Findings: Official Anthropic Skills Format
+## Architectural Decisions (Closed)
 
-### Minimal Required Schema
+| # | Decision | Rationale |
+|---|---|---|
+| 1 | YAML-style for new skills, both formats in parser | Spec alignment + no breakage of existing builtins |
+| 2 | `metadata.domain` parsed as optional field | Enables serve mode routing without breaking existing skills |
+| 3 | Level 1 metadata by default, Level 2 on demand | Token efficiency: 30-100 vs 2,000-5,000 tokens per skill |
+| 4 | Scripts for deterministic ops (code out of context) | Script output = ground truth, not model inference |
+| 5 | Explicit skill loading only (no all-skills-always) | Predictable, no token overrun |
+| 6 | Workflows version-controlled in `deploy/workflows/` | Reproducible, auditable |
+| 7 | `deploy/skills/` for serve-specific skills, builtins mounted directly | No drift, no duplication |
+| 8 | `evals/evals.json` as test standard for deploy/ skills | Consistent test format across skills |
+| 9 | Mandatory JSON output schema in persona skill bodies | Anti-hallucination: schema forces grounded responses |
+| 10 | `reality-checker` as final step in all workflows | Active validation gate |
+| 11 | Mixed task/persona mode not allowed per job | Quality separation, reproducibility |
+| 12 | `Flagged` status for validation failures | Caller gets output + warnings, not silent pass/fail |
+| 13 | Per-event HMAC secrets for webhooks | Matches GitHub/Slack pattern, more secure |
+| 14 | SQLite for job persistence, Phase 3 | Not needed to ship Phase 1-2 |
+| 15 | `skill-factory` as 13th builtin | Enables users to build their own skills within kx |
+
+---
+
+## docker-compose Volume Strategy
 
 ```yaml
----
-name: skill-name          # max 64 chars, lowercase + hyphens only
-description: ...          # max 1024 chars, what it does AND when to use it
----
-
-# Skill content in markdown
+volumes:
+  # Serve-specific skills (persona, workflow-runner)
+  - ./skills:/home/kx/.kx/skills/serve:ro
+  # Task skills from builtins (no duplication)
+  - ../builtins:/home/kx/.kx/skills/builtins:ro
+  # Named workflow definitions
+  - ./workflows:/home/kx/.kx/workflows:ro
+  # Persistent job data
+  - kx_data:/home/kx/.kx
+  # Claude subscription credentials
+  - type: bind
+    source: ${CLAUDE_CREDENTIALS_PATH}
+    target: /home/kx/.claude/.credentials.json
+    read_only: true
 ```
 
-### Discovery Model (3 Levels)
+---
 
-- Level 1 (always): `name` + `description` injected into system prompt (~100 tokens per skill)
-- Level 2 (on trigger): full SKILL.md body read by agent via bash/file tool
-- Level 3 (as needed): bundled files (FORMS.md, REFERENCE.md, scripts/) read on demand
+## Token Budget Reference
 
-### kx Extended Format vs Anthropic Spec
-
-kx builtins use a superset with TOML-style frontmatter. These are kx extensions:
-
-| Field | Parsed? | Used? | Plan |
-|---|---|---|---|
-| `name` | YES (after parser fix) | YES | Fix parser |
-| `description` | YES (after parser fix) | YES | Fix parser |
-| `permissions` | YES (list format) | YES | Keep |
-| `version` | NO (silently ignored) | NO | Leave unparsed |
-| `trigger` | NO (silently ignored) | NO | Low priority, Phase 3 |
-| `[toolbox.*]` | NO (silently ignored) | NO | Low priority, Phase 3 |
-
-New skills (persona, workflow-runner) use YAML-style format only. Both TOML and
-YAML-style frontmatter are supported after the parser fix.
+| Scenario | Estimated Token Cost |
+|---|---|
+| 5 skills at Level 1 (metadata only) | 150-500 tokens |
+| 1 skill at Level 2 (full body) | 2,000-5,000 tokens |
+| 5 skills at Level 2 | 10,000-25,000 tokens |
+| Script execution (Level 3) | Output only, typically 100-500 tokens |
+| Persona evaluation job (4 skills Level 1 + 1 Level 2) | ~700-1,200 tokens overhead |
+| Task job (3 skills Level 1 + 1 triggered Level 2) | ~400-800 tokens overhead |

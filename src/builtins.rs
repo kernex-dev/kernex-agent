@@ -65,6 +65,10 @@ const BUILTIN_SKILLS: &[BuiltinSkill] = &[
         name: "senior-developer",
         content: include_str!("../builtins/senior-developer/SKILL.md"),
     },
+    BuiltinSkill {
+        name: "skill-factory",
+        content: include_str!("../builtins/skill-factory/SKILL.md"),
+    },
 ];
 
 pub fn install_builtin_skills(data_dir: &Path) -> Result<usize, Box<dyn std::error::Error>> {
@@ -159,8 +163,8 @@ mod tests {
     }
 
     #[test]
-    fn builtin_count_is_12() {
-        assert_eq!(builtin_count(), 12);
+    fn builtin_count_is_13() {
+        assert_eq!(builtin_count(), 13);
     }
 
     #[test]
@@ -179,7 +183,7 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
 
         let count = install_builtin_skills(&tmp).unwrap();
-        assert_eq!(count, 12);
+        assert_eq!(count, 13);
 
         for skill in BUILTIN_SKILLS {
             let path = tmp.join("skills").join(skill.name).join("SKILL.md");
@@ -187,7 +191,7 @@ mod tests {
         }
 
         let manifest = SkillsManifest::load(&tmp);
-        assert_eq!(manifest.list().len(), 12);
+        assert_eq!(manifest.list().len(), 13);
 
         let senior = manifest.find("senior-developer");
         assert!(senior.is_some());
@@ -206,10 +210,13 @@ mod tests {
                 "Skill '{}' missing frontmatter delimiter",
                 skill.name
             );
+            // Accept both TOML-style (name = "...") and YAML-style (name: ...)
+            let has_toml = skill
+                .content
+                .contains(&format!("name = \"{}\"", skill.name));
+            let has_yaml = skill.content.contains(&format!("name: {}", skill.name));
             assert!(
-                skill
-                    .content
-                    .contains(&format!("name = \"{}\"", skill.name)),
+                has_toml || has_yaml,
                 "Skill '{}' frontmatter name mismatch",
                 skill.name
             );

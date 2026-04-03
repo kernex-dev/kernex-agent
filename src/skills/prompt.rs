@@ -11,6 +11,7 @@ use super::types::{InstalledSkill, Permission};
 pub struct LoadedSkill {
     pub installed: InstalledSkill,
     pub content: String,
+    pub domain: Option<String>,
 }
 
 pub fn load_skills(data_dir: &Path, manifest_skills: &[InstalledSkill]) -> Vec<LoadedSkill> {
@@ -55,6 +56,7 @@ pub fn load_skills(data_dir: &Path, manifest_skills: &[InstalledSkill]) -> Vec<L
         loaded.push(LoadedSkill {
             installed: skill.clone(),
             content: parsed.content,
+            domain: parsed.domain,
         });
     }
 
@@ -99,6 +101,9 @@ pub fn build_skills_prompt(skills: &[LoadedSkill]) -> String {
         };
 
         out.push_str(&format!("\n<!-- SKILL: {} -->\n", s.name));
+        if let Some(ref d) = skill.domain {
+            out.push_str(&format!("<!-- DOMAIN: {d} -->\n"));
+        }
         out.push_str(&format!(
             "<!-- SOURCE: {} | TRUST: {} | SHA-256: {} -->\n",
             s.source, s.trust, sha_short
@@ -155,6 +160,7 @@ mod tests {
                 denied_permissions: denied,
             },
             content: content.to_string(),
+            domain: None,
         }
     }
 
