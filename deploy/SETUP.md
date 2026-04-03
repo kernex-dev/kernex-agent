@@ -190,6 +190,30 @@ curl -s https://api.yourdomain.com/jobs \
 
 ---
 
+## Webhooks
+
+Trigger a job from an external system (GitHub Actions, CI pipelines, etc.):
+
+```bash
+curl -s -X POST https://api.yourdomain.com/webhook/pr-review \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "PR #42: add user auth endpoint"}'
+```
+
+The `Authorization: Bearer` header is always required.
+
+To add an extra HMAC layer (recommended for automated callers), set a per-event secret in `.env`:
+
+```bash
+KERNEX_WEBHOOK_SECRET_PR_REVIEW=<strong-random-secret>
+```
+
+When set, the caller must include a valid `X-Hub-Signature-256` header (same format as GitHub webhooks).
+If the env var is not set, the HMAC check is skipped and bearer auth alone applies.
+
+---
+
 ## Available Workflows
 
 | Workflow | What It Does |
