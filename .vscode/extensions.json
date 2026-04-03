@@ -1,0 +1,6 @@
+{
+  "recommendations": [
+    "GitHub.vscode-github-actions",
+    "rust-lang.rust-analyzer"
+  ]
+}

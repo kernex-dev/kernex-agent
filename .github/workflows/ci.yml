@@ -66,3 +66,15 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --check
+
+  lint-workflows:
+    name: Lint Workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actionlint
+        run: |
+          curl -sL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            | tar xz actionlint
+      - name: Run actionlint
+        run: ./actionlint -color
