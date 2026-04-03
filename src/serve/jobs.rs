@@ -108,7 +108,10 @@ mod tests {
     #[test]
     fn evict_below_cap_is_noop() {
         let mut store = HashMap::new();
-        store.insert("a".to_string(), make_job("a", JobStatus::Done, "2026-01-01T00:00:00Z"));
+        store.insert(
+            "a".to_string(),
+            make_job("a", JobStatus::Done, "2026-01-01T00:00:00Z"),
+        );
         evict_oldest_finished(&mut store);
         assert_eq!(store.len(), 1);
     }
@@ -133,13 +136,22 @@ mod tests {
         // Fill to cap with Done jobs, then add 1 Running job
         for i in 0..MAX_STORE_JOBS {
             let id = format!("done-{i:04}");
-            store.insert(id.clone(), make_job(&id, JobStatus::Done, "2026-01-01T00:00:00Z"));
+            store.insert(
+                id.clone(),
+                make_job(&id, JobStatus::Done, "2026-01-01T00:00:00Z"),
+            );
         }
-        store.insert("active".to_string(), make_job("active", JobStatus::Running, "2026-01-01T00:00:00Z"));
+        store.insert(
+            "active".to_string(),
+            make_job("active", JobStatus::Running, "2026-01-01T00:00:00Z"),
+        );
         // Now at cap + 1
         evict_oldest_finished(&mut store);
         assert_eq!(store.len(), MAX_STORE_JOBS);
-        assert!(store.contains_key("active"), "running job must not be evicted");
+        assert!(
+            store.contains_key("active"),
+            "running job must not be evicted"
+        );
     }
 
     #[test]

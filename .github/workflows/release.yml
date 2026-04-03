@@ -25,13 +25,32 @@ jobs:
       - run: cargo test
       - run: cargo fmt --check
 
+  # Scan Rust dependencies and the repo filesystem for known CVEs.
+  # Blocks release on CRITICAL or HIGH severity findings that have a fix available.
+  security:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          ignore-unfixed: true
+
   docker:
     name: Build and Push
     runs-on: ubuntu-latest
-    needs: ci
+    needs: [ci, security]
     permissions:
       contents: read
       packages: write
+      # Required for SLSA provenance attestation
+      attestations: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +78,7 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push
+        id: push
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -69,3 +89,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Generate SLSA provenance and SBOM attestations.
+          # Stored in GHCR alongside the image — verifiable with: cosign verify-attestation
+          provenance: true
+          sbom: true
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
