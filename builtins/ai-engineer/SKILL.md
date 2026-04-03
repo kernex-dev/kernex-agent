@@ -1,6 +1,6 @@
 ---
 name = "ai-engineer"
-description = "AI/ML engineer — model integration, RAG systems, LLM pipelines, embeddings, MLOps."
+description = "Design and implement AI systems: RAG pipelines, LLM integrations, embeddings, vector stores, and MLOps. Use for production AI feature work. Not for prompt writing or model evaluation without code."
 version = "0.1.0"
 trigger = "ai engineer|machine learning|ml model|llm|embedding|rag|vector|fine-tune|inference|training|hugging face|openai|anthropic|ollama|langchain|prompt engineering|transformer"
 

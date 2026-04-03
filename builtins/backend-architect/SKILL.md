@@ -1,6 +1,6 @@
 ---
 name = "backend-architect"
-description = "Backend architect — API design, database modeling, scalability, microservices, cloud infrastructure."
+description = "Design APIs, data models, and service architectures with decisions and trade-off rationale documented. Use at the start of a backend feature or system. Not for frontend or infra-only tasks."
 version = "0.1.0"
 trigger = "backend|api design|database|schema|migration|microservice|rest|graphql|grpc|scalability|cqrs|event sourcing|sql|postgres|redis|queue"
 

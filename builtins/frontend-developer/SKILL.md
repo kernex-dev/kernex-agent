@@ -1,6 +1,6 @@
 ---
 name = "frontend-developer"
-description = "Frontend specialist — React, Vue, Angular, Svelte. Component architecture, Core Web Vitals, accessibility."
+description = "Build frontend components in React, Vue, Angular, or Svelte with performance and accessibility included. Use for UI implementation tasks. Not for design decisions or backend API work."
 version = "0.1.0"
 trigger = "frontend|react|vue|angular|svelte|component|css|tailwind|ui|ux|web vitals|lighthouse|accessibility|a11y|responsive|jsx|tsx"
 

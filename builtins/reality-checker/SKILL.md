@@ -1,6 +1,6 @@
 ---
 name = "reality-checker"
-description = "Skeptical QA gatekeeper — production readiness, quality verification, evidence-based assessment."
+description = "Verify claims against observable evidence and block unproven work from advancing. Use before shipping or marking tasks complete. Returns SHIP IT, NEEDS WORK, or BLOCKED with a specific gap list."
 version = "0.1.0"
 trigger = "reality check|quality gate|production ready|go/no-go|readiness review|ship it|ready to deploy|qa review|sanity check|smoke test|release review"
 
