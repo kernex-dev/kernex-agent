@@ -53,13 +53,94 @@ pub struct JobRequest {
 
 pub type JobStore = Arc<RwLock<HashMap<String, Job>>>;
 
+/// Maximum number of jobs kept in the in-memory store at once.
+/// When the cap is exceeded, the oldest terminal jobs (done/flagged/failed)
+/// are evicted. Active jobs (queued/running) are never removed.
+pub const MAX_STORE_JOBS: usize = 1_000;
+
 pub fn new_store() -> JobStore {
     Arc::new(RwLock::new(HashMap::new()))
+}
+
+/// Evict the oldest finished jobs to keep the store at or below [`MAX_STORE_JOBS`].
+/// Called each time a new job is inserted.
+pub fn evict_oldest_finished(store: &mut HashMap<String, Job>) {
+    if store.len() <= MAX_STORE_JOBS {
+        return;
+    }
+    let mut finished: Vec<(String, String)> = store
+        .iter()
+        .filter(|(_, j)| {
+            matches!(
+                j.status,
+                JobStatus::Done | JobStatus::Flagged | JobStatus::Failed
+            )
+        })
+        .map(|(id, j)| (id.clone(), j.created_at.clone()))
+        .collect();
+    // Oldest first — ISO-8601 timestamps sort lexicographically
+    finished.sort_by(|a, b| a.1.cmp(&b.1));
+    let to_remove = store.len().saturating_sub(MAX_STORE_JOBS);
+    for (id, _) in finished.into_iter().take(to_remove) {
+        store.remove(&id);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_job(id: &str, status: JobStatus, created_at: &str) -> Job {
+        Job {
+            id: id.to_string(),
+            status,
+            output: None,
+            error: None,
+            message: "test".to_string(),
+            provider: "claude-code".to_string(),
+            project: None,
+            channel: None,
+            created_at: created_at.to_string(),
+            finished_at: None,
+        }
+    }
+
+    #[test]
+    fn evict_below_cap_is_noop() {
+        let mut store = HashMap::new();
+        store.insert("a".to_string(), make_job("a", JobStatus::Done, "2026-01-01T00:00:00Z"));
+        evict_oldest_finished(&mut store);
+        assert_eq!(store.len(), 1);
+    }
+
+    #[test]
+    fn evict_removes_oldest_finished_when_over_cap() {
+        let mut store = HashMap::new();
+        // Fill to cap + 1 with Done jobs
+        for i in 0..=MAX_STORE_JOBS {
+            let id = format!("job-{i:04}");
+            let ts = format!("2026-01-{:02}T00:00:00Z", (i % 28) + 1);
+            store.insert(id.clone(), make_job(&id, JobStatus::Done, &ts));
+        }
+        assert_eq!(store.len(), MAX_STORE_JOBS + 1);
+        evict_oldest_finished(&mut store);
+        assert_eq!(store.len(), MAX_STORE_JOBS);
+    }
+
+    #[test]
+    fn evict_does_not_remove_active_jobs() {
+        let mut store = HashMap::new();
+        // Fill to cap with Done jobs, then add 1 Running job
+        for i in 0..MAX_STORE_JOBS {
+            let id = format!("done-{i:04}");
+            store.insert(id.clone(), make_job(&id, JobStatus::Done, "2026-01-01T00:00:00Z"));
+        }
+        store.insert("active".to_string(), make_job("active", JobStatus::Running, "2026-01-01T00:00:00Z"));
+        // Now at cap + 1
+        evict_oldest_finished(&mut store);
+        assert_eq!(store.len(), MAX_STORE_JOBS);
+        assert!(store.contains_key("active"), "running job must not be evicted");
+    }
 
     #[test]
     fn new_store_is_empty() {
