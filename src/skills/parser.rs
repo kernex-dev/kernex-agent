@@ -43,61 +43,82 @@ fn parse_permission(s: &str) -> Result<Permission, SkillParseError> {
     }
 }
 
-/// Extract a simple `key: value` from a line. Returns `None` if the line
-/// is not in that format (e.g. list items or blank lines).
+/// Extract a simple `key: value` or `key = "value"` from a line.
+/// Returns `None` if the line is not in either format (e.g. list items, blank lines,
+/// TOML section headers like `[permissions]`).
 fn extract_key_value(line: &str) -> Option<(&str, &str)> {
-    let colon_pos = line.find(':')?;
-    let key = line[..colon_pos].trim();
-    if key.is_empty() || key.contains(' ') {
-        return None;
+    // YAML-style: `key: value` (preferred, checked first)
+    if let Some(colon_pos) = line.find(':') {
+        let key = line[..colon_pos].trim();
+        // Reject section headers like `[permissions]` and lines where the key contains spaces
+        if !key.is_empty() && !key.contains(' ') && !key.contains('[') {
+            let value = line[colon_pos + 1..].trim();
+            return Some((key, value));
+        }
     }
-    let value = line[colon_pos + 1..].trim();
-    Some((key, value))
+    // TOML-style: `key = "value"` (legacy builtins)
+    if let Some(eq_pos) = line.find('=') {
+        let key = line[..eq_pos].trim();
+        if !key.is_empty() && !key.contains(' ') && !key.contains('[') {
+            let value = line[eq_pos + 1..]
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'');
+            return Some((key, value));
+        }
+    }
+    None
 }
 
-/// Parse the YAML frontmatter block into (name, description, permissions).
+/// Parse the YAML/TOML frontmatter block into (name, description, permissions, domain).
 fn parse_frontmatter(
     yaml: &str,
-) -> Result<(String, String, BTreeSet<Permission>), SkillParseError> {
+) -> Result<(String, String, BTreeSet<Permission>, Option<String>), SkillParseError> {
     let mut name: Option<String> = None;
     let mut description: Option<String> = None;
     let mut permissions: BTreeSet<Permission> = BTreeSet::new();
+    let mut domain: Option<String> = None;
     let mut in_permissions_list = false;
+    let mut in_metadata_block = false;
 
     for line in yaml.lines() {
+        let is_indented = line.starts_with("  ") || line.starts_with('\t');
         let trimmed = line.trim();
 
         if trimmed.is_empty() {
             continue;
         }
 
-        // Check if this is a list item (belongs to the current list context)
+        // Exit nested block contexts when we encounter an unindented line
+        if !is_indented {
+            in_permissions_list = false;
+            in_metadata_block = false;
+        }
+
+        // List item (YAML `- item` syntax)
         if let Some(item) = trimmed.strip_prefix("- ") {
             if in_permissions_list {
-                let perm_str = item.trim();
-                permissions.insert(parse_permission(perm_str)?);
-                continue;
+                permissions.insert(parse_permission(item.trim())?);
             }
-            // A list item outside a known list context is unexpected but we skip it
+            // List items outside known list contexts are silently skipped
             continue;
         }
 
-        // Not a list item, so we leave any list context
-        in_permissions_list = false;
-
         if let Some((key, value)) = extract_key_value(trimmed) {
+            // Handle indented keys inside the metadata block
+            if in_metadata_block {
+                if key == "domain" && !value.is_empty() {
+                    domain = Some(value.to_string());
+                }
+                // Other metadata fields (author, version, etc.) are ignored
+                continue;
+            }
+
             match key {
-                "name" => {
-                    name = Some(value.to_string());
-                }
-                "description" => {
-                    description = Some(value.to_string());
-                }
-                "permissions" => {
-                    // The value after `permissions:` may be empty (list follows)
-                    // or could be an inline value we ignore in favour of list items.
-                    in_permissions_list = true;
-                }
+                "name" => name = Some(value.to_string()),
+                "description" => description = Some(value.to_string()),
+                "permissions" => in_permissions_list = true,
+                "metadata" => in_metadata_block = true,
                 _ => {
                     // Unknown keys are silently ignored for forward-compatibility.
                 }
@@ -112,7 +133,7 @@ fn parse_frontmatter(
         .filter(|d| !d.is_empty())
         .ok_or_else(|| SkillParseError::MissingField("description".to_string()))?;
 
-    Ok((name, description, permissions))
+    Ok((name, description, permissions, domain))
 }
 
 /// Parse a SKILL.md file (YAML frontmatter + markdown content).
@@ -138,7 +159,7 @@ pub fn parse_skill_md(raw: &str) -> Result<SkillManifest, SkillParseError> {
         .trim()
         .to_string();
 
-    let (name, description, requested_permissions) = parse_frontmatter(yaml_block)?;
+    let (name, description, requested_permissions, domain) = parse_frontmatter(yaml_block)?;
 
     validate_skill_name(&name)?;
 
@@ -147,6 +168,7 @@ pub fn parse_skill_md(raw: &str) -> Result<SkillManifest, SkillParseError> {
         description,
         requested_permissions,
         content,
+        domain,
     })
 }
 
@@ -441,5 +463,68 @@ content
     fn parse_source_empty() {
         assert!(parse_source("").is_err());
         assert!(parse_source("onlyone").is_err());
+    }
+
+    #[test]
+    fn parse_toml_style_frontmatter() {
+        let raw = "\
+---
+name = \"rust-best-practices\"
+description = \"Rust coding guidelines for idiomatic code\"
+version = \"0.1.0\"
+trigger = \"rust|cargo|clippy\"
+---
+
+# Rust Best Practices
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert_eq!(manifest.name, "rust-best-practices");
+        assert_eq!(
+            manifest.description,
+            "Rust coding guidelines for idiomatic code"
+        );
+        assert_eq!(manifest.requested_permissions.len(), 0);
+        assert!(manifest.domain.is_none());
+    }
+
+    #[test]
+    fn parse_yaml_metadata_domain() {
+        let raw = "\
+---
+name: skill-factory
+description: Create and iterate on SKILL.md files for any domain.
+metadata:
+  author: jose-hurtado
+  version: \"1.0\"
+  domain: ops
+---
+
+# Skill Factory
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert_eq!(manifest.name, "skill-factory");
+        assert_eq!(manifest.domain, Some("ops".to_string()));
+    }
+
+    #[test]
+    fn parse_toml_permissions_block_does_not_error() {
+        // TOML-style permission blocks use a completely different format.
+        // The parser should not error — it ignores the TOML-specific fields.
+        let raw = "\
+---
+name = \"devops-automator\"
+description = \"DevOps and infrastructure automation.\"
+version = \"0.1.0\"
+
+[permissions]
+files = [\"read:src/**\"]
+commands = [\"docker\", \"kubectl\"]
+---
+
+# DevOps Automator
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert_eq!(manifest.name, "devops-automator");
+        assert_eq!(manifest.requested_permissions.len(), 0);
     }
 }
