@@ -121,6 +121,9 @@ pub struct SkillManifest {
     pub content: String,
     /// Optional domain taxonomy from `metadata.domain` (e.g. "task", "review", "ops", "orchestration").
     pub domain: Option<String>,
+    /// Trigger phrases from the `trigger` frontmatter field (pipe-delimited).
+    /// Used to help agents identify when this skill is relevant.
+    pub triggers: Vec<String>,
 }
 
 /// A skill that has been installed and its permissions resolved.

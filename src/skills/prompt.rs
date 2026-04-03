@@ -12,6 +12,7 @@ pub struct LoadedSkill {
     pub installed: InstalledSkill,
     pub content: String,
     pub domain: Option<String>,
+    pub triggers: Vec<String>,
 }
 
 pub fn load_skills(data_dir: &Path, manifest_skills: &[InstalledSkill]) -> Vec<LoadedSkill> {
@@ -57,6 +58,7 @@ pub fn load_skills(data_dir: &Path, manifest_skills: &[InstalledSkill]) -> Vec<L
             installed: skill.clone(),
             content: parsed.content,
             domain: parsed.domain,
+            triggers: parsed.triggers,
         });
     }
 
@@ -103,6 +105,12 @@ pub fn build_skills_prompt(skills: &[LoadedSkill]) -> String {
         out.push_str(&format!("\n<!-- SKILL: {} -->\n", s.name));
         if let Some(ref d) = skill.domain {
             out.push_str(&format!("<!-- DOMAIN: {d} -->\n"));
+        }
+        if !skill.triggers.is_empty() {
+            out.push_str(&format!(
+                "<!-- TRIGGERS: {} -->\n",
+                skill.triggers.join(", ")
+            ));
         }
         out.push_str(&format!(
             "<!-- SOURCE: {} | TRUST: {} | SHA-256: {} -->\n",
@@ -161,6 +169,7 @@ mod tests {
             },
             content: content.to_string(),
             domain: None,
+            triggers: vec![],
         }
     }
 

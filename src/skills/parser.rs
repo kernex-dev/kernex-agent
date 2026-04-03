@@ -3,6 +3,17 @@ use std::fmt;
 
 use super::types::{Permission, SkillManifest, SkillSource, MAX_SKILL_NAME_LEN, MAX_SKILL_SIZE};
 
+type FrontmatterResult = Result<
+    (
+        String,
+        String,
+        BTreeSet<Permission>,
+        Option<String>,
+        Vec<String>,
+    ),
+    SkillParseError,
+>;
+
 #[derive(Debug, Clone)]
 pub enum SkillParseError {
     MissingFrontmatter,
@@ -70,16 +81,16 @@ fn extract_key_value(line: &str) -> Option<(&str, &str)> {
     None
 }
 
-/// Parse the YAML/TOML frontmatter block into (name, description, permissions, domain).
-fn parse_frontmatter(
-    yaml: &str,
-) -> Result<(String, String, BTreeSet<Permission>, Option<String>), SkillParseError> {
+/// Parse the YAML/TOML frontmatter block into (name, description, permissions, domain, triggers).
+fn parse_frontmatter(yaml: &str) -> FrontmatterResult {
     let mut name: Option<String> = None;
     let mut description: Option<String> = None;
     let mut permissions: BTreeSet<Permission> = BTreeSet::new();
     let mut domain: Option<String> = None;
+    let mut triggers: Vec<String> = Vec::new();
     let mut in_permissions_list = false;
     let mut in_metadata_block = false;
+    let mut in_triggers_list = false;
 
     for line in yaml.lines() {
         let is_indented = line.starts_with("  ") || line.starts_with('\t');
@@ -93,12 +104,18 @@ fn parse_frontmatter(
         if !is_indented {
             in_permissions_list = false;
             in_metadata_block = false;
+            in_triggers_list = false;
         }
 
         // List item (YAML `- item` syntax)
         if let Some(item) = trimmed.strip_prefix("- ") {
             if in_permissions_list {
                 permissions.insert(parse_permission(item.trim())?);
+            } else if in_triggers_list {
+                let phrase = item.trim().to_string();
+                if !phrase.is_empty() {
+                    triggers.push(phrase);
+                }
             }
             // List items outside known list contexts are silently skipped
             continue;
@@ -119,6 +136,19 @@ fn parse_frontmatter(
                 "description" => description = Some(value.to_string()),
                 "permissions" => in_permissions_list = true,
                 "metadata" => in_metadata_block = true,
+                "trigger" | "triggers" => {
+                    if value.is_empty() {
+                        // No inline value: expect a YAML list to follow
+                        in_triggers_list = true;
+                    } else {
+                        // Inline pipe-delimited: `trigger = "rust|cargo|clippy"`
+                        triggers = value
+                            .split('|')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                    }
+                }
                 _ => {
                     // Unknown keys are silently ignored for forward-compatibility.
                 }
@@ -133,7 +163,7 @@ fn parse_frontmatter(
         .filter(|d| !d.is_empty())
         .ok_or_else(|| SkillParseError::MissingField("description".to_string()))?;
 
-    Ok((name, description, permissions, domain))
+    Ok((name, description, permissions, domain, triggers))
 }
 
 /// Parse a SKILL.md file (YAML frontmatter + markdown content).
@@ -159,7 +189,8 @@ pub fn parse_skill_md(raw: &str) -> Result<SkillManifest, SkillParseError> {
         .trim()
         .to_string();
 
-    let (name, description, requested_permissions, domain) = parse_frontmatter(yaml_block)?;
+    let (name, description, requested_permissions, domain, triggers) =
+        parse_frontmatter(yaml_block)?;
 
     validate_skill_name(&name)?;
 
@@ -169,6 +200,7 @@ pub fn parse_skill_md(raw: &str) -> Result<SkillManifest, SkillParseError> {
         requested_permissions,
         content,
         domain,
+        triggers,
     })
 }
 
@@ -485,6 +517,64 @@ trigger = \"rust|cargo|clippy\"
         );
         assert_eq!(manifest.requested_permissions.len(), 0);
         assert!(manifest.domain.is_none());
+        assert_eq!(manifest.triggers, vec!["rust", "cargo", "clippy"]);
+    }
+
+    #[test]
+    fn parse_trigger_pipe_delimited_yaml_style() {
+        let raw = "\
+---
+name: devops-skill
+description: DevOps automation
+trigger: docker|kubernetes|ci/cd
+---
+content
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert_eq!(manifest.triggers, vec!["docker", "kubernetes", "ci/cd"]);
+    }
+
+    #[test]
+    fn parse_triggers_yaml_list() {
+        let raw = "\
+---
+name: my-skill
+description: A skill with list triggers
+triggers:
+  - docker
+  - kubernetes
+---
+content
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert_eq!(manifest.triggers, vec!["docker", "kubernetes"]);
+    }
+
+    #[test]
+    fn parse_no_trigger_returns_empty() {
+        let raw = "\
+---
+name: simple-skill
+description: No triggers defined
+---
+content
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert!(manifest.triggers.is_empty());
+    }
+
+    #[test]
+    fn parse_trigger_trims_whitespace() {
+        let raw = "\
+---
+name: padded-skill
+description: Trigger with extra spaces
+trigger = \"  rust  |  cargo  |  clippy  \"
+---
+content
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert_eq!(manifest.triggers, vec!["rust", "cargo", "clippy"]);
     }
 
     #[test]
