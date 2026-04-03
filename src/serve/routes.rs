@@ -18,6 +18,10 @@ pub struct RunBody {
     pub project: Option<String>,
     pub channel: Option<String>,
     pub max_turns: Option<usize>,
+    /// Named skills to activate. Each name must match an installed skill in the project's data dir.
+    pub skills: Option<Vec<String>>,
+    /// Execution mode: "task" (default) or "evaluate"/"review".
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +92,8 @@ pub async fn handle_run(
         channel: body.channel,
         max_turns: body.max_turns.or(state.default_flags.max_turns),
         verbose: state.default_flags.verbose,
+        skills: body.skills,
+        mode: body.mode,
     };
 
     state.tx.send(req).await.map_err(|_| {
@@ -147,6 +153,8 @@ pub async fn handle_webhook(
             project: None,
             channel: Some(format!("webhook-{event}")),
             max_turns: None,
+            skills: None,
+            mode: None,
         }),
     )
     .await

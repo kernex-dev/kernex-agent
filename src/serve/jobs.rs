@@ -10,6 +10,9 @@ pub enum JobStatus {
     Queued,
     Running,
     Done,
+    /// Job completed but the reality-checker flagged validation warnings (Phase 3).
+    #[allow(dead_code)]
+    Flagged,
     Failed,
 }
 
@@ -40,6 +43,10 @@ pub struct JobRequest {
     pub channel: Option<String>,
     pub max_turns: Option<usize>,
     pub verbose: bool,
+    /// Named skills to activate for this job (Level 1 metadata injected into prompt).
+    pub skills: Option<Vec<String>>,
+    /// Execution mode: "task" (default) or "evaluate"/"review" for persona/assessment jobs.
+    pub mode: Option<String>,
 }
 
 pub type JobStore = Arc<RwLock<HashMap<String, Job>>>;
@@ -67,6 +74,8 @@ mod tests {
         assert_eq!(s, "\"running\"");
         let s = serde_json::to_string(&JobStatus::Done).unwrap();
         assert_eq!(s, "\"done\"");
+        let s = serde_json::to_string(&JobStatus::Flagged).unwrap();
+        assert_eq!(s, "\"flagged\"");
         let s = serde_json::to_string(&JobStatus::Failed).unwrap();
         assert_eq!(s, "\"failed\"");
     }

@@ -1,5 +1,6 @@
 pub mod jobs;
 pub mod routes;
+pub mod skills;
 
 use std::sync::Arc;
 
@@ -150,12 +151,13 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
     let data_dir = data_dir_for(project_name);
     let channel = req.channel.as_deref().unwrap_or("serve");
 
-    let system_prompt = "You are a helpful AI assistant running in headless server mode. \
-        Complete the requested task and return your output.";
+    let skill_names = req.skills.as_deref().unwrap_or(&[]);
+    let system_prompt =
+        skills::build_serve_system_prompt(skill_names, &data_dir, req.mode.as_deref());
 
     let runtime = RuntimeBuilder::new()
         .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
-        .system_prompt(system_prompt)
+        .system_prompt(&system_prompt)
         .channel(channel)
         .project(project_name)
         .hook_runner(Arc::new(CliHookRunner {
