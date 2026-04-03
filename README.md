@@ -36,7 +36,8 @@ kx is your AI coding assistant. It can:
 | Dependency | Minimum Version | Notes |
 |---|---|---|
 | **Claude CLI** | 2.0+ | AI backend, requires Claude Max subscription |
-| **Rust** | 1.74+ | Only needed for `cargo install` |
+| **Rust** | 1.74+ | Only needed for `cargo install` (not needed for Docker) |
+| **Docker + Compose v2** | 24+ | Only needed for the Docker deployment path |
 
 **Claude CLI must be installed.** kx uses the Claude Code CLI as its AI backend.
 
@@ -149,7 +150,44 @@ For pasting code blocks or multi-line content:
 
 ## Serve Mode
 
-`kx serve` runs kx as a headless HTTP daemon. Use it on a VPS or CI box to accept agent jobs from external triggers, webhooks, or cron jobs without an active terminal session.
+`kx serve` runs kx as a headless HTTP daemon. Deploy it on a VPS or Mac Mini to accept agent jobs from external triggers, webhooks, or CI pipelines — no active terminal needed.
+
+### Deploy with Docker (recommended)
+
+No Rust installation required. Pull the pre-built image from GHCR.
+
+**Mac Mini or local server (no TLS):**
+
+```bash
+curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/docker-compose.local.yml
+curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/.env.example
+cp .env.example .env
+# Edit .env: set KERNEX_AUTH_TOKEN and CLAUDE_CREDENTIALS_PATH
+docker compose -f docker-compose.local.yml up -d
+curl http://localhost:8080/health
+```
+
+**VPS with a domain and automatic TLS:**
+
+```bash
+mkdir kx-server && cd kx-server
+curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/docker-compose.vps.yml
+curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/Caddyfile
+curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/Dockerfile.caddy
+curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/.env.example
+cp .env.example .env
+# Edit .env: set KERNEX_AUTH_TOKEN, CLAUDE_CREDENTIALS_PATH, DOMAIN, ACME_EMAIL
+docker compose -f docker-compose.vps.yml up -d
+curl https://api.yourdomain.com/health
+```
+
+The image ships with 16 pre-loaded skills and 4 workflows (PR review, feature design, security audit, GEO audit). Skills and job data persist in a named Docker volume across restarts and updates.
+
+For the complete step-by-step guide, provider options, and customization: [deploy/SETUP.md](deploy/SETUP.md).
+
+### Run from the CLI
+
+If you already have `kx` installed:
 
 ```bash
 kx serve --auth-token mysecrettoken
@@ -174,9 +212,9 @@ kx serve
 
 Provider flags (`--provider`, `--model`, `--api-key`, etc.) work the same as in interactive mode and set the default for all jobs.
 
-### API Endpoints
+### API
 
-All endpoints except `/health` require `Authorization: Bearer <token>`.
+All endpoints except `/health` require `Authorization: Bearer <token>`. Jobs run asynchronously — `/run` returns a `job_id`, poll `/jobs/{id}` until status is `done` or `failed`.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -186,29 +224,26 @@ All endpoints except `/health` require `Authorization: Bearer <token>`.
 | `GET` | `/jobs/{id}` | Get job status and output |
 | `POST` | `/webhook/{event}` | Trigger a job from a webhook |
 
-### Example
-
 ```bash
 # Submit a job
 curl -s -X POST http://localhost:8080/run \
-  -H "Authorization: Bearer mysecrettoken" \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"message": "summarize recent git changes"}' | jq .
-# {"job_id":"b3f1..."}
+  -d '{
+    "message": "Review this Express handler for SQL injection",
+    "skills": ["security-engineer"]
+  }' | jq .
 
 # Poll for result
-curl -s http://localhost:8080/jobs/b3f1... \
-  -H "Authorization: Bearer mysecrettoken" | jq .status
-# "done"
+curl -s http://localhost:8080/jobs/<job_id> \
+  -H "Authorization: Bearer <token>" | jq .
 
 # Webhook trigger (e.g. from GitHub Actions)
-curl -s -X POST http://localhost:8080/webhook/deploy \
-  -H "Authorization: Bearer mysecrettoken" \
+curl -s -X POST http://localhost:8080/webhook/pr-review \
+  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"message": "run post-deploy checks"}'
+  -d '{"message": "PR #42: add user auth endpoint"}'
 ```
-
-Jobs run asynchronously. The response to `/run` is a `job_id`; poll `/jobs/{id}` until status is `done` or `failed`.
 
 ## Commands
 
