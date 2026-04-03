@@ -1,0 +1,123 @@
+# VPS deployment — public server with a domain and automatic TLS via Caddy.
+# Requires DOMAIN and ACME_EMAIL set in .env
+#
+# Usage:
+#   cp .env.example .env   # fill in all fields including DOMAIN and ACME_EMAIL
+#   docker compose -f docker-compose.vps.yml up -d
+
+networks:
+  kx_net:
+    driver: bridge
+
+volumes:
+  kx_data:      # persistent job data, skills, and workflows
+  caddy_data:   # TLS certificates (Let's Encrypt)
+  caddy_config: # Caddy runtime config
+
+services:
+
+  # ── kx serve ────────────────────────────────────────────────────────────────
+  kx:
+    image: ghcr.io/kernex-dev/kernex-agent:latest
+    pull_policy: always
+    networks:
+      - kx_net
+    # No host port — only Caddy can reach kx
+    env_file: .env
+    environment:
+      KERNEX_PROVIDER: ${KERNEX_PROVIDER:-claude-code}
+      KERNEX_MODEL: ${KERNEX_MODEL:-}
+    command:
+      - serve
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8080"
+      - --workers
+      - "${KX_WORKERS:-8}"
+    volumes:
+      # Persistent data directory — skills and workflows are bootstrapped here on first run
+      - kx_data:/home/kx/.kx
+      # Claude subscription credentials (required when KERNEX_PROVIDER=claude-code)
+      - type: bind
+        source: ${CLAUDE_CREDENTIALS_PATH}
+        target: /home/kx/.claude/.credentials.json
+        read_only: true
+      # Optional: override bundled skills with your own directory
+      # - type: bind
+      #   source: ./my-skills
+      #   target: /home/kx/.kx/skills
+      #   read_only: true
+      # Optional: override bundled workflows with your own directory
+      # - type: bind
+      #   source: ./my-workflows
+      #   target: /home/kx/.kx/workflows
+      #   read_only: true
+    restart: unless-stopped
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: "2.0"
+    pids_limit: 512
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Caddy (TLS termination + reverse proxy) ──────────────────────────────────
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    image: kernex-caddy:latest
+    networks:
+      - kx_net
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    env_file: .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    depends_on:
+      kx:
+        condition: service_healthy
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=32m
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
