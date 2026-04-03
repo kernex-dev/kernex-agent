@@ -36,6 +36,15 @@ RUN groupadd --gid 1001 kx \
 
 COPY --from=builder --chown=kx:kx /build/target/release/kx /usr/local/bin/kx
 
+# Entrypoint bootstrap script — populates data volume with defaults on first run
+COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Bundle default skills and workflows into the image
+# entrypoint.sh copies these to /home/kx/.kx/ on first start
+COPY deploy/skills /usr/share/kx/defaults/skills/
+COPY deploy/workflows /usr/share/kx/defaults/workflows/
+
 USER kx
 WORKDIR /home/kx
 ENV HOME=/home/kx
@@ -45,5 +54,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:8080/health || exit 1
 
-ENTRYPOINT ["kx"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["serve", "--host", "0.0.0.0", "--port", "8080"]
