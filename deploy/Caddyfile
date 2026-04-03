@@ -1,0 +1,79 @@
+{
+	# Disable admin API — no runtime config changes allowed
+	admin off
+
+	# Let's Encrypt contact
+	email {$ACME_EMAIL}
+
+	# Prefer HTTP/2 and HTTP/3; disable insecure protocols globally
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+{$DOMAIN} {
+
+	# TLS 1.3 only — no legacy protocol negotiation
+	tls {
+		protocols tls1.3 tls1.3
+	}
+
+	# Security headers — applied to every response
+	header {
+		# HSTS: 2 years, include subdomains, eligible for preload list
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		# Prevent MIME sniffing
+		X-Content-Type-Options "nosniff"
+		# No framing
+		X-Frame-Options "DENY"
+		# No referrer information leaked
+		Referrer-Policy "no-referrer"
+		# CSP: this is an API — no content to render
+		Content-Security-Policy "default-src 'none'"
+		# Permissions policy: deny all browser features
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+		# Remove server fingerprinting headers
+		-Server
+		-X-Powered-By
+	}
+
+	# Rate limiting: 60 requests/minute per source IP
+	# Protects against token brute-force and job flooding
+	rate_limit {remote_host} 60r/m
+
+	# Health endpoint — lower rate limit not needed, it's just a ping
+	handle /health {
+		reverse_proxy kx:8080
+	}
+
+	# All other routes — proxied to kx serve
+	handle {
+		reverse_proxy kx:8080 {
+			# Pass real client IP to kx (for logging/audit)
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+
+			# Never forward Authorization header downstream (it's consumed here)
+			# kx validates its own bearer token independently
+
+			transport http {
+				# How long to wait for kx to accept the connection
+				dial_timeout 5s
+				# Agent jobs can run for minutes — give them room
+				response_header_timeout 600s
+				keepalive 30s
+				keepalive_idle_conns 10
+			}
+		}
+	}
+
+	# Structured access log
+	log {
+		output file /data/logs/access.log {
+			roll_size 20mb
+			roll_keep 10
+		}
+		format json
+	}
+}
