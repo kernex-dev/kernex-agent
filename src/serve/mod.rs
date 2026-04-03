@@ -1,6 +1,7 @@
 pub mod jobs;
 pub mod routes;
 pub mod skills;
+pub mod workflow;
 
 use std::sync::Arc;
 
@@ -120,7 +121,19 @@ async fn run_worker(mut rx: mpsc::Receiver<JobRequest>, jobs: JobStore, semaphor
 async fn execute_job(req: JobRequest, jobs: JobStore) {
     set_status(&jobs, &req.job_id, JobStatus::Running, None, None).await;
     let id = req.job_id.clone();
-    match run_agent(req).await {
+
+    let result = if let Some(wf_name) = req.workflow.as_deref() {
+        let project_name = req.project.as_deref().unwrap_or("serve");
+        let data_dir = data_dir_for(project_name);
+        match workflow::load_workflow(wf_name, &data_dir) {
+            Ok(wf) => run_workflow(req, wf).await,
+            Err(e) => Err(e),
+        }
+    } else {
+        run_agent(req).await
+    };
+
+    match result {
         Ok(output) => {
             set_status(&jobs, &id, JobStatus::Done, Some(output), None).await;
         }
@@ -129,6 +142,45 @@ async fn execute_job(req: JobRequest, jobs: JobStore) {
             set_status(&jobs, &id, JobStatus::Failed, None, Some(e)).await;
         }
     }
+}
+
+async fn run_workflow(req: JobRequest, wf: workflow::Workflow) -> Result<String, String> {
+    let original_input = req.message.clone();
+    let mut outputs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut last_output = String::new();
+
+    for step in &wf.steps {
+        let rendered = workflow::render_input(&step.input, &original_input, &outputs);
+
+        let step_req = JobRequest {
+            job_id: req.job_id.clone(),
+            message: rendered,
+            provider: req.provider.clone(),
+            model: req.model.clone(),
+            api_key: req.api_key.clone(),
+            base_url: req.base_url.clone(),
+            project: req.project.clone(),
+            channel: req.channel.clone(),
+            max_turns: req.max_turns,
+            verbose: req.verbose,
+            skills: Some(vec![step.skill.clone()]),
+            mode: step.mode.clone(),
+            workflow: None,
+        };
+
+        tracing::info!(
+            job_id = %req.job_id,
+            step = %step.id,
+            skill = %step.skill,
+            "workflow step starting"
+        );
+
+        let output = run_agent(step_req).await?;
+        outputs.insert(step.id.clone(), output.clone());
+        last_output = output;
+    }
+
+    Ok(last_output)
 }
 
 async fn run_agent(req: JobRequest) -> Result<String, String> {

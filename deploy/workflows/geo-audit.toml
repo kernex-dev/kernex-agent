@@ -1,0 +1,41 @@
+name = "geo-audit"
+description = "GEO readiness audit and schema generation: score the site, generate missing Schema.org JSON-LD, then validate the action plan. Pass the site URL or HTML/robots.txt content as input."
+
+[[steps]]
+id = "geo-score"
+skill = "geo-auditor"
+input = """
+Audit this site for GEO (Generative Engine Optimization) readiness.
+Score all five tiers: robots.txt, schema.org, content quality, and AI readiness.
+Site: {input}
+"""
+
+[[steps]]
+id = "schema-generation"
+skill = "geo-schema-generator"
+input = """
+Generate the missing Schema.org JSON-LD markup identified in this GEO audit.
+Produce deployment-ready scripts for each recommended schema type.
+
+GEO audit results:
+{geo-score.output}
+
+Site context: {input}
+"""
+depends_on = ["geo-score"]
+
+[[steps]]
+id = "plan-validation"
+skill = "reality-checker"
+input = """
+Validate this GEO improvement plan.
+Confirm that the audit findings are specific and actionable, and that the generated
+schema is complete (has @context, @type, name, description, url at minimum).
+
+GEO audit:
+{geo-score.output}
+
+Generated schema:
+{schema-generation.output}
+"""
+depends_on = ["geo-score", "schema-generation"]

@@ -41,6 +41,13 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      # Named workflow TOML files — read-only, mounted at runtime
+      - type: bind
+        source: ../deploy/workflows
+        target: /home/kx/.kx/workflows
+        read_only: true
+        bind:
+          create_host_path: false
       # Claude subscription credentials — read-only, never modified by container
       - type: bind
         source: ${CLAUDE_CREDENTIALS_PATH}

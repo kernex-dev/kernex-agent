@@ -1,0 +1,37 @@
+name = "feature-design"
+description = "Design and test-plan a new backend feature: architecture first, then implementation plan, then API tests. Pass the feature requirement as input."
+
+[[steps]]
+id = "architecture"
+skill = "backend-architect"
+input = """
+Design the backend architecture for this feature requirement.
+Produce data models, API endpoints, and key decisions.
+Requirement: {input}
+"""
+
+[[steps]]
+id = "implementation"
+skill = "senior-developer"
+input = """
+Given this architecture, write an implementation plan with the key code changes required.
+Do not write full code. List files to change, functions to add, and patterns to follow.
+
+Architecture:
+{architecture.output}
+
+Original requirement: {input}
+"""
+depends_on = ["architecture"]
+
+[[steps]]
+id = "api-tests"
+skill = "api-tester"
+input = """
+Generate test cases for the API endpoints defined in this architecture.
+Cover happy path, auth failures, validation errors, and edge cases.
+
+Architecture:
+{architecture.output}
+"""
+depends_on = ["architecture"]
