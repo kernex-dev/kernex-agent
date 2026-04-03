@@ -28,6 +28,7 @@
 | Job persistence | DONE | Write-through SQLite (`jobs.db`), crash recovery on startup |
 | `/health` job stats | DONE | Returns queued/running/done/flagged/failed/total counts |
 | `kx skills lint` subcommand | DONE | Content validation: required fields, sections, anti-patterns |
+| Validation gate (Layer 3) | DONE | `reality-checker` auto-runs as final step in all workflows; `Flagged` status on NEEDS WORK/BLOCKED verdict |
 
 ---
 

@@ -160,28 +160,28 @@ async fn execute_job(req: JobRequest, jobs: JobStore, db: Option<Arc<db::JobDb>>
     .await;
     let id = req.job_id.clone();
 
-    let result = if let Some(wf_name) = req.workflow.as_deref() {
+    let result: Result<(String, JobStatus), String> = if let Some(wf_name) = req.workflow.as_deref()
+    {
         let project_name = req.project.as_deref().unwrap_or("serve");
         let data_dir = data_dir_for(project_name);
         match workflow::load_workflow(wf_name, &data_dir) {
-            Ok(wf) => run_workflow(req, wf).await,
+            Ok(wf) => run_workflow(req, wf).await.map(|(output, flagged)| {
+                let status = if flagged {
+                    JobStatus::Flagged
+                } else {
+                    JobStatus::Done
+                };
+                (output, status)
+            }),
             Err(e) => Err(e),
         }
     } else {
-        run_agent(req).await
+        run_agent(req).await.map(|output| (output, JobStatus::Done))
     };
 
     match result {
-        Ok(output) => {
-            set_status(
-                &jobs,
-                db.as_deref(),
-                &id,
-                JobStatus::Done,
-                Some(output),
-                None,
-            )
-            .await;
+        Ok((output, status)) => {
+            set_status(&jobs, db.as_deref(), &id, status, Some(output), None).await;
         }
         Err(e) => {
             tracing::warn!(job_id = %id, error = %e, "job failed");
@@ -190,7 +190,7 @@ async fn execute_job(req: JobRequest, jobs: JobStore, db: Option<Arc<db::JobDb>>
     }
 }
 
-async fn run_workflow(req: JobRequest, wf: workflow::Workflow) -> Result<String, String> {
+async fn run_workflow(req: JobRequest, wf: workflow::Workflow) -> Result<(String, bool), String> {
     let original_input = req.message.clone();
     let mut outputs: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut last_output = String::new();
@@ -226,7 +226,63 @@ async fn run_workflow(req: JobRequest, wf: workflow::Workflow) -> Result<String,
         last_output = output;
     }
 
-    Ok(last_output)
+    // If the last step is already reality-checker, parse its verdict directly.
+    if wf
+        .steps
+        .last()
+        .is_some_and(|s| s.skill == "reality-checker")
+    {
+        let is_flagged = is_verdict_flagged(&last_output);
+        return Ok((last_output, is_flagged));
+    }
+
+    // Auto-run reality-checker as the validation gate for every workflow.
+    let checker_input =
+        format!("Original request: {original_input}\n\nWorkflow output:\n{last_output}");
+    let checker_req = JobRequest {
+        job_id: req.job_id.clone(),
+        message: checker_input,
+        provider: req.provider.clone(),
+        model: req.model.clone(),
+        api_key: req.api_key.clone(),
+        base_url: req.base_url.clone(),
+        project: req.project.clone(),
+        channel: req.channel.clone(),
+        max_turns: req.max_turns,
+        verbose: req.verbose,
+        skills: Some(vec!["reality-checker".to_string()]),
+        mode: Some("task".to_string()),
+        workflow: None,
+    };
+
+    tracing::info!(job_id = %req.job_id, "workflow validation gate: running reality-checker");
+
+    match run_agent(checker_req).await {
+        Ok(checker_output) => {
+            let is_flagged = is_verdict_flagged(&checker_output);
+            if is_flagged {
+                let output = format!("{last_output}\n\n---\n\n{checker_output}");
+                Ok((output, true))
+            } else {
+                Ok((last_output, false))
+            }
+        }
+        Err(e) => {
+            tracing::warn!(job_id = %req.job_id, error = %e, "reality-checker failed; flagging job");
+            Ok((last_output, true))
+        }
+    }
+}
+
+/// Returns `true` if the reality-checker verdict is anything other than "SHIP IT".
+fn is_verdict_flagged(output: &str) -> bool {
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(output) {
+        if let Some(verdict) = val.get("verdict").and_then(|v| v.as_str()) {
+            return verdict != "SHIP IT";
+        }
+    }
+    // Fallback: plain text scan — absence of "SHIP IT" is treated as flagged.
+    !output.contains("SHIP IT")
 }
 
 async fn run_agent(req: JobRequest) -> Result<String, String> {
@@ -419,5 +475,34 @@ mod tests {
         let from_env: Option<String> = None; // simulate missing env var
         let resolved = token.or(from_env);
         assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn is_verdict_flagged_ship_it_not_flagged() {
+        let output = r#"{"verdict":"SHIP IT","grade":"A","verified":[],"gaps":[],"conditions":[],"summary":"ok"}"#;
+        assert!(!is_verdict_flagged(output));
+    }
+
+    #[test]
+    fn is_verdict_flagged_needs_work_is_flagged() {
+        let output = r#"{"verdict":"NEEDS WORK","grade":"C","verified":[],"gaps":["missing tests"],"conditions":[],"summary":"gaps present"}"#;
+        assert!(is_verdict_flagged(output));
+    }
+
+    #[test]
+    fn is_verdict_flagged_blocked_is_flagged() {
+        let output = r#"{"verdict":"BLOCKED","grade":"F","verified":[],"gaps":["no evidence"],"conditions":[],"summary":"blocked"}"#;
+        assert!(is_verdict_flagged(output));
+    }
+
+    #[test]
+    fn is_verdict_flagged_non_json_ship_it_text() {
+        // Fallback: plain text containing "SHIP IT"
+        assert!(!is_verdict_flagged("Verdict: SHIP IT. All good."));
+    }
+
+    #[test]
+    fn is_verdict_flagged_non_json_no_ship_it() {
+        assert!(is_verdict_flagged("Something went wrong with the output."));
     }
 }
