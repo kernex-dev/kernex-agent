@@ -7,7 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::jobs::{Job, JobRequest, JobStatus};
+use super::jobs::{evict_oldest_finished, Job, JobRequest, JobStatus};
 use super::AppState;
 use crate::utils;
 
@@ -120,7 +120,11 @@ pub async fn handle_run(
     if let Some(ref db) = state.db {
         db.insert(&job);
     }
-    state.jobs.write().await.insert(job_id.clone(), job);
+    {
+        let mut store = state.jobs.write().await;
+        store.insert(job_id.clone(), job);
+        evict_oldest_finished(&mut store);
+    }
 
     let req = JobRequest {
         job_id: job_id.clone(),
