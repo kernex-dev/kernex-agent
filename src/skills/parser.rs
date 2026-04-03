@@ -1,18 +1,61 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use super::types::{Permission, SkillManifest, SkillSource, MAX_SKILL_NAME_LEN, MAX_SKILL_SIZE};
+use super::types::{
+    Permission, SkillManifest, SkillSource, SkillTool, MAX_SKILL_NAME_LEN, MAX_SKILL_SIZE,
+};
 
-type FrontmatterResult = Result<
-    (
-        String,
-        String,
-        BTreeSet<Permission>,
-        Option<String>,
-        Vec<String>,
-    ),
-    SkillParseError,
->;
+struct ParsedFrontmatter {
+    name: String,
+    description: String,
+    permissions: BTreeSet<Permission>,
+    domain: Option<String>,
+    triggers: Vec<String>,
+    toolbox: Vec<SkillTool>,
+}
+
+/// Accumulator for a `[toolbox.NAME]` section being parsed.
+struct InProgressTool {
+    name: String,
+    description: Option<String>,
+    command: Option<String>,
+    args: Vec<String>,
+    parameters_schema: Option<String>,
+}
+
+impl InProgressTool {
+    fn new(name: String) -> Self {
+        Self {
+            name,
+            description: None,
+            command: None,
+            args: Vec::new(),
+            parameters_schema: None,
+        }
+    }
+
+    fn finish(self, toolbox: &mut Vec<SkillTool>) {
+        if let (Some(description), Some(command)) = (self.description, self.command) {
+            toolbox.push(SkillTool {
+                name: self.name,
+                description,
+                command,
+                args: self.args,
+                parameters_schema: self.parameters_schema,
+            });
+        }
+    }
+}
+
+/// Parse a TOML inline array of strings: `["a", "b", "c"]` → `vec!["a", "b", "c"]`.
+fn parse_args_array(value: &str) -> Vec<String> {
+    let inner = value.trim().trim_start_matches('[').trim_end_matches(']');
+    inner
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
 
 #[derive(Debug, Clone)]
 pub enum SkillParseError {
@@ -81,16 +124,18 @@ fn extract_key_value(line: &str) -> Option<(&str, &str)> {
     None
 }
 
-/// Parse the YAML/TOML frontmatter block into (name, description, permissions, domain, triggers).
-fn parse_frontmatter(yaml: &str) -> FrontmatterResult {
+/// Parse the YAML/TOML frontmatter block into a `ParsedFrontmatter`.
+fn parse_frontmatter(yaml: &str) -> Result<ParsedFrontmatter, SkillParseError> {
     let mut name: Option<String> = None;
     let mut description: Option<String> = None;
     let mut permissions: BTreeSet<Permission> = BTreeSet::new();
     let mut domain: Option<String> = None;
     let mut triggers: Vec<String> = Vec::new();
+    let mut toolbox: Vec<SkillTool> = Vec::new();
     let mut in_permissions_list = false;
     let mut in_metadata_block = false;
     let mut in_triggers_list = false;
+    let mut current_tool: Option<InProgressTool> = None;
 
     for line in yaml.lines() {
         let is_indented = line.starts_with("  ") || line.starts_with('\t');
@@ -100,7 +145,23 @@ fn parse_frontmatter(yaml: &str) -> FrontmatterResult {
             continue;
         }
 
-        // Exit nested block contexts when we encounter an unindented line
+        // TOML section header: `[toolbox.NAME]`, `[permissions]`, etc.
+        if trimmed.starts_with('[') && trimmed.ends_with(']') && !is_indented {
+            let section = &trimmed[1..trimmed.len() - 1];
+            // Finish any in-progress toolbox tool before entering a new section
+            if let Some(tool) = current_tool.take() {
+                tool.finish(&mut toolbox);
+            }
+            in_permissions_list = false;
+            in_metadata_block = false;
+            in_triggers_list = false;
+            if let Some(tool_name) = section.strip_prefix("toolbox.") {
+                current_tool = Some(InProgressTool::new(tool_name.to_string()));
+            }
+            continue;
+        }
+
+        // Exit nested block contexts when we encounter an unindented non-section line
         if !is_indented {
             in_permissions_list = false;
             in_metadata_block = false;
@@ -122,6 +183,18 @@ fn parse_frontmatter(yaml: &str) -> FrontmatterResult {
         }
 
         if let Some((key, value)) = extract_key_value(trimmed) {
+            // If inside a [toolbox.NAME] section, parse as tool properties
+            if let Some(ref mut tool) = current_tool {
+                match key {
+                    "description" => tool.description = Some(value.to_string()),
+                    "command" => tool.command = Some(value.to_string()),
+                    "args" => tool.args = parse_args_array(value),
+                    "parameters" => tool.parameters_schema = Some(value.to_string()),
+                    _ => {}
+                }
+                continue;
+            }
+
             // Handle indented keys inside the metadata block
             if in_metadata_block {
                 if key == "domain" && !value.is_empty() {
@@ -156,6 +229,11 @@ fn parse_frontmatter(yaml: &str) -> FrontmatterResult {
         }
     }
 
+    // Finish the last toolbox tool if any
+    if let Some(tool) = current_tool.take() {
+        tool.finish(&mut toolbox);
+    }
+
     let name = name
         .filter(|n| !n.is_empty())
         .ok_or_else(|| SkillParseError::MissingField("name".to_string()))?;
@@ -163,7 +241,14 @@ fn parse_frontmatter(yaml: &str) -> FrontmatterResult {
         .filter(|d| !d.is_empty())
         .ok_or_else(|| SkillParseError::MissingField("description".to_string()))?;
 
-    Ok((name, description, permissions, domain, triggers))
+    Ok(ParsedFrontmatter {
+        name,
+        description,
+        permissions,
+        domain,
+        triggers,
+        toolbox,
+    })
 }
 
 /// Parse a SKILL.md file (YAML frontmatter + markdown content).
@@ -189,18 +274,18 @@ pub fn parse_skill_md(raw: &str) -> Result<SkillManifest, SkillParseError> {
         .trim()
         .to_string();
 
-    let (name, description, requested_permissions, domain, triggers) =
-        parse_frontmatter(yaml_block)?;
+    let parsed = parse_frontmatter(yaml_block)?;
 
-    validate_skill_name(&name)?;
+    validate_skill_name(&parsed.name)?;
 
     Ok(SkillManifest {
-        name,
-        description,
-        requested_permissions,
+        name: parsed.name,
+        description: parsed.description,
+        requested_permissions: parsed.permissions,
         content,
-        domain,
-        triggers,
+        domain: parsed.domain,
+        triggers: parsed.triggers,
+        toolbox: parsed.toolbox,
     })
 }
 
@@ -616,5 +701,126 @@ commands = [\"docker\", \"kubectl\"]
         let manifest = parse_skill_md(raw).unwrap();
         assert_eq!(manifest.name, "devops-automator");
         assert_eq!(manifest.requested_permissions.len(), 0);
+    }
+
+    #[test]
+    fn parse_toolbox_single_tool() {
+        let raw = "\
+---
+name = \"api-tester\"
+description = \"API endpoint testing and verification.\"
+version = \"0.1.0\"
+
+[toolbox.api_request]
+description = \"Send an HTTP request and capture the response.\"
+command = \"curl\"
+args = [\"-s\", \"-w\", \"%{http_code}\"]
+parameters = { type = \"object\", properties = { url = { type = \"string\" } }, required = [\"url\"] }
+---
+
+# API Tester
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert_eq!(manifest.toolbox.len(), 1);
+        let tool = &manifest.toolbox[0];
+        assert_eq!(tool.name, "api_request");
+        assert_eq!(
+            tool.description,
+            "Send an HTTP request and capture the response."
+        );
+        assert_eq!(tool.command, "curl");
+        assert_eq!(tool.args, vec!["-s", "-w", "%{http_code}"]);
+        assert!(tool.parameters_schema.is_some());
+    }
+
+    #[test]
+    fn parse_toolbox_multiple_tools() {
+        let raw = "\
+---
+name = \"security-engineer\"
+description = \"Application security scanning and review.\"
+version = \"0.1.0\"
+
+[toolbox.semgrep_scan]
+description = \"Run Semgrep static analysis.\"
+command = \"semgrep\"
+args = [\"scan\", \"--json\"]
+
+[toolbox.gitleaks_detect]
+description = \"Detect hardcoded secrets.\"
+command = \"gitleaks\"
+args = [\"detect\"]
+---
+
+# Security Engineer
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert_eq!(manifest.toolbox.len(), 2);
+        assert_eq!(manifest.toolbox[0].name, "semgrep_scan");
+        assert_eq!(manifest.toolbox[0].command, "semgrep");
+        assert_eq!(manifest.toolbox[1].name, "gitleaks_detect");
+        assert_eq!(manifest.toolbox[1].command, "gitleaks");
+    }
+
+    #[test]
+    fn parse_toolbox_no_tools() {
+        let raw = "\
+---
+name = \"simple-skill\"
+description = \"No toolbox defined.\"
+---
+content
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert!(manifest.toolbox.is_empty());
+    }
+
+    #[test]
+    fn parse_toolbox_incomplete_tool_is_skipped() {
+        // A tool with missing command is silently dropped
+        let raw = "\
+---
+name = \"incomplete-skill\"
+description = \"Has an incomplete toolbox entry.\"
+
+[toolbox.no_command]
+description = \"This tool has no command field.\"
+---
+content
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert!(manifest.toolbox.is_empty());
+    }
+
+    #[test]
+    fn parse_toolbox_with_trigger_and_permissions() {
+        // Toolbox coexists with other frontmatter fields
+        let raw = "\
+---
+name = \"reality-checker\"
+description = \"Verify claims against evidence.\"
+version = \"0.1.0\"
+trigger = \"reality check|ship it\"
+
+[permissions]
+files = [\"read:src/**\"]
+commands = [\"npm\"]
+
+[toolbox.run_tests]
+description = \"Run the test suite.\"
+command = \"npm\"
+args = [\"test\", \"--\", \"--reporter=json\"]
+---
+
+# Reality Checker
+";
+        let manifest = parse_skill_md(raw).unwrap();
+        assert_eq!(manifest.triggers, vec!["reality check", "ship it"]);
+        assert_eq!(manifest.toolbox.len(), 1);
+        assert_eq!(manifest.toolbox[0].name, "run_tests");
+        assert_eq!(
+            manifest.toolbox[0].args,
+            vec!["test", "--", "--reporter=json"]
+        );
     }
 }
