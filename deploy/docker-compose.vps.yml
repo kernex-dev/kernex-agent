@@ -28,9 +28,25 @@ services:
       - kx_net
     # No host port — only Caddy can reach kx
     env_file: .env
+    # ── Provider selection ───────────────────────────────────────────────────────
+    # Default: "claude-code" uses subscription credentials (bind-mounted below).
+    # For production VPS, API key providers are more reliable (no OAuth session to renew).
+    # Set KERNEX_PROVIDER and KERNEX_API_KEY (or provider-specific key) in .env:
+    #   groq        ->  GROQ_API_KEY        (fast, low-cost)
+    #   deepseek    ->  DEEPSEEK_API_KEY    (very low-cost)
+    #   openai      ->  OPENAI_API_KEY
+    #   anthropic   ->  ANTHROPIC_API_KEY
+    #   gemini      ->  GEMINI_API_KEY
+    #   openrouter  ->  OPENROUTER_API_KEY  (routes to many models via one key)
+    #   mistral     ->  MISTRAL_API_KEY
+    #   fireworks   ->  FIREWORKS_API_KEY
+    #   xai         ->  XAI_API_KEY
+    # Or set KERNEX_BASE_URL for an OpenAI-compatible proxy (e.g. LiteLLM).
     environment:
       KERNEX_PROVIDER: ${KERNEX_PROVIDER:-claude-code}
       KERNEX_MODEL: ${KERNEX_MODEL:-}
+      KERNEX_API_KEY: ${KERNEX_API_KEY:-}
+      KERNEX_BASE_URL: ${KERNEX_BASE_URL:-}
     command:
       - serve
       - --host

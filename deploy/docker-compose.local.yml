@@ -21,9 +21,25 @@ services:
     ports:
       - "8080:8080"
     env_file: .env
+    # ── Provider selection ───────────────────────────────────────────────────────
+    # Recommended for local: "claude-code" uses your Claude subscription (no API key needed).
+    # To switch, set KERNEX_PROVIDER in .env and add the matching key:
+    #   groq        ->  GROQ_API_KEY        (fast, low-cost)
+    #   deepseek    ->  DEEPSEEK_API_KEY    (very low-cost)
+    #   openai      ->  OPENAI_API_KEY
+    #   anthropic   ->  ANTHROPIC_API_KEY
+    #   gemini      ->  GEMINI_API_KEY
+    #   openrouter  ->  OPENROUTER_API_KEY  (routes to many models via one key)
+    #   mistral     ->  MISTRAL_API_KEY
+    #   fireworks   ->  FIREWORKS_API_KEY
+    #   xai         ->  XAI_API_KEY
+    #   ollama      ->  set KERNEX_BASE_URL=http://host.docker.internal:11434 (local, no key)
+    # Or use KERNEX_API_KEY as a unified key regardless of provider.
     environment:
       KERNEX_PROVIDER: ${KERNEX_PROVIDER:-claude-code}
       KERNEX_MODEL: ${KERNEX_MODEL:-}
+      KERNEX_API_KEY: ${KERNEX_API_KEY:-}
+      KERNEX_BASE_URL: ${KERNEX_BASE_URL:-}
     command:
       - serve
       - --host

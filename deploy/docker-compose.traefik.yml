@@ -40,9 +40,23 @@ services:
       # Localhost-only binding for direct access (VPN, health checks)
       - "127.0.0.1:${KX_PORT:-8081}:8080"
     env_file: .env
+    # ── Provider selection ───────────────────────────────────────────────────────
+    # Recommended for VPS: use an API key provider (not claude-code, OAuth is session-based).
+    # Set KERNEX_PROVIDER and KERNEX_API_KEY (or provider-specific key) in .env:
+    #   groq        ->  GROQ_API_KEY        (fast, low-cost)
+    #   deepseek    ->  DEEPSEEK_API_KEY    (very low-cost)
+    #   openai      ->  OPENAI_API_KEY
+    #   anthropic   ->  ANTHROPIC_API_KEY
+    #   gemini      ->  GEMINI_API_KEY
+    #   openrouter  ->  OPENROUTER_API_KEY  (routes to many models via one key)
+    #   mistral     ->  MISTRAL_API_KEY
+    #   fireworks   ->  FIREWORKS_API_KEY
+    #   xai         ->  XAI_API_KEY
+    # For OpenAI-compatible proxies (e.g. LiteLLM), also set KERNEX_BASE_URL.
     environment:
       KERNEX_PROVIDER: ${KERNEX_PROVIDER:-openai}
       KERNEX_MODEL: ${KERNEX_MODEL:-}
+      KERNEX_API_KEY: ${KERNEX_API_KEY:-}
       KERNEX_BASE_URL: ${KERNEX_BASE_URL:-}
     command:
       - serve
