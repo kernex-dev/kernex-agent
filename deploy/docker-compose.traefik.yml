@@ -1,0 +1,106 @@
+# VPS deployment for servers that already run Traefik as a reverse proxy.
+# Caddy is NOT included — kx binds to a localhost port and Traefik routes to it.
+#
+# Prerequisites:
+#   - Traefik v2 or v3 already running
+#   - A Traefik network configured to discover containers (set TRAEFIK_NETWORK in .env)
+#   - An API key provider set in .env (recommended over claude-code for servers)
+#
+# Usage:
+#   cp .env.example .env   # set KERNEX_AUTH_TOKEN, KERNEX_PROVIDER, API key, DOMAIN
+#   docker compose -f docker-compose.traefik.yml up -d
+#
+# Traefik will route https://<DOMAIN> to kx:8080 via the shared network.
+# kx is also accessible locally at http://127.0.0.1:<KX_PORT> (default 8081) for
+# health checks or WireGuard VPN access without going through Traefik.
+
+networks:
+  kx_net:
+    driver: bridge
+  traefik_net:
+    # The name of your existing Traefik network. Common values: traefik, proxy, web
+    # Set TRAEFIK_NETWORK in .env to match your setup.
+    name: ${TRAEFIK_NETWORK:-traefik}
+    external: true
+
+volumes:
+  kx_data:  # persistent job data, skills, and workflows
+
+services:
+
+  # ── kx serve ────────────────────────────────────────────────────────────────
+  kx:
+    image: ghcr.io/kernex-dev/kernex-agent:latest
+    pull_policy: always
+    container_name: kx
+    networks:
+      - kx_net
+      - traefik_net
+    ports:
+      # Localhost-only binding for direct access (VPN, health checks)
+      - "127.0.0.1:${KX_PORT:-8081}:8080"
+    env_file: .env
+    environment:
+      KERNEX_PROVIDER: ${KERNEX_PROVIDER:-openai}
+      KERNEX_MODEL: ${KERNEX_MODEL:-}
+      KERNEX_BASE_URL: ${KERNEX_BASE_URL:-}
+    command:
+      - serve
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8080"
+      - --workers
+      - "${KX_WORKERS:-4}"
+    volumes:
+      - kx_data:/home/kx/.kx
+      # Claude credentials (only needed when KERNEX_PROVIDER=claude-code)
+      # Uncomment if using Claude subscription (not recommended for servers):
+      # - type: bind
+      #   source: ${CLAUDE_CREDENTIALS_PATH}
+      #   target: /home/kx/.claude/.credentials.json
+      #   read_only: true
+      # Optional: override bundled skills with your own directory
+      # - type: bind
+      #   source: ./my-skills
+      #   target: /home/kx/.kx/skills
+      #   read_only: true
+    restart: unless-stopped
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kx.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.kx.entrypoints=websecure"
+      - "traefik.http.routers.kx.tls=true"
+      - "traefik.http.routers.kx.tls.certresolver=letsencrypt"
+      - "traefik.http.services.kx.loadbalancer.server.port=8080"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: "2.0"
+    pids_limit: 512
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
