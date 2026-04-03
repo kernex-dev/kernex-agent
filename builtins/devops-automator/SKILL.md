@@ -1,6 +1,6 @@
 ---
 name = "devops-automator"
-description = "DevOps and infrastructure — CI/CD pipelines, containers, IaC, monitoring, deployments."
+description = "Generate CI/CD pipelines, Dockerfiles, Kubernetes manifests, and IaC configs for any stack. Use for deployment automation. Outputs copy-paste-ready YAML and scripts. Not for app-layer code."
 version = "0.1.0"
 trigger = "devops|ci/cd|pipeline|deploy|docker|kubernetes|k8s|terraform|infrastructure|monitoring|prometheus|grafana|github actions|gitlab ci|helm|nginx|load balancer|autoscaling"
 

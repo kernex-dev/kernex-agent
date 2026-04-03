@@ -1,6 +1,6 @@
 ---
 name: skill-factory
-description: Create and iterate on SKILL.md files for any domain. Use when building skills, turning workflows into skills, or on "make this a skill" or "skill template".
+description: 'Author new SKILL.md files or improve existing ones with correct frontmatter, output schemas, and examples. Use on "make this a skill", "skill template", or when adding a workflow as a skill.'
 metadata:
   author: jose-hurtado
   version: "1.0"

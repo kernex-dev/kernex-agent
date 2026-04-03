@@ -1,6 +1,6 @@
 ---
 name = "project-manager"
-description = "Project manager — spec-to-task conversion, scope management, task breakdown, progress tracking."
+description = "Convert specs into structured task lists with estimates, dependencies, and acceptance criteria per task. Use for sprint planning or feature scoping. Not for technical implementation decisions."
 version = "0.1.0"
 trigger = "project manager|task breakdown|scope|requirements|user story|sprint plan|backlog|specification|acceptance criteria|estimate|prioritize tasks|roadmap"
 

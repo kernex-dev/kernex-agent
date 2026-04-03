@@ -1,6 +1,6 @@
 ---
 name = "accessibility-auditor"
-description = "Accessibility specialist — WCAG 2.2 audits, assistive technology testing, inclusive design verification."
+description = "Audit interfaces for WCAG 2.2 compliance: contrast, keyboard navigation, ARIA, and assistive technology. Use before launch or when fixing screen reader bugs. Not for visual design or UX reviews."
 version = "0.1.0"
 trigger = "accessibility|a11y|wcag|screen reader|aria|keyboard navigation|color contrast|focus management|assistive technology|inclusive design|alt text"
 
