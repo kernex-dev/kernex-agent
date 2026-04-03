@@ -5,7 +5,7 @@ use colored::Colorize;
 
 use super::audit::{log_event, AuditEvent};
 use super::manifest::{compute_sha256, skill_dir, verify_skill, SkillsManifest, VerifyResult};
-use super::parser::{parse_skill_md, parse_source, validate_skill_size};
+use super::parser::{parse_skill_md, parse_source, validate_skill_name, validate_skill_size};
 use super::permissions::{resolve_permissions, PermissionPolicy};
 use super::types::{InstalledSkill, TrustLevel};
 
@@ -315,6 +315,158 @@ pub async fn verify_skills(data_dir: &Path) {
             "WARN".yellow().bold()
         );
     }
+}
+
+pub fn lint_skill_dir(path: &std::path::Path) -> bool {
+    let skill_path = path.join("SKILL.md");
+
+    let content = match std::fs::read_to_string(&skill_path) {
+        Ok(c) => c,
+        Err(_) => {
+            println!(
+                "{} SKILL.md not found in {}",
+                "ERROR".red().bold(),
+                path.display()
+            );
+            return false;
+        }
+    };
+
+    let (frontmatter, body) = match skill_frontmatter_and_body(&content) {
+        Some(pair) => pair,
+        None => {
+            println!(
+                "{} missing or malformed frontmatter (expected --- delimiters)",
+                "ERROR".red().bold()
+            );
+            return false;
+        }
+    };
+
+    let name = extract_fm_value(frontmatter, "name").unwrap_or_default();
+    let mut errors: Vec<String> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+
+    // Required fields
+    if extract_fm_value(frontmatter, "name").is_none() {
+        errors.push("missing required field: name".to_string());
+    }
+    if extract_fm_value(frontmatter, "description").is_none() {
+        errors.push("missing required field: description".to_string());
+    }
+
+    // Recommended fields
+    if extract_fm_value(frontmatter, "version").is_none() {
+        warnings.push("missing recommended field: version".to_string());
+    }
+    if extract_fm_value(frontmatter, "author").is_none() {
+        warnings.push("missing recommended field: author".to_string());
+    }
+
+    // Name validation (only if present)
+    if !name.is_empty() {
+        if let Err(e) = validate_skill_name(&name) {
+            errors.push(format!("invalid name: {e}"));
+        }
+        if name.contains("--") {
+            errors.push(format!(
+                "invalid name '{name}': consecutive hyphens not allowed"
+            ));
+        }
+    }
+
+    // Required section
+    if !has_section(body, &["Workflow"]) {
+        errors.push("missing required section: ## Workflow".to_string());
+    }
+
+    // Recommended sections
+    if !has_section(body, &["Examples"]) {
+        warnings.push("missing recommended section: ## Examples".to_string());
+    }
+    if !has_section(body, &["Output Format"]) {
+        warnings.push("missing recommended section: ## Output Format".to_string());
+    }
+
+    // Anti-pattern detection
+    let body_lower = body.to_lowercase();
+    for pattern in &["ask the user", "ask for clarification", "prompt the user"] {
+        let count = body_lower.matches(pattern).count();
+        if count > 0 {
+            warnings.push(format!("anti-pattern ({count}x): \"{pattern}\""));
+        }
+    }
+
+    let display_name = if name.is_empty() { "unknown" } else { &name };
+    print_lint_results(display_name, &errors, &warnings);
+
+    errors.is_empty()
+}
+
+fn skill_frontmatter_and_body(content: &str) -> Option<(&str, &str)> {
+    let trimmed = content.trim_start();
+    let rest = trimmed.strip_prefix("---")?;
+    let closing_idx = rest.find("\n---")?;
+    let fm = &rest[..closing_idx];
+    let after = &rest[closing_idx + 4..]; // skip "\n---"
+    let body = after.strip_prefix('\n').unwrap_or(after);
+    Some((fm, body))
+}
+
+fn extract_fm_value(frontmatter: &str, key: &str) -> Option<String> {
+    let yaml_prefix = format!("{key}:");
+    let toml_prefix = format!("{key} =");
+    for line in frontmatter.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(yaml_prefix.as_str()) {
+            let val = rest.trim().trim_matches('"').trim_matches('\'').to_string();
+            if !val.is_empty() {
+                return Some(val);
+            }
+        } else if let Some(rest) = trimmed.strip_prefix(toml_prefix.as_str()) {
+            let val = rest.trim().trim_matches('"').trim_matches('\'').to_string();
+            if !val.is_empty() {
+                return Some(val);
+            }
+        }
+    }
+    None
+}
+
+fn has_section(body: &str, keywords: &[&str]) -> bool {
+    body.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed.starts_with("##") && keywords.iter().any(|kw| trimmed.contains(kw))
+    })
+}
+
+fn print_lint_results(name: &str, errors: &[String], warnings: &[String]) {
+    println!("\n  {} {}\n", "Linting skill:".dimmed(), name.bold());
+
+    for err in errors {
+        println!("  {} {}", "ERROR".red().bold(), err);
+    }
+    for warn in warnings {
+        println!("  {} {}", "WARN".yellow().bold(), warn);
+    }
+
+    if errors.is_empty() && warnings.is_empty() {
+        println!("  {} No issues found.", "OK".green().bold());
+    } else if errors.is_empty() {
+        println!(
+            "\n  {} {} warning(s), 0 errors.",
+            "OK".green().bold(),
+            warnings.len()
+        );
+    } else {
+        println!(
+            "\n  {} {} error(s), {} warning(s).",
+            "FAIL".red().bold(),
+            errors.len(),
+            warnings.len()
+        );
+    }
+    println!();
 }
 
 fn truncate_hash(hash: &str) -> &str {

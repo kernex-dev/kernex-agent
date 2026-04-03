@@ -135,6 +135,13 @@ async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Erro
             skills::cli_handler::verify_skills(&data_dir).await;
             Ok(())
         }
+        SkillsAction::Lint { path } => {
+            let lint_path = std::path::Path::new(&path);
+            if !skills::cli_handler::lint_skill_dir(lint_path) {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
     }
 }
 

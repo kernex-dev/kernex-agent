@@ -121,6 +121,12 @@ pub enum SkillsAction {
     },
     /// Verify integrity of installed skills
     Verify,
+    /// Validate a skill directory against the Agent Skills spec (content, format, anti-patterns)
+    Lint {
+        /// Path to skill directory to validate (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: String,
+    },
 }
 
 #[derive(Subcommand)]

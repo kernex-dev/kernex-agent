@@ -1,3 +1,4 @@
+pub mod db;
 pub mod jobs;
 pub mod routes;
 pub mod skills;
@@ -28,6 +29,7 @@ pub struct AppState {
     pub tx: mpsc::Sender<JobRequest>,
     pub default_flags: Arc<ProviderFlags>,
     pub auth_token: String,
+    pub db: Option<Arc<db::JobDb>>,
 }
 
 pub async fn cmd_serve(
@@ -49,7 +51,28 @@ pub async fn cmd_serve(
         return Err("auth token cannot be empty".into());
     }
 
+    let serve_data_dir = data_dir_for("serve");
+    let db_arc = match db::JobDb::init(&serve_data_dir) {
+        Ok(job_db) => {
+            let arc = Arc::new(job_db);
+            arc.mark_running_as_failed();
+            Some(arc)
+        }
+        Err(e) => {
+            tracing::warn!("SQLite init failed ({e}); running without job persistence");
+            None
+        }
+    };
+
     let job_store = jobs::new_store();
+    if let Some(ref db) = db_arc {
+        let existing = db.load_all();
+        let mut store = job_store.write().await;
+        for job in existing {
+            store.insert(job.id.clone(), job);
+        }
+    }
+
     let (tx, rx) = mpsc::channel::<JobRequest>(256);
 
     let state = AppState {
@@ -57,10 +80,11 @@ pub async fn cmd_serve(
         tx,
         default_flags: Arc::new(flags.clone()),
         auth_token: token,
+        db: db_arc.clone(),
     };
 
     let semaphore = Arc::new(Semaphore::new(workers));
-    tokio::spawn(run_worker(rx, job_store, semaphore));
+    tokio::spawn(run_worker(rx, job_store, db_arc, semaphore));
 
     let protected = Router::new()
         .route("/run", post(routes::handle_run))
@@ -105,21 +129,35 @@ async fn auth_middleware(
     }
 }
 
-async fn run_worker(mut rx: mpsc::Receiver<JobRequest>, jobs: JobStore, semaphore: Arc<Semaphore>) {
+async fn run_worker(
+    mut rx: mpsc::Receiver<JobRequest>,
+    jobs: JobStore,
+    db: Option<Arc<db::JobDb>>,
+    semaphore: Arc<Semaphore>,
+) {
     while let Some(req) = rx.recv().await {
         let jobs_clone = jobs.clone();
+        let db_clone = db.clone();
         let sem_clone = semaphore.clone();
         tokio::spawn(async move {
             let Ok(_permit) = sem_clone.acquire_owned().await else {
                 return;
             };
-            execute_job(req, jobs_clone).await;
+            execute_job(req, jobs_clone, db_clone).await;
         });
     }
 }
 
-async fn execute_job(req: JobRequest, jobs: JobStore) {
-    set_status(&jobs, &req.job_id, JobStatus::Running, None, None).await;
+async fn execute_job(req: JobRequest, jobs: JobStore, db: Option<Arc<db::JobDb>>) {
+    set_status(
+        &jobs,
+        db.as_deref(),
+        &req.job_id,
+        JobStatus::Running,
+        None,
+        None,
+    )
+    .await;
     let id = req.job_id.clone();
 
     let result = if let Some(wf_name) = req.workflow.as_deref() {
@@ -135,11 +173,19 @@ async fn execute_job(req: JobRequest, jobs: JobStore) {
 
     match result {
         Ok(output) => {
-            set_status(&jobs, &id, JobStatus::Done, Some(output), None).await;
+            set_status(
+                &jobs,
+                db.as_deref(),
+                &id,
+                JobStatus::Done,
+                Some(output),
+                None,
+            )
+            .await;
         }
         Err(e) => {
             tracing::warn!(job_id = %id, error = %e, "job failed");
-            set_status(&jobs, &id, JobStatus::Failed, None, Some(e)).await;
+            set_status(&jobs, db.as_deref(), &id, JobStatus::Failed, None, Some(e)).await;
         }
     }
 }
@@ -232,23 +278,43 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
 
 async fn set_status(
     jobs: &JobStore,
+    db: Option<&db::JobDb>,
     job_id: &str,
     status: JobStatus,
     output: Option<String>,
     error: Option<String>,
 ) {
-    let mut store = jobs.write().await;
-    if let Some(job) = store.get_mut(job_id) {
-        job.status = status;
-        if output.is_some() {
-            job.output = output;
+    let finished_at = if matches!(
+        status,
+        JobStatus::Done | JobStatus::Failed | JobStatus::Flagged
+    ) {
+        Some(crate::utils::iso_timestamp())
+    } else {
+        None
+    };
+    {
+        let mut store = jobs.write().await;
+        if let Some(job) = store.get_mut(job_id) {
+            job.status = status.clone();
+            if output.is_some() {
+                job.output = output.clone();
+            }
+            if error.is_some() {
+                job.error = error.clone();
+            }
+            if finished_at.is_some() {
+                job.finished_at = finished_at.clone();
+            }
         }
-        if error.is_some() {
-            job.error = error;
-        }
-        if matches!(job.status, JobStatus::Done | JobStatus::Failed) {
-            job.finished_at = Some(crate::utils::iso_timestamp());
-        }
+    }
+    if let Some(db) = db {
+        db.update_status(
+            job_id,
+            &status,
+            output.as_deref(),
+            error.as_deref(),
+            finished_at.as_deref(),
+        );
     }
 }
 
@@ -273,7 +339,7 @@ mod tests {
         };
         store.write().await.insert("test-1".to_string(), job);
 
-        set_status(&store, "test-1", JobStatus::Running, None, None).await;
+        set_status(&store, None, "test-1", JobStatus::Running, None, None).await;
         let guard = store.read().await;
         let j = guard.get("test-1").unwrap();
         assert_eq!(j.status, JobStatus::Running);
@@ -299,6 +365,7 @@ mod tests {
 
         set_status(
             &store,
+            None,
             "test-2",
             JobStatus::Done,
             Some("result".to_string()),
@@ -331,6 +398,7 @@ mod tests {
 
         set_status(
             &store,
+            None,
             "test-3",
             JobStatus::Failed,
             None,

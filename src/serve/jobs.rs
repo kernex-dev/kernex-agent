@@ -10,8 +10,7 @@ pub enum JobStatus {
     Queued,
     Running,
     Done,
-    /// Job completed but the reality-checker flagged validation warnings (Phase 3).
-    #[allow(dead_code)]
+    /// Job completed but the reality-checker flagged validation warnings.
     Flagged,
     Failed,
 }

@@ -21,15 +21,13 @@
 | `workflow-runner` skill | DONE | `deploy/skills/workflow-runner/SKILL.md` |
 | evals/evals.json | DONE | 29 test cases across all 13 deploy skills |
 | Skills volume mount in docker-compose | DONE | `deploy/skills` mounted at `/home/kx/.kx/skills` |
-| Builtin description rewrites | PENDING | Parser fix done, rewrites not yet started |
+| Builtin description rewrites | DONE | 13 builtins, 200-char formula, no em-dashes |
 | Domain skills (uxui, geo) | DONE | 4 skills: uxui-evaluator, interface-auditor, geo-auditor, geo-schema-generator |
-| Workflow file system | NOT STARTED | No named workflow support |
-| Validation gate (Phase 3 active) | NOT STARTED | `Flagged` status reserved, runtime logic pending |
-| `validate_skill.py` integration | NOT STARTED | Available at `deploy/skills/validate_skill.py` |
-| Webhook HMAC verification | NOT STARTED | All webhooks share the same bearer token |
-| Job persistence | NOT STARTED | In-memory only, lost on restart |
-| `/health` job stats | NOT STARTED | Returns static `{status: ok}` only |
-| `/health` job stats | NOT STARTED | Returns static `{status: ok}` only |
+| Workflow file system | DONE | src/serve/workflow.rs, 4 starter TOML workflows, docker volume mount |
+| Webhook HMAC verification | DONE | Per-event secret via `KERNEX_WEBHOOK_SECRET_{EVENT}`, `X-Hub-Signature-256` |
+| Job persistence | DONE | Write-through SQLite (`jobs.db`), crash recovery on startup |
+| `/health` job stats | DONE | Returns queued/running/done/flagged/failed/total counts |
+| `kx skills lint` subcommand | DONE | Content validation: required fields, sections, anti-patterns |
 
 ---
 

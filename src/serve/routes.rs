@@ -1,6 +1,7 @@
 use axum::{
+    body::Bytes,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -41,10 +42,21 @@ pub struct ErrorResponse {
     pub error: String,
 }
 
+#[derive(Debug, Default, Serialize)]
+pub struct JobStats {
+    pub queued: usize,
+    pub running: usize,
+    pub done: usize,
+    pub flagged: usize,
+    pub failed: usize,
+    pub total: usize,
+}
+
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
     pub status: &'static str,
     pub version: &'static str,
+    pub jobs: JobStats,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,10 +64,23 @@ pub struct ListQuery {
     pub limit: Option<usize>,
 }
 
-pub async fn handle_health() -> Json<HealthResponse> {
+pub async fn handle_health(State(state): State<AppState>) -> Json<HealthResponse> {
+    let store = state.jobs.read().await;
+    let mut stats = JobStats::default();
+    for job in store.values() {
+        stats.total += 1;
+        match job.status {
+            JobStatus::Queued => stats.queued += 1,
+            JobStatus::Running => stats.running += 1,
+            JobStatus::Done => stats.done += 1,
+            JobStatus::Flagged => stats.flagged += 1,
+            JobStatus::Failed => stats.failed += 1,
+        }
+    }
     Json(HealthResponse {
         status: "ok",
         version: env!("CARGO_PKG_VERSION"),
+        jobs: stats,
     })
 }
 
@@ -81,6 +106,9 @@ pub async fn handle_run(
         finished_at: None,
     };
 
+    if let Some(ref db) = state.db {
+        db.insert(&job);
+    }
     state.jobs.write().await.insert(job_id.clone(), job);
 
     let req = JobRequest {
@@ -141,9 +169,27 @@ pub async fn handle_list_jobs(
 pub async fn handle_webhook(
     State(state): State<AppState>,
     Path(event): Path<String>,
-    Json(body): Json<WebhookBody>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Result<Json<JobIdResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let message = body
+    let secret_key = format!(
+        "KERNEX_WEBHOOK_SECRET_{}",
+        event.to_uppercase().replace('-', "_")
+    );
+    if let Ok(secret) = std::env::var(&secret_key) {
+        verify_webhook_hmac(&headers, &body, &secret)?;
+    }
+
+    let webhook_body: WebhookBody = serde_json::from_slice(&body).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: format!("invalid JSON: {e}"),
+            }),
+        )
+    })?;
+
+    let message = webhook_body
         .message
         .unwrap_or_else(|| format!("Webhook event triggered: {event}"));
 
@@ -164,19 +210,105 @@ pub async fn handle_webhook(
     .await
 }
 
+fn verify_webhook_hmac(
+    headers: &HeaderMap,
+    body: &[u8],
+    secret: &str,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    type HmacSha256 = Hmac<Sha256>;
+
+    let sig_header = headers
+        .get("x-hub-signature-256")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "missing X-Hub-Signature-256 header".to_string(),
+                }),
+            )
+        })?;
+
+    let hex = sig_header.strip_prefix("sha256=").ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid signature format".to_string(),
+            }),
+        )
+    })?;
+
+    let sig_bytes = hex_decode(hex).ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "invalid signature encoding".to_string(),
+            }),
+        )
+    })?;
+
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "HMAC key error".to_string(),
+            }),
+        )
+    })?;
+    mac.update(body);
+    mac.verify_slice(&sig_bytes).map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "signature mismatch".to_string(),
+            }),
+        )
+    })
+}
+
+fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn health_response_fields() {
+    fn health_response_serializes_with_jobs() {
         let r = HealthResponse {
             status: "ok",
             version: "0.4.0",
+            jobs: JobStats {
+                queued: 1,
+                running: 2,
+                done: 3,
+                flagged: 0,
+                failed: 1,
+                total: 7,
+            },
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains("\"status\":\"ok\""));
         assert!(json.contains("\"version\":\"0.4.0\""));
+        assert!(json.contains("\"jobs\":{"));
+        assert!(json.contains("\"total\":7"));
+    }
+
+    #[test]
+    fn job_stats_default_is_zero() {
+        let s = JobStats::default();
+        assert_eq!(s.total, 0);
+        assert_eq!(s.queued, 0);
     }
 
     #[test]
@@ -223,5 +355,68 @@ mod tests {
         let raw = r#"{"message":"deploy"}"#;
         let body: WebhookBody = serde_json::from_str(raw).unwrap();
         assert_eq!(body.message, Some("deploy".to_string()));
+    }
+
+    #[test]
+    fn hex_decode_valid() {
+        assert_eq!(hex_decode("deadbeef"), Some(vec![0xde, 0xad, 0xbe, 0xef]));
+        assert_eq!(hex_decode(""), Some(vec![]));
+        assert_eq!(hex_decode("00ff"), Some(vec![0x00, 0xff]));
+    }
+
+    #[test]
+    fn hex_decode_invalid() {
+        assert_eq!(hex_decode("xyz"), None); // odd length
+        assert_eq!(hex_decode("zz"), None); // non-hex chars
+        assert_eq!(hex_decode("abc"), None); // odd length
+    }
+
+    #[test]
+    fn verify_webhook_hmac_missing_header() {
+        let headers = HeaderMap::new();
+        let result = verify_webhook_hmac(&headers, b"body", "secret");
+        assert!(result.is_err());
+        let (code, _) = result.unwrap_err();
+        assert_eq!(code, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn verify_webhook_hmac_valid_signature() {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+
+        type HmacSha256 = Hmac<Sha256>;
+
+        let secret = "test-secret";
+        let body = b"hello world";
+
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(body);
+        let sig = mac.finalize().into_bytes();
+        let hex_sig = sig.iter().map(|b| format!("{b:02x}")).collect::<String>();
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-hub-signature-256",
+            format!("sha256={hex_sig}").parse().unwrap(),
+        );
+
+        let result = verify_webhook_hmac(&headers, body, secret);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn verify_webhook_hmac_wrong_signature() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-hub-signature-256",
+            "sha256=0000000000000000000000000000000000000000000000000000000000000000"
+                .parse()
+                .unwrap(),
+        );
+        let result = verify_webhook_hmac(&headers, b"body", "secret");
+        assert!(result.is_err());
+        let (code, _) = result.unwrap_err();
+        assert_eq!(code, StatusCode::UNAUTHORIZED);
     }
 }
