@@ -63,6 +63,10 @@ services:
     memswap_limit: 1g
     cpus: "2.0"
     pids_limit: 512
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
     logging:
       driver: json-file
