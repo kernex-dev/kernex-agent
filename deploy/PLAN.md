@@ -459,10 +459,17 @@ operations — script output is ground truth, not model inference.
 | `trigger` keyword parsing | `skills/parser.rs` | Small | Low |
 | `toolbox` parsing and registration | `skills/parser.rs`, `types.rs` | Large | Low |
 
-### Phase 4: Maintainer Only
+### Phase 4: Maintainer Only (DONE)
 
 GitHub Actions release pipeline for GHCR image publishing on release tags.
 Not required for private VPS deployment.
+
+Pipeline: `.github/workflows/release.yml`
+- Triggers on `v*.*.*` tags
+- CI gate: clippy + test + fmt before publish
+- Multi-arch build: `linux/amd64`, `linux/arm64`
+- Pushes to `ghcr.io/kernex-dev/kernex-agent` with semver tags + `latest`
+- Uses `GITHUB_TOKEN` — no additional secrets required
 
 ### Phase 5: Community Skills (publishable to Skills.sh + awesome-agent-skills)
 
