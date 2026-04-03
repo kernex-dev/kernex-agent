@@ -1,6 +1,6 @@
 ---
 name = "agents-orchestrator"
-description = "Multi-agent pipeline orchestrator — workflow coordination, quality gates, dev-QA loops."
+description = "Decompose goals into parallel and sequential agent phases with handoff schemas and quality gates. Use for multi-step tasks too large for a single agent. Not for single-tool or single-step tasks."
 version = "0.1.0"
 trigger = "orchestrate|pipeline|multi-agent|workflow|coordinate agents|spawn agent|dev-qa loop|quality gate|agent pipeline"
 

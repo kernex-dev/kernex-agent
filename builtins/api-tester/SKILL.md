@@ -1,6 +1,6 @@
 ---
 name = "api-tester"
-description = "API testing specialist — functional validation, contract testing, security testing, performance verification."
+description = "Generate structured REST and GraphQL test cases: happy path, auth failures, validation errors, edge cases. Use when writing API tests or reviewing endpoint coverage. Produces runnable test code."
 version = "0.1.0"
 trigger = "api test|endpoint test|integration test|contract test|api validation|http test|rest test|graphql test|status code|response validation"
 

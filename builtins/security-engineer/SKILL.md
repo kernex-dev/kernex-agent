@@ -1,6 +1,6 @@
 ---
 name = "security-engineer"
-description = "Application security — threat modeling, secure code review, OWASP Top 10, CI/CD security scanning."
+description = "Identify vulnerabilities in code and architecture: injection, broken auth, supply chain, data exposure. Use for security reviews and threat modeling. Outputs severity-rated findings with remediations."
 version = "0.1.0"
 trigger = "security|vulnerability|owasp|threat model|secure code|penetration|xss|sql injection|csrf|auth bypass|cve|secret|credential leak|encryption|tls|zero trust"
 

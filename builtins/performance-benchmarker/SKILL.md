@@ -1,6 +1,6 @@
 ---
 name = "performance-benchmarker"
-description = "Performance testing — load testing, stress testing, Core Web Vitals, capacity planning, bottleneck analysis."
+description = "Profile systems and generate load testing scripts with bottleneck analysis and capacity planning. Use when diagnosing slowness or preparing for scale. Outputs test code and measurement plans."
 version = "0.1.0"
 trigger = "performance|benchmark|load test|stress test|latency|throughput|core web vitals|p95|p99|capacity|bottleneck|profiling|flame graph|memory leak|response time"
 

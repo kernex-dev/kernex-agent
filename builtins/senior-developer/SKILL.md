@@ -1,6 +1,6 @@
 ---
 name = "senior-developer"
-description = "Senior full-stack developer — advanced patterns, premium implementations, complex integrations."
+description = "Implement full-stack features with idiomatic patterns, error handling, and test suggestions included. Use for implementation tasks and code reviews. Not for architecture decisions or project planning."
 version = "0.1.0"
 trigger = "senior dev|full stack|advanced pattern|complex integration|refactor|architecture review|code review|design pattern|premium|craft"
 
