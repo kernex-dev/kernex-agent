@@ -116,13 +116,19 @@ async fn auth_middleware(
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    use subtle::ConstantTimeEq;
+
     let provided = request
         .headers()
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
 
-    if provided == Some(state.auth_token.as_str()) {
+    let authorized = provided
+        .map(|p| p.as_bytes().ct_eq(state.auth_token.as_bytes()).into())
+        .unwrap_or(false);
+
+    if authorized {
         Ok(next.run(request).await)
     } else {
         Err(StatusCode::UNAUTHORIZED)
