@@ -272,6 +272,75 @@ If the env var is not set, the HMAC check is skipped and bearer auth alone appli
 
 ---
 
+## Workflows vs Pipelines: Steps vs Phases
+
+kx has two distinct multi-agent execution models. They use different TOML constructs and
+different CLI entry points.
+
+### Workflows (`[[steps]]`) — HTTP API mode
+
+Used with `kx serve`. Triggered via `POST /run` with `"workflow": "name"`.
+Defined in `.toml` files under `/home/kx/.kx/workflows/`.
+
+```toml
+name = "pr-review"
+description = "..."
+
+[[steps]]
+id = "code-review"
+skill = "senior-developer"
+input = "Review this PR: {input}"
+mode = "evaluate"
+
+[[steps]]
+id = "readiness-gate"
+skill = "reality-checker"
+input = "Based on: {code-review.output}"
+depends_on = ["code-review"]
+```
+
+Key fields: `id`, `skill`, `input`, `mode`, `depends_on` (for ordering and output chaining).
+Steps can run in parallel when they share no `depends_on` relationship.
+
+### Pipelines (`[[phases]]`) — CLI mode
+
+Used with `kx pipeline run <topology>`. Defined in `TOPOLOGY.toml` files under
+`~/.kx/projects/<project>/topologies/<name>/`.
+
+```toml
+[topology]
+name = "my-eval"
+description = "..."
+
+[[phases]]
+name = "scout"
+agent = "scout"
+phase_type = "standard"
+model_tier = "complex"
+max_turns = 20
+
+[[phases]]
+name = "save"
+agent = "save"
+phase_type = "standard"
+model_tier = "fast"
+max_turns = 10
+```
+
+Key fields: `name`, `agent`, `phase_type`, `model_tier`, `max_turns`. Phases always run
+sequentially. Each phase maps to an agent defined in the same topology directory
+(e.g., `scout.md`, `save.md`).
+
+| | Workflows | Pipelines |
+|---|---|---|
+| Construct | `[[steps]]` | `[[phases]]` |
+| Entry point | `POST /run` (kx serve) | `kx pipeline run <topology>` |
+| Agent type | skills | named agents (md files) |
+| Ordering | DAG via `depends_on` | sequential |
+| Output chaining | `{step-id.output}` | agent reads prior output from context |
+
+---
+
 ## Customizing Skills and Workflows
 
 ### Add or edit a skill
@@ -319,6 +388,73 @@ docker compose -f docker-compose.local.yml down
 docker volume rm kx_data
 docker compose -f docker-compose.local.yml up -d
 ```
+
+---
+
+## Pipeline Save Agents and DATABASE_URL
+
+When running `kx pipeline run <topology>`, the save phase of each pipeline can write results
+directly to PostgreSQL using the `psql` CLI. This requires `DATABASE_URL` to be set in the
+container's environment.
+
+### Setting DATABASE_URL
+
+Add it to your `.env` file or compose service env:
+
+```bash
+DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<dbname>
+```
+
+If running `va-kx` on a Docker network alongside PostgreSQL (e.g., `va-postgresql`), the host
+is the container name:
+
+```bash
+DATABASE_URL=postgresql://visualaudit:<password>@va-postgresql:5432/visualaudit
+```
+
+The `postgresql-client` package must be installed in the container for `psql` to be available.
+The base `ghcr.io/kernex-dev/kernex-agent` image does not include it. If your save agents use
+`psql "$DATABASE_URL" -c "..."`, extend the image:
+
+```dockerfile
+FROM ghcr.io/kernex-dev/kernex-agent:latest
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+USER kx
+# Do NOT override ENTRYPOINT or CMD — inherit from base image.
+# Clearing ENTRYPOINT will cause Docker to exec the CMD args as a bare binary,
+# which breaks kx serve startup.
+```
+
+### Save agent example (TOPOLOGY.toml)
+
+```toml
+[[phases]]
+name = "save"
+phase_type = "save"
+model_tier = "fast"
+max_turns = 5
+system_prompt = """
+You receive scored leads as JSON. For each lead, insert a row into mission_control.leads
+using: psql "$DATABASE_URL" -c "INSERT INTO mission_control.leads ..."
+Only use columns that exist in the schema. Store additional fields in the notes JSONB column.
+"""
+```
+
+### mission_control.leads schema reference
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `brand` | text | Brand name |
+| `company` | text | Business name |
+| `contact_email` | text | Extracted email |
+| `score` | integer | 0-100 lead score |
+| `status` | text | `qualified`, `warm`, `cold` |
+| `industry` | text | Business category |
+| `source_url` | text | Origin URL |
+| `notes` | jsonb | Extra fields: `website`, `city`, `state`, `scorer`, etc. |
+| `created_at` | timestamptz | Auto-set |
 
 ---
 
