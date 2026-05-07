@@ -39,16 +39,18 @@ pub async fn cmd_serve(
     auth_token: Option<String>,
     workers: usize,
     flags: &ProviderFlags,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     // Tracing subscriber is now initialised once in `main::run` for every
     // subcommand. Don't init again here.
 
     let token = auth_token
         .or_else(|| std::env::var("KERNEX_AUTH_TOKEN").ok())
-        .ok_or("auth token required: pass --auth-token or set KERNEX_AUTH_TOKEN")?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("auth token required: pass --auth-token or set KERNEX_AUTH_TOKEN")
+        })?;
 
     if token.is_empty() {
-        return Err("auth token cannot be empty".into());
+        anyhow::bail!("auth token cannot be empty");
     }
 
     let serve_data_dir = data_dir_for("serve");
