@@ -245,7 +245,12 @@ pub async fn handle_webhook(
             provider: None,
             model: None,
             project: None,
-            channel: Some(format!("webhook-{event}")),
+            // Namespace webhook channels under a fixed prefix so that
+            // attacker-influenced `event` values cannot collide with
+            // operator-chosen channels used by /run or kx dev. The runtime
+            // uses `channel` as a memory/recall key; sharing a channel
+            // means messages cross over.
+            channel: Some(format!("webhook/{event}")),
             max_tokens: None,
             skills: None,
             mode: None,

@@ -269,7 +269,16 @@ pub async fn remove_skill(data_dir: &Path, name: &str) -> Result<(), String> {
 }
 
 pub async fn verify_skills(data_dir: &Path) {
-    let manifest = SkillsManifest::load(data_dir);
+    // Verify is the integrity-check entry point; if the manifest itself is
+    // corrupted, refuse rather than reporting "no skills installed".
+    let manifest = match SkillsManifest::load_strict(data_dir) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("{} {e}", "error:".red().bold());
+            eprintln!("  skills.toml is the integrity root; cannot proceed with verify.");
+            return;
+        }
+    };
     let skills = manifest.list();
 
     if skills.is_empty() {

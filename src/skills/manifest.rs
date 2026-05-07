@@ -20,34 +20,43 @@ pub enum VerifyResult {
 }
 
 impl SkillsManifest {
+    /// Load `skills.toml` or return an empty manifest if the file is missing.
+    ///
+    /// Callers that proceed despite a corrupted manifest risk neutralizing
+    /// the SHA-256 integrity check (an empty manifest finds no skill entry,
+    /// so the verify path silently shrugs). On parse error this method
+    /// preserves backward-compatible "return default" behaviour but logs
+    /// loudly via `tracing::error!` so the corruption is visible. New
+    /// security-sensitive call sites should prefer [`Self::load_strict`].
     pub fn load(data_dir: &Path) -> Self {
-        let path = data_dir.join("skills.toml");
-        let content = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Self::default(),
+        match Self::load_strict(data_dir) {
+            Ok(m) => m,
             Err(e) => {
-                eprintln!(
-                    "{} failed to read {}: {}",
-                    "warning:".yellow().bold(),
-                    path.display(),
-                    e
+                tracing::error!(
+                    data_dir = %data_dir.display(),
+                    error = %e,
+                    "skills.toml is corrupted; treating as empty manifest. Verify integrity manually."
                 );
-                return Self::default();
-            }
-        };
-
-        match toml::from_str(&content) {
-            Ok(manifest) => manifest,
-            Err(e) => {
-                eprintln!(
-                    "{} failed to parse {}: {}",
-                    "warning:".yellow().bold(),
-                    path.display(),
-                    e
-                );
+                eprintln!("{} skills.toml is corrupted: {e}", "error:".red().bold(),);
                 Self::default()
             }
         }
+    }
+
+    /// Strict load: returns `Err` on parse failure rather than silently
+    /// returning an empty manifest. Used by paths that must not proceed
+    /// against a corrupted integrity root (e.g. `kx skills verify`).
+    pub fn load_strict(data_dir: &Path) -> Result<Self, String> {
+        let path = data_dir.join("skills.toml");
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self::default());
+            }
+            Err(e) => return Err(format!("failed to read {}: {e}", path.display())),
+        };
+
+        toml::from_str(&content).map_err(|e| format!("failed to parse {}: {e}", path.display()))
     }
 
     pub fn save(&self, data_dir: &Path) -> Result<(), std::io::Error> {
