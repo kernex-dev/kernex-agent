@@ -13,9 +13,14 @@ kx is a thin CLI wrapper around [kernex-runtime](https://github.com/kernex-dev/k
 
 ## Supported Versions
 
+Only the most recent minor release line receives security fixes. Older
+lines are end-of-life as soon as a new minor ships. Upgrade is the
+recommended remediation; backports are not provided.
+
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | Yes       |
+| 0.4.x   | Yes       |
+| < 0.4   | No        |
 
 ## Security Model
 
