@@ -37,6 +37,10 @@ pub enum SlashCommand<'a> {
     Memory,
     Config,
     Clear,
+    /// `/cost` — show cumulative token usage and estimated cost for this
+    /// project's data dir, including prompt-cache hit ratio when providers
+    /// (e.g. Anthropic) report it.
+    Cost,
     /// Anything that does not start with a known slash-command. Includes
     /// blank lines, free-form messages, and unknown slash names.
     Unknown,
@@ -84,6 +88,7 @@ pub fn parse(input: &str) -> SlashCommand<'_> {
         "/memory" => SlashCommand::Memory,
         "/config" => SlashCommand::Config,
         "/clear" => SlashCommand::Clear,
+        "/cost" => SlashCommand::Cost,
         _ => SlashCommand::Unknown,
     }
 }
@@ -167,6 +172,10 @@ pub async fn handle(
             println!("{}", "Conversation cleared.\n".dimmed());
             CommandResult::Continue
         }
+        SlashCommand::Cost => {
+            print_cost_summary(runtime).await;
+            CommandResult::Continue
+        }
         SlashCommand::Unknown => CommandResult::Unknown,
     }
 }
@@ -206,6 +215,63 @@ async fn print_memory_stats(runtime: &Runtime) {
             eprintln!("{} fetching db size: {e}\n", "error:".red().bold());
         }
     }
+}
+
+async fn print_cost_summary(runtime: &Runtime) {
+    let summary = match runtime.store.get_total_usage().await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{} fetching cost summary: {e}\n", "error:".red().bold());
+            return;
+        }
+    };
+
+    println!("\n{}", "  Token usage & cost".bold());
+    println!("  {} {}", "Requests:".dimmed(), summary.request_count);
+    println!("  {} {}", "Total tokens:".dimmed(), summary.total_tokens);
+    println!(
+        "  {} ${:.4}",
+        "Estimated cost:".dimmed(),
+        summary.total_cost_usd
+    );
+
+    // Per-dimension breakdown is only present when at least one provider
+    // reported it. Anthropic populates these; most others leave them at 0.
+    let breakdown_total = summary.total_input_tokens
+        + summary.total_output_tokens
+        + summary.total_cache_read_tokens
+        + summary.total_cache_creation_tokens;
+    if breakdown_total > 0 {
+        println!("\n{}", "  Breakdown".bold());
+        println!("  {} {}", "Input:".dimmed(), summary.total_input_tokens);
+        println!("  {} {}", "Output:".dimmed(), summary.total_output_tokens);
+        println!(
+            "  {} {}",
+            "Cache read:".dimmed(),
+            summary.total_cache_read_tokens
+        );
+        println!(
+            "  {} {}",
+            "Cache write:".dimmed(),
+            summary.total_cache_creation_tokens
+        );
+
+        // Hit ratio against eligible input (cache reads / [input + cache reads]).
+        // A high ratio is the goal: prompt-cache reads are billed at ~10% of
+        // standard input tokens, so this is the dial that drives cost down.
+        let eligible = summary.total_input_tokens + summary.total_cache_read_tokens;
+        if eligible > 0 {
+            let ratio = summary.total_cache_read_tokens as f64 / eligible as f64;
+            println!("  {} {:.1}%", "Cache hit ratio:".dimmed(), ratio * 100.0);
+        }
+    } else if summary.request_count > 0 {
+        println!(
+            "\n  {}",
+            "No per-dimension breakdown reported by provider.".dimmed()
+        );
+    }
+
+    println!();
 }
 
 async fn print_facts(runtime: &Runtime) {
@@ -354,6 +420,7 @@ fn print_help() {
 
   /stack             Show detected stack, project name, and data directory
   /config            Show active configuration (.kx.toml settings)
+  /cost              Show cumulative token usage, cost, and cache hit ratio
 
   {}
 
@@ -650,6 +717,13 @@ mod tests {
         assert_eq!(parse("/memory"), SlashCommand::Memory);
         assert_eq!(parse("/config"), SlashCommand::Config);
         assert_eq!(parse("/clear"), SlashCommand::Clear);
+        assert_eq!(parse("/cost"), SlashCommand::Cost);
+    }
+
+    #[test]
+    fn parse_cost_with_trailing_whitespace_is_unknown() {
+        // Mirrors `/quit ` / `/help ` — exact tokens only.
+        assert_eq!(parse("/cost "), SlashCommand::Unknown);
     }
 
     #[test]
