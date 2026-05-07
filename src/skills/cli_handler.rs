@@ -71,6 +71,7 @@ pub async fn add_skill(
     source: &str,
     trust_str: &str,
     policy: &PermissionPolicy,
+    force: bool,
 ) -> Result<(), String> {
     let trust = match trust_str.to_lowercase().as_str() {
         "sandboxed" => TrustLevel::Sandboxed,
@@ -88,33 +89,46 @@ pub async fn add_skill(
 
     println!("  {} {}", "Fetching:".dimmed(), url);
 
-    let agent = ureq::AgentBuilder::new()
-        .timeout(std::time::Duration::from_secs(5))
-        .build();
-    let response = agent.get(&url).call().map_err(|e| {
-        let msg = e.to_string();
-        if msg.contains("timed out") || msg.contains("timeout") {
-            "failed to fetch skill: request timed out (5s). Check your connection or try again."
-                .to_string()
-        } else {
-            format!("failed to fetch skill: {e}")
+    // ureq's AgentBuilder::timeout sets the *connect* timeout in 2.x. A
+    // hostile/slow server that completes the handshake but stalls the body
+    // would otherwise block this thread indefinitely. timeout_read covers
+    // the body. spawn_blocking moves the whole synchronous fetch off the
+    // tokio worker so it can't stall other tasks even on a slow link.
+    let url_owned = url.clone();
+    let body = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(std::time::Duration::from_secs(5))
+            .timeout_read(std::time::Duration::from_secs(15))
+            .timeout_write(std::time::Duration::from_secs(5))
+            .build();
+        let response = agent.get(&url_owned).call().map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("timed out") || msg.contains("timeout") {
+                "failed to fetch skill: request timed out. Check your connection or try again."
+                    .to_string()
+            } else {
+                format!("failed to fetch skill: {e}")
+            }
+        })?;
+
+        if response.status() != 200 {
+            return Err(format!(
+                "failed to fetch skill: HTTP {} - {}",
+                response.status(),
+                url_owned
+            ));
         }
-    })?;
 
-    if response.status() != 200 {
-        return Err(format!(
-            "failed to fetch skill: HTTP {} - {}",
-            response.status(),
-            url
-        ));
-    }
-
-    let mut body = Vec::new();
-    response
-        .into_reader()
-        .take(super::types::MAX_SKILL_SIZE + 1)
-        .read_to_end(&mut body)
-        .map_err(|e| format!("failed to read response: {e}"))?;
+        let mut body = Vec::new();
+        response
+            .into_reader()
+            .take(super::types::MAX_SKILL_SIZE + 1)
+            .read_to_end(&mut body)
+            .map_err(|e| format!("failed to read response: {e}"))?;
+        Ok(body)
+    })
+    .await
+    .map_err(|e| format!("skill fetch task panicked: {e}"))??;
 
     validate_skill_size(body.len() as u64).map_err(|e| e.to_string())?;
 
@@ -168,6 +182,23 @@ pub async fn add_skill(
         );
     }
 
+    // Refuse to silently shadow an existing skill from a different source.
+    // Without this guard, `kx skills add hostile/repo` whose SKILL.md
+    // declared `name = "senior-developer"` would replace the trusted
+    // builtin's manifest entry (and overwrite its SHA-256), so a later
+    // verify would report OK against the attacker's content.
+    let new_source = skill_source.display_source();
+    let mut manifest = SkillsManifest::load(data_dir);
+    if let Some(existing) = manifest.find(&skill_manifest.name) {
+        if existing.source != new_source && !force {
+            return Err(format!(
+                "skill '{}' is already installed from a different source ({}). \
+                 Pass --force to replace it.",
+                skill_manifest.name, existing.source
+            ));
+        }
+    }
+
     let skill_path = skill_dir(data_dir).join(&skill_manifest.name);
     std::fs::create_dir_all(&skill_path)
         .map_err(|e| format!("failed to create skill directory: {e}"))?;
@@ -179,7 +210,7 @@ pub async fn add_skill(
 
     let installed = InstalledSkill {
         name: skill_manifest.name.clone(),
-        source: skill_source.display_source(),
+        source: new_source,
         sha256,
         size_bytes: body.len() as u64,
         installed_at: current_timestamp(),
@@ -198,7 +229,6 @@ pub async fn add_skill(
         },
     );
 
-    let mut manifest = SkillsManifest::load(data_dir);
     manifest.add(installed);
     manifest
         .save(data_dir)

@@ -57,7 +57,14 @@ impl SkillsManifest {
         }
         let content = toml::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(&path, content)
+        std::fs::write(&path, content)?;
+        // skills.toml is the integrity root for installed skills (each entry
+        // pins a SHA-256). Lock it down to 0o600 on Unix; on shared hosts
+        // the default 0o644 would let any local user rewrite the file's
+        // sha256 fields and pass `kx skills verify` against tampered
+        // SKILL.md content.
+        tighten_perms(&path);
+        Ok(())
     }
 
     pub fn add(&mut self, skill: InstalledSkill) {
@@ -86,6 +93,21 @@ impl SkillsManifest {
 pub fn skill_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("skills")
 }
+
+#[cfg(unix)]
+fn tighten_perms(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perms = meta.permissions();
+        perms.set_mode(0o600);
+        if let Err(e) = std::fs::set_permissions(path, perms) {
+            tracing::warn!(path = %path.display(), "could not chmod 0600 on skills.toml: {e}");
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn tighten_perms(_path: &Path) {}
 
 /// Returns the path to a skill's SKILL.md file, or `None` if the name does
 /// not pass [`crate::skills::parser::validate_skill_name`].

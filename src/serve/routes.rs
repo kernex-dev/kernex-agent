@@ -118,7 +118,15 @@ pub async fn handle_run(
     };
 
     if let Some(ref db) = state.db {
-        db.insert(&job);
+        // SQLite writes are sync and hold a sync Mutex across fsync; running
+        // them inline blocks the tokio worker for the entire I/O. Punt to
+        // spawn_blocking so other concurrent /run requests aren't serialized
+        // on this lock.
+        let db = db.clone();
+        let job_for_insert = job.clone();
+        tokio::task::spawn_blocking(move || db.insert(&job_for_insert))
+            .await
+            .ok();
     }
     {
         let mut store = state.jobs.write().await;

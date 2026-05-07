@@ -476,7 +476,9 @@ async fn handle_skills_command(arg: &str) {
         let trust = parts.get(1).copied().unwrap_or("sandboxed");
 
         let policy = crate::skills::permissions::PermissionPolicy::default();
-        match skills::cli_handler::add_skill(&data_dir, source, trust, &policy).await {
+        // The /skills REPL form does not expose --force; users who want to
+        // shadow an existing skill should run `kx skills add ... --force`.
+        match skills::cli_handler::add_skill(&data_dir, source, trust, &policy, false).await {
             Ok(()) => {}
             Err(e) => eprintln!("{} {e}\n", "error:".red().bold()),
         }
