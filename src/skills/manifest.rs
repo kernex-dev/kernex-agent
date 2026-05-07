@@ -87,13 +87,18 @@ pub fn skill_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("skills")
 }
 
-/// Returns the path to a skill's SKILL.md file.
+/// Returns the path to a skill's SKILL.md file, or `None` if the name does
+/// not pass [`crate::skills::parser::validate_skill_name`].
 ///
-/// # Safety note
-/// The caller MUST validate `skill_name` before calling this function.
-/// An unvalidated name could allow path traversal (e.g. `../../etc/passwd`).
-pub fn skill_file_path(data_dir: &Path, skill_name: &str) -> PathBuf {
-    data_dir.join("skills").join(skill_name).join("SKILL.md")
+/// Validation is enforced here as defence-in-depth: a hostile or corrupted
+/// `skills.toml` entry whose name contains `..`, `/`, or `\` cannot escape
+/// the `{data_dir}/skills/` subtree even if a caller forgets to validate
+/// upstream. Callers should treat `None` as "skip this skill" and log.
+pub fn skill_file_path(data_dir: &Path, skill_name: &str) -> Option<PathBuf> {
+    if crate::skills::parser::validate_skill_name(skill_name).is_err() {
+        return None;
+    }
+    Some(data_dir.join("skills").join(skill_name).join("SKILL.md"))
 }
 
 pub fn compute_sha256(content: &[u8]) -> String {
@@ -104,7 +109,11 @@ pub fn compute_sha256(content: &[u8]) -> String {
 }
 
 pub fn verify_skill(data_dir: &Path, skill: &InstalledSkill) -> VerifyResult {
-    let path = skill_file_path(data_dir, &skill.name);
+    let Some(path) = skill_file_path(data_dir, &skill.name) else {
+        // Manifest entry has an invalid name — treat as missing rather than
+        // letting the path-traversal attempt reach the filesystem.
+        return VerifyResult::Missing;
+    };
     let content = match std::fs::read(&path) {
         Ok(c) => c,
         Err(_) => return VerifyResult::Missing,
@@ -234,11 +243,21 @@ mod tests {
     #[test]
     fn skill_file_path_correct() {
         let data_dir = Path::new("/home/user/.kx");
-        let path = skill_file_path(data_dir, "my-skill");
+        let path = skill_file_path(data_dir, "my-skill").unwrap();
         assert_eq!(
             path,
             PathBuf::from("/home/user/.kx/skills/my-skill/SKILL.md")
         );
+    }
+
+    #[test]
+    fn skill_file_path_rejects_traversal() {
+        let data_dir = Path::new("/home/user/.kx");
+        assert!(skill_file_path(data_dir, "../../etc/passwd").is_none());
+        assert!(skill_file_path(data_dir, "..").is_none());
+        assert!(skill_file_path(data_dir, "foo/bar").is_none());
+        assert!(skill_file_path(data_dir, "foo\\bar").is_none());
+        assert!(skill_file_path(data_dir, "").is_none());
     }
 
     #[test]

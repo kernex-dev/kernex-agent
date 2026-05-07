@@ -20,7 +20,14 @@ pub fn load_skills(data_dir: &Path, manifest_skills: &[InstalledSkill]) -> Vec<L
     let mut loaded = Vec::new();
 
     for skill in manifest_skills {
-        let path = skill_file_path(data_dir, &skill.name);
+        let Some(path) = skill_file_path(data_dir, &skill.name) else {
+            eprintln!(
+                "{} skipping skill with invalid name '{}'",
+                "warning:".yellow().bold(),
+                skill.name
+            );
+            continue;
+        };
         let raw = match std::fs::read_to_string(&path) {
             Ok(r) => r,
             Err(e) => {

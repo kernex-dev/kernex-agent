@@ -42,7 +42,14 @@ pub fn build_serve_system_prompt(
             continue;
         };
 
-        let path = skill_file_path(data_dir, &installed.name);
+        let Some(path) = skill_file_path(data_dir, &installed.name) else {
+            tracing::warn!(
+                skill = %name,
+                stored_name = %installed.name,
+                "manifest entry has invalid name (path traversal attempt?), skipping"
+            );
+            continue;
+        };
         let raw = match std::fs::read_to_string(&path) {
             Ok(r) => r,
             Err(e) => {
