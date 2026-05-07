@@ -64,7 +64,7 @@ const BUILTIN_SKILLS: &[BuiltinSkill] = &[
     },
 ];
 
-pub fn install_builtin_skills(data_dir: &Path) -> Result<usize, Box<dyn std::error::Error>> {
+pub fn install_builtin_skills(data_dir: &Path) -> anyhow::Result<usize> {
     let skills_dir = data_dir.join("skills");
     let mut manifest = SkillsManifest::load(data_dir);
     let mut installed = 0;

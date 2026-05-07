@@ -16,6 +16,7 @@ mod utils;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use async_trait::async_trait;
 use clap::Parser;
 use colored::Colorize;
@@ -42,7 +43,7 @@ async fn main() {
     }
 }
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
+async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Initialize a global tracing subscriber once, before subcommand dispatch.
@@ -125,7 +126,7 @@ pub(crate) struct ProviderFlags {
     pub(crate) verbose: bool,
 }
 
-async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_skills(action: SkillsAction) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let project_config = config::ProjectConfig::load(&cwd);
     let project_name = stack::project_name(&cwd);
@@ -140,11 +141,11 @@ async fn cmd_skills(action: SkillsAction) -> Result<(), Box<dyn std::error::Erro
         SkillsAction::Add { source, trust } => {
             skills::cli_handler::add_skill(&data_dir, &source, &trust, &policy)
                 .await
-                .map_err(|e| e.into())
+                .map_err(anyhow::Error::msg)
         }
         SkillsAction::Remove { name } => skills::cli_handler::remove_skill(&data_dir, &name)
             .await
-            .map_err(|e| e.into()),
+            .map_err(anyhow::Error::msg),
         SkillsAction::Verify => {
             skills::cli_handler::verify_skills(&data_dir).await;
             Ok(())
@@ -172,10 +173,7 @@ pub(crate) fn context_needs(no_memory: bool) -> ContextNeeds {
     }
 }
 
-async fn cmd_dev(
-    one_shot: Option<String>,
-    flags: &ProviderFlags,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let project_config = config::ProjectConfig::load(&cwd);
     let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
@@ -219,7 +217,13 @@ async fn cmd_dev(
                 verbose: flags.verbose,
             }))
             .build()
-            .await?,
+            .await
+            .with_context(|| {
+                format!(
+                    "initializing runtime for project '{project_name}' (data_dir = {})",
+                    data_dir.display()
+                )
+            })?,
     );
 
     let needs = context_needs(flags.no_memory);
@@ -438,7 +442,7 @@ async fn read_multiline(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>) -> Opti
     Some(lines.join("\n"))
 }
 
-fn create_editor(history_path: &PathBuf) -> Result<DefaultEditor, Box<dyn std::error::Error>> {
+fn create_editor(history_path: &PathBuf) -> anyhow::Result<DefaultEditor> {
     let mut rl = DefaultEditor::new()?;
     let _ = rl.load_history(history_path);
     Ok(rl)
@@ -454,7 +458,7 @@ async fn save_history(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>, history_p
 pub(crate) fn build_provider(
     flags: &ProviderFlags,
     config: &config::ProjectConfig,
-) -> Result<(Box<dyn Provider>, String), Box<dyn std::error::Error>> {
+) -> anyhow::Result<(Box<dyn Provider>, String)> {
     let provider_name = config
         .provider
         .as_ref()
@@ -495,12 +499,12 @@ pub(crate) fn build_provider(
     let provider = ProviderFactory::create(&provider_name, kx_config).map_err(|e| {
         let msg = e.to_string();
         if msg.contains("unknown") || msg.contains("unsupported") || msg.contains("not found") {
-            format!(
+            anyhow::anyhow!(
                 "unknown provider '{}'. Valid choices: claude-code, anthropic, openai, ollama, gemini, openrouter, groq, mistral, deepseek, fireworks, xai",
                 provider_name
             )
         } else {
-            msg
+            anyhow::anyhow!(msg)
         }
     })?;
     Ok((provider, label))
@@ -527,7 +531,7 @@ fn default_model(provider: &str) -> &'static str {
     }
 }
 
-fn check_claude_cli() -> Result<(), Box<dyn std::error::Error>> {
+fn check_claude_cli() -> anyhow::Result<()> {
     let output = std::process::Command::new("claude")
         .arg("--version")
         .output();
@@ -559,12 +563,12 @@ fn check_claude_cli() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("    2. Verify installation: which claude");
             eprintln!("    3. If installed, add to PATH: export PATH=\"$PATH:/path/to/claude\"");
             eprintln!();
-            Err("claude CLI not available".into())
+            anyhow::bail!("claude CLI not available")
         }
     }
 }
 
-async fn check_provider(provider: &dyn Provider) -> Result<(), Box<dyn std::error::Error>> {
+async fn check_provider(provider: &dyn Provider) -> anyhow::Result<()> {
     if provider.name() == "claude-code" {
         return check_claude_cli();
     }
@@ -581,7 +585,7 @@ async fn check_provider(provider: &dyn Provider) -> Result<(), Box<dyn std::erro
         } else {
             format!("Provider '{}' is not available.", provider.name())
         };
-        return Err(msg.into());
+        return Err(anyhow::anyhow!(msg));
     }
     Ok(())
 }
@@ -633,7 +637,7 @@ fn show_first_run_welcome(stack: &str) {
 
 const MIN_CLAUDE_VERSION: (u32, u32) = (2, 0);
 
-async fn cmd_init() -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_init() -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let project_name = stack::project_name(&cwd);
     let data_dir = data_dir_for(&project_name);
@@ -657,10 +661,7 @@ async fn cmd_init() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_pipeline(
-    action: PipelineAction,
-    flags: &ProviderFlags,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_pipeline(action: PipelineAction, flags: &ProviderFlags) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let project_config = config::ProjectConfig::load(&cwd);
     let project_name = stack::project_name(&cwd);
@@ -800,7 +801,7 @@ async fn cmd_pipeline(
     }
 }
 
-async fn cmd_audit(flags: &ProviderFlags) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_audit(flags: &ProviderFlags) -> anyhow::Result<()> {
     run_oneshot_command(flags, "audit", "kx audit", |stack, name| {
         format!(
             "Perform a comprehensive repository health audit for this {} project '{}'.\n\n\
@@ -820,7 +821,7 @@ async fn cmd_audit(flags: &ProviderFlags) -> Result<(), Box<dyn std::error::Erro
     .await
 }
 
-async fn cmd_docs(flags: &ProviderFlags) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_docs(flags: &ProviderFlags) -> anyhow::Result<()> {
     run_oneshot_command(flags, "docs", "kx docs", |stack, name| {
         format!(
             "Perform a documentation audit for this {} project '{}'.\n\n\
@@ -844,7 +845,7 @@ async fn run_oneshot_command(
     channel: &str,
     label: &str,
     build_prompt: impl FnOnce(stack::Stack, &str) -> String,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let project_config = config::ProjectConfig::load(&cwd);
     let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
@@ -897,7 +898,7 @@ async fn run_oneshot_command(
     Ok(())
 }
 
-async fn cmd_cron(action: CronAction) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_cron(action: CronAction) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let project_name = stack::project_name(&cwd);
     let data_dir = data_dir_for(&project_name);
@@ -929,7 +930,7 @@ async fn cmd_cron(action: CronAction) -> Result<(), Box<dyn std::error::Error>> 
                     &project_name,
                 )
                 .await
-                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                .map_err(anyhow::Error::msg)?;
             println!("{} {}", "scheduled:".green().bold(), &id[..8.min(id.len())]);
             println!("  {} {}", "task:".dimmed(), description);
             println!("  {} {}", "at:".dimmed(), at);
@@ -942,7 +943,7 @@ async fn cmd_cron(action: CronAction) -> Result<(), Box<dyn std::error::Error>> 
                 .store
                 .get_tasks_for_sender("user")
                 .await
-                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                .map_err(anyhow::Error::msg)?;
             if tasks.is_empty() {
                 println!("{}", "  No scheduled tasks.\n".dimmed());
             } else {
@@ -964,7 +965,7 @@ async fn cmd_cron(action: CronAction) -> Result<(), Box<dyn std::error::Error>> 
                 .store
                 .cancel_task(&id, "user")
                 .await
-                .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                .map_err(anyhow::Error::msg)?;
             if cancelled {
                 println!("{} {}", "cancelled:".green().bold(), id);
             } else {
@@ -994,27 +995,22 @@ fn build_phase_prompt(phase_name: &str, pipeline_name: &str, prev_output: Option
 fn check_pre_validation(
     validation: &kernex_pipelines::ValidationConfig,
     cwd: &std::path::Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     match &validation.validation_type {
         kernex_pipelines::ValidationType::FileExists => {
             for path in &validation.paths {
                 if !cwd.join(path).exists() {
-                    return Err(format!(
-                        "Pre-validation failed: required file '{}' not found",
-                        path
-                    )
-                    .into());
+                    anyhow::bail!("Pre-validation failed: required file '{}' not found", path);
                 }
             }
         }
         kernex_pipelines::ValidationType::FilePatterns => {
             for pattern in &validation.patterns {
                 if !dir_contains_pattern(cwd, pattern) {
-                    return Err(format!(
+                    anyhow::bail!(
                         "Pre-validation failed: no file matching '{}' found",
                         pattern
-                    )
-                    .into());
+                    );
                 }
             }
         }
@@ -1069,7 +1065,7 @@ async fn build_agent_runtime(
     agent_name: &str,
     project_name: &str,
     runtimes: &mut std::collections::HashMap<String, Runtime>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> anyhow::Result<()> {
     if runtimes.contains_key(agent_name) {
         return Ok(());
     }
@@ -1092,10 +1088,10 @@ async fn run_phase_with_retry(
     phase: &kernex_pipelines::Phase,
     cwd: &std::path::Path,
     prompt: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> anyhow::Result<String> {
     let runtime = runtimes
         .get(phase.agent.as_str())
-        .ok_or_else(|| format!("No runtime for agent '{}'", phase.agent))?;
+        .ok_or_else(|| anyhow::anyhow!("No runtime for agent '{}'", phase.agent))?;
 
     let mut output = execute_single_phase(runtime, provider, needs, &phase.name, prompt).await?;
 
@@ -1116,7 +1112,7 @@ async fn run_phase_with_retry(
 
     let fix_runtime = runtimes
         .get(retry.fix_agent.as_str())
-        .ok_or_else(|| format!("No runtime for fix agent '{}'", retry.fix_agent))?;
+        .ok_or_else(|| anyhow::anyhow!("No runtime for fix agent '{}'", retry.fix_agent))?;
 
     for attempt in 0..retry.max {
         let missing = missing_post_validation_paths(&post_paths, cwd);
@@ -1155,13 +1151,12 @@ async fn run_phase_with_retry(
 
     let missing = missing_post_validation_paths(&post_paths, cwd);
     if !missing.is_empty() {
-        return Err(format!(
+        anyhow::bail!(
             "Phase '{}' post-validation failed after {} retries. Missing: {}",
             phase.name,
             retry.max,
             missing.join(", ")
-        )
-        .into());
+        );
     }
 
     Ok(output)
@@ -1173,7 +1168,7 @@ async fn execute_single_phase(
     needs: &ContextNeeds,
     label: &str,
     prompt: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> anyhow::Result<String> {
     let spinner = create_spinner(&format!("Running {label}..."));
     let request = Request::text("pipeline", prompt);
     let result = runtime.complete_with_needs(provider, &request, needs).await;

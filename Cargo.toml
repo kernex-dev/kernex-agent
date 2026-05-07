@@ -41,3 +41,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 hmac = "0.12"
 subtle = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
+anyhow = "1"
