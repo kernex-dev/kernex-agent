@@ -1191,6 +1191,8 @@ dependencies = [
 [[package]]
 name = "kernex-core"
 version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e9b2a6f75eed1d8435f0dc26a6d6742b6934c138dddc4f0648e900078032258"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1206,6 +1208,8 @@ dependencies = [
 [[package]]
 name = "kernex-memory"
 version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10cf173b9dcc117b76b0cc70f9f6f73287d17bf1075b8cf7e7a84e01dc614d73"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1221,6 +1225,8 @@ dependencies = [
 [[package]]
 name = "kernex-pipelines"
 version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98731db0f103015073428a036f407992c4ac065f012d0e3518e05697a07823ac"
 dependencies = [
  "kernex-core",
  "serde",
@@ -1231,6 +1237,8 @@ dependencies = [
 [[package]]
 name = "kernex-providers"
 version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19f08107f9dff09c54d290417ee8557865278d9a1d35806be0a79cc744d2e09d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1253,6 +1261,8 @@ dependencies = [
 [[package]]
 name = "kernex-runtime"
 version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee2be3420c01490ae1f70817b6153d73c821bea28660747c9fb2960a49278cac"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1269,6 +1279,8 @@ dependencies = [
 [[package]]
 name = "kernex-sandbox"
 version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4915c49e6e743fe112fa85d03419488df5a154567527740a7c9376aeec7ba252"
 dependencies = [
  "anyhow",
  "landlock",
@@ -1279,6 +1291,8 @@ dependencies = [
 [[package]]
 name = "kernex-skills"
 version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82dca7ce2d3ce9500909914f0e51fea3d901c6a01bf646ae49fb1c825a9a73b7"
 dependencies = [
  "kernex-core",
  "serde",
