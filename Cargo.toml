@@ -49,16 +49,3 @@ anyhow = "1"
 # `temp_dir().join("__kx_xxx__")` pattern was reused across cases.
 tempfile = "3"
 
-# Development-time override pointing at the sibling kernex-dev workspace.
-# Active only when both repos are checked out side-by-side; CI and
-# crates.io consumers ignore this section because [patch] only affects the
-# workspace doing the building. The override exists so kx can track
-# unpublished kernex-dev API additions (e.g. RuntimeBuilder::auto_compact
-# from kernex-dev 0.4.1) without waiting for a release. Remove this block
-# once the matching kernex-dev version is published.
-[patch.crates-io]
-kernex-runtime = { path = "../kernex-dev/crates/kernex-runtime" }
-kernex-core = { path = "../kernex-dev/crates/kernex-core" }
-kernex-providers = { path = "../kernex-dev/crates/kernex-providers" }
-kernex-pipelines = { path = "../kernex-dev/crates/kernex-pipelines" }
-kernex-sandbox = { path = "../kernex-dev/crates/kernex-sandbox" }
