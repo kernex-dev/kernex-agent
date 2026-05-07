@@ -4,7 +4,7 @@ use std::path::Path;
 use colored::Colorize;
 
 use super::audit::{log_event, AuditEvent};
-use super::manifest::skill_file_path;
+use super::manifest::{compute_sha256, skill_file_path};
 use super::parser::parse_skill_md;
 use super::types::{InstalledSkill, Permission, SkillTool};
 
@@ -28,7 +28,7 @@ pub fn load_skills(data_dir: &Path, manifest_skills: &[InstalledSkill]) -> Vec<L
             );
             continue;
         };
-        let raw = match std::fs::read_to_string(&path) {
+        let raw_bytes = match std::fs::read(&path) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!(
@@ -36,6 +36,43 @@ pub fn load_skills(data_dir: &Path, manifest_skills: &[InstalledSkill]) -> Vec<L
                     "warning:".yellow().bold(),
                     path.display(),
                     e
+                );
+                continue;
+            }
+        };
+
+        // Re-verify the SHA-256 against the manifest at load time, using
+        // the same bytes we're about to parse — closes the verify-then-use
+        // race where an attacker swaps the file between `kx skills verify`
+        // and the next agent run. If the hash drifts, refuse to load and
+        // log so the operator notices.
+        let actual = compute_sha256(&raw_bytes);
+        if actual != skill.sha256 {
+            eprintln!(
+                "{} sha256 mismatch on {} (expected {}, got {}); refusing to load",
+                "warning:".yellow().bold(),
+                path.display(),
+                skill.sha256,
+                actual
+            );
+            log_event(
+                data_dir,
+                &AuditEvent::Modified {
+                    name: &skill.name,
+                    expected: &skill.sha256,
+                    actual: &actual,
+                },
+            );
+            continue;
+        }
+
+        let raw = match String::from_utf8(raw_bytes) {
+            Ok(s) => s,
+            Err(_) => {
+                eprintln!(
+                    "{} {} is not valid UTF-8; refusing to load",
+                    "warning:".yellow().bold(),
+                    path.display()
                 );
                 continue;
             }
