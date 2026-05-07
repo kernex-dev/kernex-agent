@@ -223,9 +223,9 @@ async fn cmd_dev(
     );
 
     let needs = context_needs(flags.no_memory);
-    scheduler::spawn(runtime.clone(), provider.clone(), context_needs(false), 60);
 
     if let Some(msg) = one_shot {
+        // One-shot mode does not need the scheduler running.
         let request = Request::text("user", &msg);
         let response = runtime
             .complete_with_needs(provider.as_ref(), &request, &needs)
@@ -234,6 +234,9 @@ async fn cmd_dev(
         commands::close_conversation(&runtime, "One-shot command completed.").await;
         return Ok(());
     }
+
+    let scheduler_handle =
+        scheduler::spawn(runtime.clone(), provider.clone(), context_needs(false), 60);
 
     let is_first_run = !data_dir.exists();
     if is_first_run {
@@ -360,6 +363,11 @@ async fn cmd_dev(
             last_input = None;
         }
     }
+
+    // Stop the scheduler so any in-flight task batch settles before the
+    // tokio runtime drops; without this, the loop runs until the runtime
+    // tears down and KAIROS tasks may be cancelled mid-completion.
+    scheduler_handle.shutdown().await;
 
     Ok(())
 }
