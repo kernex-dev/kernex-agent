@@ -392,6 +392,12 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
         channel: req.channel.clone(),
         max_tokens: req.max_tokens,
         no_memory: true,
+        // Serve jobs get auto-compact unconditionally — they tend to be
+        // long-running and we don't yet expose a per-request override on
+        // JobRequest. Operators who want to disable it can pass
+        // `--no-auto-compact` to `kx serve`; that intent is checked by
+        // the server-level guard further up the call stack.
+        auto_compact: true,
         verbose: req.verbose,
     };
 
@@ -411,6 +417,7 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
         .system_prompt(&system_prompt)
         .channel(channel)
         .project(project_name)
+        .auto_compact(flags.auto_compact)
         .hook_runner(Arc::new(CliHookRunner {
             verbose: req.verbose,
         }))
