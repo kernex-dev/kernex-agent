@@ -29,7 +29,7 @@ pub struct SkillsConfig {
 #[derive(Debug, Default, Deserialize)]
 pub struct ProviderConfig {
     pub name: Option<String>,
-    pub max_turns: Option<u32>,
+    pub max_tokens: Option<u32>,
     pub timeout_secs: Option<u64>,
     pub model: Option<String>,
     pub api_key: Option<String>,
@@ -130,7 +130,7 @@ system_prompt = "Custom prompt"
 
 [provider]
 model = "claude-sonnet"
-max_turns = 5
+max_tokens = 2048
 timeout_secs = 120
 "#,
         )
@@ -142,7 +142,7 @@ timeout_secs = 120
         assert!(config.provider.is_some());
         let provider = config.provider.unwrap();
         assert_eq!(provider.model, Some("claude-sonnet".to_string()));
-        assert_eq!(provider.max_turns, Some(5));
+        assert_eq!(provider.max_tokens, Some(2048));
         assert_eq!(provider.timeout_secs, Some(120));
 
         let _ = std::fs::remove_dir_all(&tmp);
