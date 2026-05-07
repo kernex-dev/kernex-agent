@@ -13,50 +13,121 @@ pub enum CommandResult {
     Unknown,
 }
 
+/// Parsed shape of a slash-command input. Pure data — no side effects, no
+/// `Runtime` dependency, so the parser is unit-testable. `handle` matches on
+/// this and runs the actual side effects.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SlashCommand<'a> {
+    /// `/search <query>`. Empty query is preserved so the dispatcher can
+    /// emit a usage warning rather than silently no-oping.
+    Search(&'a str),
+    /// `/facts` with no argument — print the fact list.
+    FactsList,
+    /// `/facts delete <key>`.
+    FactsDelete(&'a str),
+    /// `/facts <something-else>` — bad usage; dispatcher prints help.
+    FactsBadUsage,
+    /// `/skills [...]`. Argument is whatever followed the prefix, trimmed;
+    /// the skills sub-dispatcher handles further parsing.
+    Skills(&'a str),
+    Quit,
+    Help,
+    Stack,
+    History,
+    Memory,
+    Config,
+    Clear,
+    /// Anything that does not start with a known slash-command. Includes
+    /// blank lines, free-form messages, and unknown slash names.
+    Unknown,
+}
+
+/// Classify a raw REPL input line into a [`SlashCommand`]. Pure function:
+/// no side effects, no I/O, safe to call from tests without a `Runtime`.
+pub fn parse(input: &str) -> SlashCommand<'_> {
+    if let Some(rest) = input.strip_prefix("/search") {
+        // Distinguish `/search` (no separator) from `/searchfoo`. The current
+        // dispatcher accepts both, but treating the latter as Unknown is the
+        // less surprising contract.
+        if rest.is_empty() || rest.starts_with(char::is_whitespace) {
+            return SlashCommand::Search(rest.trim());
+        }
+        return SlashCommand::Unknown;
+    }
+
+    if let Some(rest) = input.strip_prefix("/facts") {
+        if rest.is_empty() || rest.starts_with(char::is_whitespace) {
+            let arg = rest.trim();
+            if arg.is_empty() {
+                return SlashCommand::FactsList;
+            }
+            if let Some(key) = arg.strip_prefix("delete ") {
+                return SlashCommand::FactsDelete(key.trim());
+            }
+            return SlashCommand::FactsBadUsage;
+        }
+        return SlashCommand::Unknown;
+    }
+
+    if let Some(rest) = input.strip_prefix("/skills") {
+        if rest.is_empty() || rest.starts_with(char::is_whitespace) {
+            return SlashCommand::Skills(rest.trim());
+        }
+        return SlashCommand::Unknown;
+    }
+
+    match input {
+        "/quit" | "/exit" => SlashCommand::Quit,
+        "/help" => SlashCommand::Help,
+        "/stack" => SlashCommand::Stack,
+        "/history" => SlashCommand::History,
+        "/memory" => SlashCommand::Memory,
+        "/config" => SlashCommand::Config,
+        "/clear" => SlashCommand::Clear,
+        _ => SlashCommand::Unknown,
+    }
+}
+
 pub async fn handle(
     input: &str,
     runtime: &Runtime,
     detected_stack: Stack,
     project_config: &ProjectConfig,
 ) -> CommandResult {
-    if let Some(rest) = input.strip_prefix("/search") {
-        let query = rest.trim();
-        if query.is_empty() {
-            eprintln!("{} Usage: /search <query>\n", "warn:".yellow().bold());
-        } else {
-            search_memory(runtime, query).await;
+    match parse(input) {
+        SlashCommand::Search(query) => {
+            if query.is_empty() {
+                eprintln!("{} Usage: /search <query>\n", "warn:".yellow().bold());
+            } else {
+                search_memory(runtime, query).await;
+            }
+            CommandResult::Continue
         }
-        return CommandResult::Continue;
-    }
-
-    if let Some(rest) = input.strip_prefix("/facts") {
-        let arg = rest.trim();
-        if arg.is_empty() {
+        SlashCommand::FactsList => {
             print_facts(runtime).await;
-        } else if let Some(key) = arg.strip_prefix("delete ") {
-            delete_fact(runtime, key.trim()).await;
-        } else {
+            CommandResult::Continue
+        }
+        SlashCommand::FactsDelete(key) => {
+            delete_fact(runtime, key).await;
+            CommandResult::Continue
+        }
+        SlashCommand::FactsBadUsage => {
             eprintln!(
                 "{} Usage: /facts or /facts delete <key>\n",
                 "warn:".yellow().bold()
             );
+            CommandResult::Continue
         }
-        return CommandResult::Continue;
-    }
-
-    if let Some(rest) = input.strip_prefix("/skills") {
-        let arg = rest.trim();
-        handle_skills_command(arg).await;
-        return CommandResult::Continue;
-    }
-
-    match input {
-        "/quit" | "/exit" => CommandResult::Quit,
-        "/help" => {
+        SlashCommand::Skills(arg) => {
+            handle_skills_command(arg).await;
+            CommandResult::Continue
+        }
+        SlashCommand::Quit => CommandResult::Quit,
+        SlashCommand::Help => {
             print_help();
             CommandResult::Continue
         }
-        "/stack" => {
+        SlashCommand::Stack => {
             let cwd = match std::env::current_dir() {
                 Ok(d) => d,
                 Err(e) => {
@@ -79,24 +150,24 @@ pub async fn handle(
             );
             CommandResult::Continue
         }
-        "/history" => {
+        SlashCommand::History => {
             print_history(runtime).await;
             CommandResult::Continue
         }
-        "/memory" => {
+        SlashCommand::Memory => {
             print_memory_stats(runtime).await;
             CommandResult::Continue
         }
-        "/config" => {
+        SlashCommand::Config => {
             print_config(runtime, detected_stack, project_config);
             CommandResult::Continue
         }
-        "/clear" => {
+        SlashCommand::Clear => {
             close_conversation(runtime, "Conversation cleared by user.").await;
             println!("{}", "Conversation cleared.\n".dimmed());
             CommandResult::Continue
         }
-        _ => CommandResult::Unknown,
+        SlashCommand::Unknown => CommandResult::Unknown,
     }
 }
 
@@ -555,5 +626,104 @@ mod tests {
         let size: u64 = 512 * 1024; // 512 KB
         let mb = size as f64 / (1024.0 * 1024.0);
         assert!((mb - 0.5).abs() < 0.001);
+    }
+
+    // -- parse() matrix -----------------------------------------------------
+    //
+    // Every recognized slash command, every malformed shape, and every
+    // free-form input must classify deterministically with no Runtime
+    // dependency. These tests pin the parse contract; if a future change
+    // affects user-visible dispatch (e.g. silently treats `/quit ` as
+    // Unknown), the breakage shows up here before it ships.
+
+    #[test]
+    fn parse_quit_and_exit() {
+        assert_eq!(parse("/quit"), SlashCommand::Quit);
+        assert_eq!(parse("/exit"), SlashCommand::Quit);
+    }
+
+    #[test]
+    fn parse_simple_commands() {
+        assert_eq!(parse("/help"), SlashCommand::Help);
+        assert_eq!(parse("/stack"), SlashCommand::Stack);
+        assert_eq!(parse("/history"), SlashCommand::History);
+        assert_eq!(parse("/memory"), SlashCommand::Memory);
+        assert_eq!(parse("/config"), SlashCommand::Config);
+        assert_eq!(parse("/clear"), SlashCommand::Clear);
+    }
+
+    #[test]
+    fn parse_search_with_query() {
+        assert_eq!(parse("/search foo bar"), SlashCommand::Search("foo bar"));
+        assert_eq!(parse("/search   leading"), SlashCommand::Search("leading"));
+    }
+
+    #[test]
+    fn parse_search_empty_query() {
+        // Empty queries reach the dispatcher so it can print a usage hint.
+        assert_eq!(parse("/search"), SlashCommand::Search(""));
+        assert_eq!(parse("/search "), SlashCommand::Search(""));
+    }
+
+    #[test]
+    fn parse_search_no_separator_is_unknown() {
+        // `/searchfoo` should not be treated as a search for "foo".
+        assert_eq!(parse("/searchfoo"), SlashCommand::Unknown);
+    }
+
+    #[test]
+    fn parse_facts_variants() {
+        assert_eq!(parse("/facts"), SlashCommand::FactsList);
+        assert_eq!(parse("/facts "), SlashCommand::FactsList);
+        assert_eq!(
+            parse("/facts delete user.name"),
+            SlashCommand::FactsDelete("user.name")
+        );
+        assert_eq!(
+            parse("/facts delete   spaced  "),
+            SlashCommand::FactsDelete("spaced")
+        );
+        // Unknown subcommand → bad-usage (still Continue, not Unknown).
+        assert_eq!(parse("/facts purge"), SlashCommand::FactsBadUsage);
+        assert_eq!(parse("/facts delete"), SlashCommand::FactsBadUsage);
+    }
+
+    #[test]
+    fn parse_facts_no_separator_is_unknown() {
+        assert_eq!(parse("/factsdelete x"), SlashCommand::Unknown);
+    }
+
+    #[test]
+    fn parse_skills_variants() {
+        assert_eq!(parse("/skills"), SlashCommand::Skills(""));
+        assert_eq!(parse("/skills list"), SlashCommand::Skills("list"));
+        assert_eq!(
+            parse("/skills add foo/bar"),
+            SlashCommand::Skills("add foo/bar")
+        );
+    }
+
+    #[test]
+    fn parse_skills_no_separator_is_unknown() {
+        assert_eq!(parse("/skillslist"), SlashCommand::Unknown);
+    }
+
+    #[test]
+    fn parse_unknown_inputs() {
+        assert_eq!(parse(""), SlashCommand::Unknown);
+        assert_eq!(parse("free-form message"), SlashCommand::Unknown);
+        assert_eq!(parse("/nonexistent"), SlashCommand::Unknown);
+        assert_eq!(parse("//double"), SlashCommand::Unknown);
+        // Trailing whitespace on simple commands is intentionally Unknown
+        // so a stray space doesn't silently accept `/quit `.
+        assert_eq!(parse("/quit "), SlashCommand::Unknown);
+        assert_eq!(parse("/help "), SlashCommand::Unknown);
+    }
+
+    #[test]
+    fn parse_is_case_sensitive() {
+        // We treat slash names as exact tokens, not normalized forms.
+        assert_eq!(parse("/QUIT"), SlashCommand::Unknown);
+        assert_eq!(parse("/Help"), SlashCommand::Unknown);
     }
 }
