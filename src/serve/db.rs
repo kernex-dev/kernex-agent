@@ -12,6 +12,7 @@ pub struct JobDb {
 impl JobDb {
     pub fn init(data_dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(data_dir).map_err(|e| format!("failed to create data dir: {e}"))?;
+        tighten_unix_dir_perms(data_dir);
         let db_path = data_dir.join("jobs.db");
         let conn =
             Connection::open(&db_path).map_err(|e| format!("failed to open database: {e}"))?;
@@ -30,6 +31,12 @@ impl JobDb {
             );",
         )
         .map_err(|e| format!("failed to create jobs table: {e}"))?;
+        // Job rows can contain prompt text, provider responses, and any
+        // sensitive material that flowed through /run. On shared hosts
+        // (CI runners, multi-user dev boxes) the default 0o644 would let
+        // any local user read them. Lock the file down to 0o600 once it
+        // exists.
+        tighten_unix_file_perms(&db_path);
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -144,6 +151,36 @@ impl JobDb {
         }
     }
 }
+
+#[cfg(unix)]
+fn tighten_unix_file_perms(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perms = meta.permissions();
+        perms.set_mode(0o600);
+        if let Err(e) = std::fs::set_permissions(path, perms) {
+            tracing::warn!(path = %path.display(), "could not chmod 0600 on jobs db: {e}");
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn tighten_unix_file_perms(_path: &Path) {}
+
+#[cfg(unix)]
+fn tighten_unix_dir_perms(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perms = meta.permissions();
+        perms.set_mode(0o700);
+        if let Err(e) = std::fs::set_permissions(path, perms) {
+            tracing::warn!(path = %path.display(), "could not chmod 0700 on serve data dir: {e}");
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn tighten_unix_dir_perms(_path: &Path) {}
 
 fn status_to_str(s: &JobStatus) -> &'static str {
     match s {
