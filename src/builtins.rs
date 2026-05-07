@@ -148,11 +148,10 @@ mod tests {
 
     #[test]
     fn install_builtin_skills_creates_files_and_manifest() {
-        let tmp = std::env::temp_dir().join("__kx_builtins_test__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
-        let count = install_builtin_skills(&tmp).unwrap();
+        let count = install_builtin_skills(tmp).unwrap();
         assert_eq!(count, 13);
 
         for skill in BUILTIN_SKILLS {
@@ -160,7 +159,7 @@ mod tests {
             assert!(path.exists(), "Missing: {}", path.display());
         }
 
-        let manifest = SkillsManifest::load(&tmp);
+        let manifest = SkillsManifest::load(tmp);
         assert_eq!(manifest.list().len(), 13);
 
         let senior = manifest.find("senior-developer");
@@ -168,8 +167,6 @@ mod tests {
         let senior = senior.unwrap();
         assert_eq!(senior.trust, TrustLevel::Trusted);
         assert!(senior.source.starts_with("builtin/"));
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

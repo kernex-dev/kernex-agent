@@ -243,9 +243,8 @@ mod tests {
 
     #[test]
     fn manifest_save_and_load() {
-        let tmp = std::env::temp_dir().join("__kx_manifest_test__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
         let mut manifest = SkillsManifest::default();
         let mut perms = BTreeSet::new();
@@ -261,31 +260,26 @@ mod tests {
             denied_permissions: BTreeSet::new(),
         });
 
-        manifest.save(&tmp).unwrap();
-        let loaded = SkillsManifest::load(&tmp);
+        manifest.save(tmp).unwrap();
+        let loaded = SkillsManifest::load(tmp);
         assert_eq!(loaded.skills.len(), 1);
         assert_eq!(loaded.skills[0].name, "test-skill");
         assert_eq!(loaded.skills[0].trust, TrustLevel::Standard);
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn manifest_load_nonexistent() {
-        let tmp = std::env::temp_dir().join("__kx_manifest_missing__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
-        let manifest = SkillsManifest::load(&tmp);
+        let manifest = SkillsManifest::load(tmp);
         assert!(manifest.skills.is_empty());
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn verify_skill_ok() {
-        let tmp = std::env::temp_dir().join("__kx_verify_ok__");
-        let _ = std::fs::remove_dir_all(&tmp);
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         let skill_path = tmp.join("skills").join("test-skill");
         std::fs::create_dir_all(&skill_path).unwrap();
 
@@ -304,18 +298,16 @@ mod tests {
             denied_permissions: BTreeSet::new(),
         };
 
-        match verify_skill(&tmp, &skill) {
+        match verify_skill(tmp, &skill) {
             VerifyResult::Ok => {}
             other => panic!("Expected Ok, got {:?}", other),
         }
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn verify_skill_modified() {
-        let tmp = std::env::temp_dir().join("__kx_verify_modified__");
-        let _ = std::fs::remove_dir_all(&tmp);
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         let skill_path = tmp.join("skills").join("mod-skill");
         std::fs::create_dir_all(&skill_path).unwrap();
 
@@ -332,19 +324,16 @@ mod tests {
             denied_permissions: BTreeSet::new(),
         };
 
-        match verify_skill(&tmp, &skill) {
+        match verify_skill(tmp, &skill) {
             VerifyResult::Modified { .. } => {}
             other => panic!("Expected Modified, got {:?}", other),
         }
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn verify_skill_missing() {
-        let tmp = std::env::temp_dir().join("__kx_verify_missing__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
         let skill = InstalledSkill {
             name: "missing-skill".to_string(),
@@ -357,11 +346,9 @@ mod tests {
             denied_permissions: BTreeSet::new(),
         };
 
-        match verify_skill(&tmp, &skill) {
+        match verify_skill(tmp, &skill) {
             VerifyResult::Missing => {}
             other => panic!("Expected Missing, got {:?}", other),
         }
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

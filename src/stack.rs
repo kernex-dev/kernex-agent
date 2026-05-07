@@ -110,194 +110,160 @@ mod tests {
 
     #[test]
     fn detect_go() {
-        let tmp = std::env::temp_dir().join("__kx_stack_go__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("go.mod"), "module example.com/app").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Go);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Go);
     }
 
     #[test]
     fn detect_java_maven() {
-        let tmp = std::env::temp_dir().join("__kx_stack_java_maven__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("pom.xml"), "<project></project>").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Java);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Java);
     }
 
     #[test]
     fn detect_java_gradle() {
-        let tmp = std::env::temp_dir().join("__kx_stack_java_gradle__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("build.gradle"), "plugins {}").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Java);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Java);
     }
 
     #[test]
     fn detect_java_gradle_kts() {
-        let tmp = std::env::temp_dir().join("__kx_stack_java_gradle_kts__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("build.gradle.kts"), "plugins {}").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Java);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Java);
     }
 
     #[test]
     fn detect_swift() {
-        let tmp = std::env::temp_dir().join("__kx_stack_swift__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("Package.swift"), "// swift-tools-version:5.5").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Swift);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Swift);
     }
 
     #[test]
     fn detect_rust() {
-        let tmp = std::env::temp_dir().join("__kx_stack_rust__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("Cargo.toml"), "[package]").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Rust);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Rust);
     }
 
     #[test]
     fn detect_node() {
-        let tmp = std::env::temp_dir().join("__kx_stack_node__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("package.json"), "{}").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Node);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Node);
     }
 
     #[test]
     fn detect_python_requirements() {
-        let tmp = std::env::temp_dir().join("__kx_stack_py_req__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("requirements.txt"), "flask").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Python);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Python);
     }
 
     #[test]
     fn detect_python_pyproject() {
-        let tmp = std::env::temp_dir().join("__kx_stack_py_proj__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("pyproject.toml"), "[project]").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Python);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Python);
     }
 
     #[test]
     fn detect_flutter() {
-        let tmp = std::env::temp_dir().join("__kx_stack_flutter__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("pubspec.yaml"), "name: app").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Flutter);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Flutter);
     }
 
     #[test]
     fn detect_php() {
-        let tmp = std::env::temp_dir().join("__kx_stack_php__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("composer.json"), "{}").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Php);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Php);
     }
 
     #[test]
     fn detect_ruby() {
-        let tmp = std::env::temp_dir().join("__kx_stack_ruby__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("Gemfile"), "source 'https://rubygems.org'").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Ruby);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Ruby);
     }
 
     #[test]
     fn detect_cpp() {
-        let tmp = std::env::temp_dir().join("__kx_stack_cpp__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(
             tmp.join("CMakeLists.txt"),
             "cmake_minimum_required(VERSION 3.10)",
         )
         .unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Cpp);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Cpp);
     }
 
     #[test]
     fn detect_dotnet_sln() {
-        let tmp = std::env::temp_dir().join("__kx_stack_dotnet_sln__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("MyApp.sln"), "").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::DotNet);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::DotNet);
     }
 
     #[test]
     fn detect_dotnet_props() {
-        let tmp = std::env::temp_dir().join("__kx_stack_dotnet_props__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("Directory.Build.props"), "<Project>").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::DotNet);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::DotNet);
     }
 
     #[test]
     fn detect_unknown() {
-        let tmp = std::env::temp_dir().join("__kx_stack_unknown__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
-        assert_eq!(detect(&tmp), Stack::Unknown);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Unknown);
     }
 
     #[test]
     fn detect_priority_rust_over_node() {
         // Cargo.toml appears first in the markers list
-        let tmp = std::env::temp_dir().join("__kx_stack_priority__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
         std::fs::write(tmp.join("Cargo.toml"), "[package]").unwrap();
         std::fs::write(tmp.join("package.json"), "{}").unwrap();
 
-        assert_eq!(detect(&tmp), Stack::Rust);
-        let _ = std::fs::remove_dir_all(&tmp);
+        assert_eq!(detect(tmp), Stack::Rust);
     }
 
     #[test]

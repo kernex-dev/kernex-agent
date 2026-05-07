@@ -103,54 +103,42 @@ mod tests {
 
     #[test]
     fn empty_skills_returns_base_prompt() {
-        let tmp = std::env::temp_dir().join("__kx_serve_skills_empty__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
-        let prompt = build_serve_system_prompt(&[], &tmp, None);
+        let prompt = build_serve_system_prompt(&[], tmp, None);
         assert!(prompt.contains("task agent"));
         assert!(!prompt.contains("Active Skills"));
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn evaluate_mode_changes_base_prompt() {
-        let tmp = std::env::temp_dir().join("__kx_serve_skills_eval__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
-        let prompt = build_serve_system_prompt(&[], &tmp, Some("evaluate"));
+        let prompt = build_serve_system_prompt(&[], tmp, Some("evaluate"));
         assert!(prompt.contains("evaluation agent"));
         assert!(!prompt.contains("task agent"));
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn review_mode_is_evaluation_variant() {
-        let tmp = std::env::temp_dir().join("__kx_serve_skills_review__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
-        let prompt = build_serve_system_prompt(&[], &tmp, Some("review"));
+        let prompt = build_serve_system_prompt(&[], tmp, Some("review"));
         assert!(prompt.contains("evaluation agent"));
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn unknown_skill_is_skipped() {
-        let tmp = std::env::temp_dir().join("__kx_serve_skills_unknown__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
         let skill_names = vec!["nonexistent-skill".to_string()];
-        let prompt = build_serve_system_prompt(&skill_names, &tmp, None);
+        let prompt = build_serve_system_prompt(&skill_names, tmp, None);
         // Should return base prompt without Active Skills block (skill was skipped)
         assert!(!prompt.contains("Active Skills"));
         assert!(prompt.contains("task agent"));
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
