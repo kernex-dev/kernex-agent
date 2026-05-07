@@ -42,3 +42,9 @@ hmac = "0.12"
 subtle = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
 anyhow = "1"
+
+[dev-dependencies]
+# Filesystem tests use TempDir so each test gets a unique random path with
+# RAII cleanup. Avoids races when tests run in parallel and the prior
+# `temp_dir().join("__kx_xxx__")` pattern was reused across cases.
+tempfile = "3"

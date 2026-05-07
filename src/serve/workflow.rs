@@ -155,15 +155,17 @@ mod tests {
 
     #[test]
     fn load_workflow_missing_file_returns_error() {
-        let dir = std::env::temp_dir().join("__kx_wf_test_missing__");
-        let result = load_workflow("nonexistent", &dir);
+        let guard = tempfile::tempdir().unwrap();
+        let dir = guard.path();
+        let result = load_workflow("nonexistent", dir);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("workflow not found"));
     }
 
     #[test]
     fn load_workflow_parses_valid_toml() {
-        let dir = std::env::temp_dir().join("__kx_wf_test_valid__");
+        let guard = tempfile::tempdir().unwrap();
+        let dir = guard.path();
         std::fs::create_dir_all(dir.join("workflows")).unwrap();
         let content = r#"
 name = "test-flow"
@@ -181,10 +183,9 @@ input = "Verify: {review.output}"
 depends_on = ["review"]
 "#;
         std::fs::write(dir.join("workflows").join("test-flow.toml"), content).unwrap();
-        let wf = load_workflow("test-flow", &dir).unwrap();
+        let wf = load_workflow("test-flow", dir).unwrap();
         assert_eq!(wf.name, "test-flow");
         assert_eq!(wf.steps.len(), 2);
         assert_eq!(wf.steps[1].depends_on, vec!["review"]);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

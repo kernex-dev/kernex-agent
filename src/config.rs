@@ -129,21 +129,17 @@ mod tests {
 
     #[test]
     fn config_load_nonexistent() {
-        let tmp = std::env::temp_dir().join("__kx_config_missing__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
-        let config = ProjectConfig::load(&tmp).unwrap();
+        let config = ProjectConfig::load(tmp).unwrap();
         assert!(config.stack.is_none());
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn config_load_valid() {
-        let tmp = std::env::temp_dir().join("__kx_config_valid__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
         std::fs::write(
             tmp.join(".kx.toml"),
@@ -159,7 +155,7 @@ timeout_secs = 120
         )
         .unwrap();
 
-        let config = ProjectConfig::load(&tmp).unwrap();
+        let config = ProjectConfig::load(tmp).unwrap();
         assert_eq!(config.stack, Some("rust".to_string()));
         assert_eq!(config.system_prompt, Some("Custom prompt".to_string()));
         assert!(config.provider.is_some());
@@ -167,15 +163,12 @@ timeout_secs = 120
         assert_eq!(provider.model, Some("claude-sonnet".to_string()));
         assert_eq!(provider.max_tokens, Some(2048));
         assert_eq!(provider.timeout_secs, Some(120));
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn config_load_with_skills() {
-        let tmp = std::env::temp_dir().join("__kx_config_skills__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
         std::fs::write(
             tmp.join(".kx.toml"),
@@ -188,37 +181,31 @@ blocked = ["bad-skill"]
         )
         .unwrap();
 
-        let config = ProjectConfig::load(&tmp).unwrap();
+        let config = ProjectConfig::load(tmp).unwrap();
         assert!(config.skills.is_some());
         let skills = config.skills.unwrap();
         assert_eq!(skills.default_trust, Some("standard".to_string()));
         assert_eq!(skills.trusted_sources.len(), 2);
         assert_eq!(skills.blocked, vec!["bad-skill"]);
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn config_load_invalid_toml_errors() {
-        let tmp = std::env::temp_dir().join("__kx_config_invalid__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
         std::fs::write(tmp.join(".kx.toml"), "invalid { toml").unwrap();
 
-        let result = ProjectConfig::load(&tmp);
+        let result = ProjectConfig::load(tmp);
         assert!(result.is_err(), "parse failure must surface, not default");
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("failed to parse"), "got: {msg}");
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn config_load_unsupported_version_errors() {
-        let tmp = std::env::temp_dir().join("__kx_config_future_version__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
         std::fs::write(
             tmp.join(".kx.toml"),
@@ -226,27 +213,22 @@ blocked = ["bad-skill"]
         )
         .unwrap();
 
-        let err = ProjectConfig::load(&tmp).unwrap_err().to_string();
+        let err = ProjectConfig::load(tmp).unwrap_err().to_string();
         assert!(err.contains("schema version"), "got: {err}");
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn config_load_rejects_api_key_field() {
-        let tmp = std::env::temp_dir().join("__kx_config_api_key__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
         std::fs::write(tmp.join(".kx.toml"), "[provider]\napi_key = \"sk-leak\"\n").unwrap();
 
-        let err = ProjectConfig::load(&tmp).unwrap_err().to_string();
+        let err = ProjectConfig::load(tmp).unwrap_err().to_string();
         assert!(
             err.contains("api_key") || err.contains("unknown"),
             "got: {err}"
         );
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

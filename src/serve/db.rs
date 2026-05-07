@@ -206,9 +206,13 @@ fn str_to_status(s: &str) -> JobStatus {
 mod tests {
     use super::*;
 
-    fn temp_db() -> JobDb {
-        let dir = std::env::temp_dir().join(format!("__kx_db_test_{}__", uuid::Uuid::new_v4()));
-        JobDb::init(&dir).unwrap()
+    /// Returns a fresh `JobDb` plus the `TempDir` guard. The guard must be
+    /// kept alive for the test's duration; dropping it removes the SQLite
+    /// file, so callers bind both with `let (db, _guard) = temp_db();`.
+    fn temp_db() -> (JobDb, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = JobDb::init(dir.path()).unwrap();
+        (db, dir)
     }
 
     fn make_job(id: &str) -> Job {
@@ -228,7 +232,7 @@ mod tests {
 
     #[test]
     fn insert_and_load_all() {
-        let db = temp_db();
+        let (db, _guard) = temp_db();
         db.insert(&make_job("j1"));
         db.insert(&make_job("j2"));
         let jobs = db.load_all();
@@ -237,7 +241,7 @@ mod tests {
 
     #[test]
     fn update_status_changes_status() {
-        let db = temp_db();
+        let (db, _guard) = temp_db();
         db.insert(&make_job("j3"));
         db.update_status(
             "j3",
@@ -255,7 +259,7 @@ mod tests {
 
     #[test]
     fn mark_running_as_failed_transitions() {
-        let db = temp_db();
+        let (db, _guard) = temp_db();
         let mut job = make_job("j4");
         job.status = JobStatus::Running;
         db.insert(&job);
@@ -267,7 +271,7 @@ mod tests {
 
     #[test]
     fn insert_duplicate_is_ignored() {
-        let db = temp_db();
+        let (db, _guard) = temp_db();
         db.insert(&make_job("j5"));
         db.insert(&make_job("j5"));
         let jobs = db.load_all();

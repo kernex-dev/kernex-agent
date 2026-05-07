@@ -123,27 +123,31 @@ mod tests {
     use super::*;
     use std::fs;
 
-    fn tmp_dir(tag: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("__kx_loader_{tag}__"));
-        fs::create_dir_all(&p).unwrap();
-        p
+    /// Returns a fresh temporary directory plus its `TempDir` guard. The guard
+    /// must outlive every read/write that touches the path; binding both with
+    /// `let (tmp, _guard) = tmp_dir();` is the idiom. The tag argument is
+    /// kept for diagnostic-friendly test failures even though TempDir picks
+    /// a unique random suffix.
+    fn tmp_dir(_tag: &str) -> (PathBuf, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_path_buf();
+        (path, dir)
     }
 
     #[test]
     fn load_no_files_returns_empty() {
-        let tmp = tmp_dir("empty");
+        let (tmp, _guard) = tmp_dir("empty");
         let loader = SystemPromptLoader {
             global_path: tmp.join("g.md"),
             project_path: tmp.join("p.md"),
             local_path: tmp.join("l.md"),
         };
         assert!(loader.load().is_empty());
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn load_single_project_file() {
-        let tmp = tmp_dir("single");
+        let (tmp, _guard) = tmp_dir("single");
         let path = tmp.join("CLAUDE.md");
         fs::write(&path, "Be helpful.").unwrap();
 
@@ -153,12 +157,11 @@ mod tests {
             local_path: tmp.join("missing_l.md"),
         };
         assert_eq!(loader.load(), "Be helpful.");
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn load_merges_all_three_files() {
-        let tmp = tmp_dir("merge");
+        let (tmp, _guard) = tmp_dir("merge");
         fs::write(tmp.join("global.md"), "Global rules.").unwrap();
         fs::write(tmp.join("project.md"), "Project rules.").unwrap();
         fs::write(tmp.join("local.md"), "Local rules.").unwrap();
@@ -172,12 +175,11 @@ mod tests {
         assert!(result.contains("Global rules."));
         assert!(result.contains("Project rules."));
         assert!(result.contains("Local rules."));
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn load_order_global_before_project_before_local() {
-        let tmp = tmp_dir("order");
+        let (tmp, _guard) = tmp_dir("order");
         fs::write(tmp.join("a.md"), "first").unwrap();
         fs::write(tmp.join("b.md"), "second").unwrap();
         fs::write(tmp.join("c.md"), "third").unwrap();
@@ -193,12 +195,11 @@ mod tests {
         let pos_third = result.find("third").unwrap_or(usize::MAX);
         assert!(pos_first < pos_second);
         assert!(pos_second < pos_third);
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn load_skips_missing_files_silently() {
-        let tmp = tmp_dir("skip");
+        let (tmp, _guard) = tmp_dir("skip");
         fs::write(tmp.join("project.md"), "only project").unwrap();
 
         let loader = SystemPromptLoader {
@@ -207,12 +208,11 @@ mod tests {
             local_path: tmp.join("missing_l.md"),
         };
         assert_eq!(loader.load(), "only project");
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn resolve_imports_expands_directive() {
-        let tmp = tmp_dir("import_ok");
+        let (tmp, _guard) = tmp_dir("import_ok");
         fs::write(tmp.join("rules.md"), "imported content").unwrap();
 
         let content = "before\n@import rules.md\nafter";
@@ -220,42 +220,38 @@ mod tests {
         assert!(result.contains("imported content"));
         assert!(result.contains("before"));
         assert!(result.contains("after"));
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn resolve_imports_missing_file_drops_line() {
-        let tmp = tmp_dir("import_missing");
+        let (tmp, _guard) = tmp_dir("import_missing");
         let content = "@import nonexistent.md\nstays";
         let result = resolve_imports(content, &tmp);
         assert!(result.contains("stays"));
         assert!(!result.contains("@import"));
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn resolve_imports_plain_lines_unchanged() {
-        let tmp = tmp_dir("import_plain");
+        let (tmp, _guard) = tmp_dir("import_plain");
         let content = "line one\nline two\nline three";
         let result = resolve_imports(content, &tmp);
         assert_eq!(result, content);
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn resolve_imports_indented_directive() {
-        let tmp = tmp_dir("import_indent");
+        let (tmp, _guard) = tmp_dir("import_indent");
         fs::write(tmp.join("extra.md"), "extra rules").unwrap();
 
         let content = "  @import extra.md";
         let result = resolve_imports(content, &tmp);
         assert!(result.contains("extra rules"));
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn resolve_imports_rejects_absolute_path() {
-        let tmp = tmp_dir("import_abs");
+        let (tmp, _guard) = tmp_dir("import_abs");
         // Even if /etc/passwd exists on the host, an absolute path must be
         // rejected outright so a hostile CLAUDE.md cannot exfiltrate it.
         let content = "before\n@import /etc/passwd\nafter";
@@ -263,12 +259,11 @@ mod tests {
         assert!(result.contains("before"));
         assert!(result.contains("after"));
         assert!(!result.contains("root:"));
-        let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn resolve_imports_rejects_parent_traversal() {
-        let outer = tmp_dir("import_outer");
+        let (outer, _outer_guard) = tmp_dir("import_outer");
         let inner = outer.join("inner");
         fs::create_dir_all(&inner).unwrap();
         fs::write(outer.join("secret.md"), "should not leak").unwrap();
@@ -278,12 +273,11 @@ mod tests {
         let result = resolve_imports(content, &inner);
         assert!(!result.contains("should not leak"));
         assert!(result.contains("fine"));
-        let _ = fs::remove_dir_all(&outer);
     }
 
     #[test]
     fn resolve_imports_drops_oversized_file() {
-        let tmp = tmp_dir("import_huge");
+        let (tmp, _guard) = tmp_dir("import_huge");
         let big = "X".repeat((MAX_IMPORT_BYTES as usize) + 1);
         fs::write(tmp.join("big.md"), &big).unwrap();
 
@@ -292,6 +286,5 @@ mod tests {
         assert!(result.contains("head"));
         assert!(result.contains("tail"));
         assert!(!result.contains("XXXX"));
-        let _ = fs::remove_dir_all(&tmp);
     }
 }

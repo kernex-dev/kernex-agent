@@ -209,9 +209,8 @@ mod tests {
 
     #[test]
     fn log_event_creates_file() {
-        let tmp = std::env::temp_dir().join("__kx_audit_log__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
         let event = AuditEvent::Installed {
             name: "test",
@@ -219,7 +218,7 @@ mod tests {
             sha256: "abc",
             trust: &TrustLevel::Sandboxed,
         };
-        log_event(&tmp, &event);
+        log_event(tmp, &event);
 
         let log_path = tmp.join("skills-audit.log");
         assert!(log_path.exists());
@@ -227,18 +226,15 @@ mod tests {
         let content = std::fs::read_to_string(&log_path).unwrap();
         assert!(content.contains("installed"));
         assert!(content.contains("test"));
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn log_event_appends() {
-        let tmp = std::env::temp_dir().join("__kx_audit_append__");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path();
 
         log_event(
-            &tmp,
+            tmp,
             &AuditEvent::Installed {
                 name: "first",
                 source: "a/b",
@@ -246,14 +242,12 @@ mod tests {
                 trust: &TrustLevel::Sandboxed,
             },
         );
-        log_event(&tmp, &AuditEvent::Removed { name: "second" });
+        log_event(tmp, &AuditEvent::Removed { name: "second" });
 
         let content = std::fs::read_to_string(tmp.join("skills-audit.log")).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains("first"));
         assert!(lines[1].contains("second"));
-
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
