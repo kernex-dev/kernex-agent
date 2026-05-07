@@ -187,13 +187,35 @@ pub async fn handle_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<JobIdResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // Reject malformed event names up front (no `..`, no uppercase, no path
+    // separators) so attacker-controlled segments cannot leak into the
+    // env-var lookup or the channel string written to the DB.
+    if !is_valid_webhook_event(&event) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: "invalid event name (expected /^[a-z0-9-]{1,64}$/)".to_string(),
+            }),
+        ));
+    }
+
+    // Fail-closed: every webhook event must have an HMAC secret configured.
+    // Without this guard, a bearer-authenticated caller could forge any event
+    // by picking a segment that has no KERNEX_WEBHOOK_SECRET_<EVENT> set, and
+    // the request would be accepted with no per-event verification.
     let secret_key = format!(
         "KERNEX_WEBHOOK_SECRET_{}",
         event.to_uppercase().replace('-', "_")
     );
-    if let Ok(secret) = std::env::var(&secret_key) {
-        verify_webhook_hmac(&headers, &body, &secret)?;
-    }
+    let secret = std::env::var(&secret_key).map_err(|_| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                error: format!("webhook event '{event}' is not configured ({secret_key} unset)"),
+            }),
+        )
+    })?;
+    verify_webhook_hmac(&headers, &body, &secret)?;
 
     let webhook_body: WebhookBody = serde_json::from_slice(&body).map_err(|e| {
         (
@@ -284,6 +306,18 @@ fn verify_webhook_hmac(
     })
 }
 
+/// True when `event` is a well-formed webhook segment: lowercase alphanumeric
+/// plus hyphen, 1-64 bytes. Used to reject path inputs that could escape into
+/// the env-var lookup, the SQLite channel column, or just unbounded length.
+fn is_valid_webhook_event(event: &str) -> bool {
+    if event.is_empty() || event.len() > 64 {
+        return false;
+    }
+    event
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
 fn hex_decode(s: &str) -> Option<Vec<u8>> {
     if s.len() % 2 != 0 {
         return None;
@@ -297,6 +331,25 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn webhook_event_validator_accepts_well_formed() {
+        assert!(is_valid_webhook_event("github"));
+        assert!(is_valid_webhook_event("pr-review"));
+        assert!(is_valid_webhook_event("issue-comment-1"));
+        assert!(is_valid_webhook_event("a"));
+    }
+
+    #[test]
+    fn webhook_event_validator_rejects_malformed() {
+        assert!(!is_valid_webhook_event(""));
+        assert!(!is_valid_webhook_event(".."));
+        assert!(!is_valid_webhook_event("Github")); // uppercase
+        assert!(!is_valid_webhook_event("path/traversal"));
+        assert!(!is_valid_webhook_event("with space"));
+        assert!(!is_valid_webhook_event("ctrl\x00char"));
+        assert!(!is_valid_webhook_event(&"a".repeat(65))); // > 64 chars
+    }
 
     #[test]
     fn health_response_serializes_with_jobs() {
