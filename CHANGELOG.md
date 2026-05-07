@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-05-07
+
+### Changed
+
+- **README**: refreshed install instructions and feature table to reflect 11-provider count, Bedrock optional feature, and current cargo install command. Switched the embedded logo to the canonical `favicon.svg` shared with the kernex-web marketing site so all three repos render the same mark.
+
+## [0.4.3] - 2026-05-07
+
+This release lands the full audit punch-list (Critical / High / Medium / Low) and adds first-class diagnostics, prompt-cache visibility, and several DX features.
+
+### Security
+
+- **Critical**: `--max-turns` flag was wired to `max_tokens` end-to-end; renamed to `--max-tokens` (`cli.rs`, `main.rs`, `config.rs`, `commands.rs`, `serve/{routes,jobs,mod}.rs`) so the flag's behavior matches its name. Real per-run turn capping requires `Runtime::run()` and is out of scope.
+- **Critical**: `@import` arbitrary file read closed in `src/loader.rs` — rejects absolute paths, canonicalizes resolved targets and parents, refuses any target not under `base_dir`, and drops files > 256 KiB. Three new tests cover absolute-path rejection, `..` traversal, and oversized files.
+- **High**: `kx serve` now does graceful shutdown via `axum::serve(...).with_graceful_shutdown()` (SIGINT + SIGTERM); worker `JoinHandle` is awaited so in-flight `complete_with_needs` writes settle before exit. Worker semaphore now `acquire_owned().await?` *before* spawn so the bounded mpsc fills under load and clients see real `503 job queue full` back-pressure.
+- **High**: tracing subscriber initialized at the head of `main::run()` (env-filter falls back to `warn`, output to stderr), not just inside `cmd_serve`. Scheduler gained a `SchedulerHandle` with a watch-channel shutdown; the loop selects on `shutdown_rx.changed()` and is skipped entirely in one-shot mode.
+- **High**: `DefaultBodyLimit::max(1 MiB)` applied at the Axum router layer over `/run`, `/webhook`, `/jobs`, `/health`. Webhook HMAC is now fail-closed: returns 503 when `KERNEX_WEBHOOK_SECRET_<EVENT>` is unset (instead of silently bypassing) and 400 when the event segment fails `^[a-z0-9-]{1,64}$`.
+- **High**: builtins no longer auto-fetch from `kernex-dev/main`. Builtin skills now ship via `include_str!` baked into the binary, eliminating the silent supply-chain channel where any push to that branch would auto-install as `TrustLevel::Trusted` on the next `kx init`.
+- **High**: skill name validation extended into `skill_file_path` (was previously only on the public CLI surface), preventing path traversal via internally-derived skill names.
+- **Medium**: `.kx.toml` parse failures now abort startup with a contextual error instead of silently falling back to defaults; schema gained an optional `version: u32` and `CURRENT_SCHEMA_VERSION` constant; configs declaring a higher version are rejected with an "upgrade kx" message; `api_key` field rejected via `#[serde(deny_unknown_fields)]` so legacy configs surface a hard error.
+- **Medium**: bearer token rejected if shorter than 32 bytes at startup. `--workers 0` rejected; values above 256 clamped with a `tracing::warn!`. SQLite `jobs.db` and parent dir now `chmod 0o600 / 0o700` on Unix. Every `uses:` reference in CI workflows SHA-pinned with trailing `# vX.Y.Z` comments.
+- **Low**: SHA-256 manifest correctly described in SECURITY.md as TOFU integrity (not authenticity); permission model documented as advisory; `Trusted` auto-stamping of builtins documented; `data_dir.to_str().unwrap_or("~/.kx")` fallback replaced with `to_string_lossy()` for non-UTF-8 paths.
+
+### Added
+
+- **`kx doctor`**: install diagnostics subcommand — checks tool path, data dir, provider env vars, and skill-manifest integrity in one pass.
+- **`/cost` slash command**: surfaces per-conversation token usage with prompt-cache hit ratio (uses the `kernex-runtime` 0.4.2 `Store::get_total_usage` breakdown).
+- **AGENTS.md interop**: `kx` now treats `AGENTS.md` as a first-class system-prompt source alongside `CLAUDE.md` for cross-tool projects.
+- **`--auto-compact` default-on**: `RuntimeBuilder::auto_compact(true)` is the default; `--no-auto-compact` flag opts out. Rolls in the new `kernex-runtime` 0.4.1 capability.
+
+### Changed
+
+- **Tests**: filesystem tests migrated from `temp_dir().join("__kx_…__")` to `tempfile::TempDir` (`b93df86`). Each test now gets a unique random path with RAII cleanup; parallel runs no longer alias on shared paths.
+- **Refactor**: `commands.rs` split into a pure `parse(&str) -> SlashCommand<'_>` plus side-effect handler. 11 parse-matrix tests pin previously-implicit boundaries (`/searchfoo` → `Unknown`, `/quit ` trailing space → `Unknown`, slash names case-sensitive).
+- **Refactor**: provider list collapsed from three per-provider matches into a single `const PROVIDERS: &[ProviderSpec]` plus `provider_spec`, `default_model`, `api_key_var`, `env_api_key` helpers — adding or removing a provider is now a one-row edit.
+- **Errors**: 22 signatures across `main.rs`, `builtins.rs`, `serve/mod.rs` migrated from `Box<dyn Error>` to `anyhow::Result`; `.with_context(...)` added at `RuntimeBuilder::build()` cold-start boundary.
+- **Build**: dropped `[patch.crates-io]` block now that the kernex-* sibling crates are published at 0.4.2; Cargo.lock regenerated against the published versions.
+- **Deps**: `rustls-webpki` and `rand` bumped to clear `cargo audit` warnings (RUSTSEC-2026-0098 / 0099 / 0104 / 0097).
+
+### CI
+
+- **`cargo deny check`** added: advisories + bans + licenses + sources gate, blocking openssl / native-tls (rustls-only policy) and pinning the license allow-list.
+- **clippy** extended to `--all-targets` so test, example, and bench code is also linted with `-D warnings`.
+
+## [0.4.1] - 2026-04-03
+
+### Added
+
+- **Env var support for all flags** — every CLI flag now resolves from a corresponding `KERNEX_*` env var if not provided on the command line (provider, model, api-key, base-url, etc.). Reduces flag noise on every invocation.
+- **Compose deploy parity** — `deploy/docker-compose.local.yml` and `deploy/docker-compose.vps.yml` pass full provider env-var sets through to the `kx serve` container so any of the 11 providers can be used in production without container surgery.
+
+### CI
+
+- **`--locked` enforcement** on every cargo invocation in CI to catch `Cargo.lock` drift before Docker build.
+
+### Docs
+
+- **CHANGELOG**: restructured into versioned `[0.4.0]` / `[0.2.0]` sections following the Keep a Changelog format.
+
 ## [0.4.0] - 2026-04-03
 
 ### Added
