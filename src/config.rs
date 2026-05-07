@@ -6,8 +6,19 @@ use crate::skills::permissions::PermissionPolicy;
 use crate::skills::types::TrustLevel;
 use crate::stack::Stack;
 
+/// Highest schema version this binary understands. Bump when adding fields
+/// that older binaries cannot ignore safely; older fields stay forward-
+/// compatible because every existing field is `Option<T>` with `#[serde]`
+/// defaults.
+pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
+    /// Schema version. Defaults to 1 when omitted. A `.kx.toml` with a
+    /// higher version than the binary supports is rejected so users get a
+    /// clear "upgrade kx" message instead of silent field drops.
+    pub version: Option<u32>,
     pub stack: Option<String>,
     pub system_prompt: Option<String>,
     pub provider: Option<ProviderConfig>,
@@ -27,29 +38,41 @@ pub struct SkillsConfig {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderConfig {
     pub name: Option<String>,
     pub max_tokens: Option<u32>,
     pub timeout_secs: Option<u64>,
     pub model: Option<String>,
-    pub api_key: Option<String>,
     pub base_url: Option<String>,
 }
 
 impl ProjectConfig {
-    pub fn load(project_dir: &Path) -> Self {
+    /// Load `.kx.toml` from `project_dir`, returning an explicit error on
+    /// parse failure or unsupported schema version. Callers can either
+    /// propagate (recommended) or fall back to [`ProjectConfig::default`].
+    pub fn load(project_dir: &Path) -> anyhow::Result<Self> {
         let path = project_dir.join(".kx.toml");
         if !path.exists() {
-            return Self::default();
+            return Ok(Self::default());
         }
 
-        match std::fs::read_to_string(&path) {
-            Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
-                eprintln!("warn: failed to parse .kx.toml: {e}");
-                Self::default()
-            }),
-            Err(_) => Self::default(),
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| anyhow::anyhow!("failed to read {}: {e}", path.display()))?;
+
+        let config: Self = toml::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("failed to parse {}: {e}", path.display()))?;
+
+        if let Some(v) = config.version {
+            if v > CURRENT_SCHEMA_VERSION {
+                anyhow::bail!(
+                    "{} declares schema version {v}, but this kx binary only supports up to v{CURRENT_SCHEMA_VERSION}. Upgrade kx.",
+                    path.display()
+                );
+            }
         }
+
+        Ok(config)
     }
 
     pub fn skills_policy(&self) -> PermissionPolicy {
@@ -110,7 +133,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let config = ProjectConfig::load(&tmp);
+        let config = ProjectConfig::load(&tmp).unwrap();
         assert!(config.stack.is_none());
 
         let _ = std::fs::remove_dir_all(&tmp);
@@ -136,7 +159,7 @@ timeout_secs = 120
         )
         .unwrap();
 
-        let config = ProjectConfig::load(&tmp);
+        let config = ProjectConfig::load(&tmp).unwrap();
         assert_eq!(config.stack, Some("rust".to_string()));
         assert_eq!(config.system_prompt, Some("Custom prompt".to_string()));
         assert!(config.provider.is_some());
@@ -165,7 +188,7 @@ blocked = ["bad-skill"]
         )
         .unwrap();
 
-        let config = ProjectConfig::load(&tmp);
+        let config = ProjectConfig::load(&tmp).unwrap();
         assert!(config.skills.is_some());
         let skills = config.skills.unwrap();
         assert_eq!(skills.default_trust, Some("standard".to_string()));
@@ -176,16 +199,52 @@ blocked = ["bad-skill"]
     }
 
     #[test]
-    fn config_load_invalid_toml() {
+    fn config_load_invalid_toml_errors() {
         let tmp = std::env::temp_dir().join("__kx_config_invalid__");
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
         std::fs::write(tmp.join(".kx.toml"), "invalid { toml").unwrap();
 
-        let config = ProjectConfig::load(&tmp);
-        // Should return default on parse error
-        assert!(config.stack.is_none());
+        let result = ProjectConfig::load(&tmp);
+        assert!(result.is_err(), "parse failure must surface, not default");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("failed to parse"), "got: {msg}");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn config_load_unsupported_version_errors() {
+        let tmp = std::env::temp_dir().join("__kx_config_future_version__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        std::fs::write(
+            tmp.join(".kx.toml"),
+            format!("version = {}\n", CURRENT_SCHEMA_VERSION + 1),
+        )
+        .unwrap();
+
+        let err = ProjectConfig::load(&tmp).unwrap_err().to_string();
+        assert!(err.contains("schema version"), "got: {err}");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn config_load_rejects_api_key_field() {
+        let tmp = std::env::temp_dir().join("__kx_config_api_key__");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        std::fs::write(tmp.join(".kx.toml"), "[provider]\napi_key = \"sk-leak\"\n").unwrap();
+
+        let err = ProjectConfig::load(&tmp).unwrap_err().to_string();
+        assert!(
+            err.contains("api_key") || err.contains("unknown"),
+            "got: {err}"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
