@@ -501,9 +501,11 @@ pub(crate) fn build_provider(
     let provider = ProviderFactory::create(&provider_name, kx_config).map_err(|e| {
         let msg = e.to_string();
         if msg.contains("unknown") || msg.contains("unsupported") || msg.contains("not found") {
+            let names: Vec<&'static str> = PROVIDERS.iter().map(|p| p.name).collect();
             anyhow::anyhow!(
-                "unknown provider '{}'. Valid choices: claude-code, anthropic, openai, ollama, gemini, openrouter, groq, mistral, deepseek, fireworks, xai",
-                provider_name
+                "unknown provider '{}'. Valid choices: {}",
+                provider_name,
+                names.join(", ")
             )
         } else {
             anyhow::anyhow!(msg)
@@ -517,20 +519,81 @@ fn display_model(provider: &str, model: Option<&str>) -> String {
     format!("{provider}/{m}")
 }
 
+/// Single source of truth for provider metadata. Each entry pairs the
+/// provider name (`--provider <name>`) with its API-key env var (or `None`
+/// if the provider does not need one) and a sensible default model.
+struct ProviderSpec {
+    name: &'static str,
+    api_key_env: Option<&'static str>,
+    default_model: &'static str,
+}
+
+const PROVIDERS: &[ProviderSpec] = &[
+    ProviderSpec {
+        name: "claude-code",
+        api_key_env: None,
+        default_model: "claude-code",
+    },
+    ProviderSpec {
+        name: "anthropic",
+        api_key_env: Some("ANTHROPIC_API_KEY"),
+        default_model: "claude-3-7-sonnet-20250219",
+    },
+    ProviderSpec {
+        name: "openai",
+        api_key_env: Some("OPENAI_API_KEY"),
+        default_model: "gpt-4o",
+    },
+    ProviderSpec {
+        name: "ollama",
+        api_key_env: None,
+        default_model: "llama3.2",
+    },
+    ProviderSpec {
+        name: "gemini",
+        api_key_env: Some("GEMINI_API_KEY"),
+        default_model: "gemini-2.0-flash",
+    },
+    ProviderSpec {
+        name: "openrouter",
+        api_key_env: Some("OPENROUTER_API_KEY"),
+        default_model: "anthropic/claude-sonnet-4-5",
+    },
+    ProviderSpec {
+        name: "groq",
+        api_key_env: Some("GROQ_API_KEY"),
+        default_model: "llama-3.3-70b-versatile",
+    },
+    ProviderSpec {
+        name: "mistral",
+        api_key_env: Some("MISTRAL_API_KEY"),
+        default_model: "mistral-large-latest",
+    },
+    ProviderSpec {
+        name: "deepseek",
+        api_key_env: Some("DEEPSEEK_API_KEY"),
+        default_model: "deepseek-chat",
+    },
+    ProviderSpec {
+        name: "fireworks",
+        api_key_env: Some("FIREWORKS_API_KEY"),
+        default_model: "accounts/fireworks/models/llama-v3p1-70b-instruct",
+    },
+    ProviderSpec {
+        name: "xai",
+        api_key_env: Some("XAI_API_KEY"),
+        default_model: "grok-2-latest",
+    },
+];
+
+fn provider_spec(name: &str) -> Option<&'static ProviderSpec> {
+    PROVIDERS.iter().find(|p| p.name == name)
+}
+
 fn default_model(provider: &str) -> &'static str {
-    match provider {
-        "anthropic" => "claude-3-7-sonnet-20250219",
-        "openai" => "gpt-4o",
-        "gemini" => "gemini-2.0-flash",
-        "openrouter" => "anthropic/claude-sonnet-4-5",
-        "ollama" => "llama3.2",
-        "groq" => "llama-3.3-70b-versatile",
-        "mistral" => "mistral-large-latest",
-        "deepseek" => "deepseek-chat",
-        "fireworks" => "accounts/fireworks/models/llama-v3p1-70b-instruct",
-        "xai" => "grok-2-latest",
-        _ => "claude-code",
-    }
+    provider_spec(provider)
+        .map(|p| p.default_model)
+        .unwrap_or("claude-code")
 }
 
 fn check_claude_cli() -> anyhow::Result<()> {
@@ -593,25 +656,13 @@ async fn check_provider(provider: &dyn Provider) -> anyhow::Result<()> {
 }
 
 fn api_key_var(provider: &str) -> &'static str {
-    match provider {
-        "openai" => "OPENAI_API_KEY",
-        "anthropic" => "ANTHROPIC_API_KEY",
-        "gemini" => "GEMINI_API_KEY",
-        "openrouter" => "OPENROUTER_API_KEY",
-        "groq" => "GROQ_API_KEY",
-        "mistral" => "MISTRAL_API_KEY",
-        "deepseek" => "DEEPSEEK_API_KEY",
-        "fireworks" => "FIREWORKS_API_KEY",
-        "xai" => "XAI_API_KEY",
-        _ => "API_KEY",
-    }
+    provider_spec(provider)
+        .and_then(|p| p.api_key_env)
+        .unwrap_or("API_KEY")
 }
 
 fn env_api_key(provider: &str) -> Option<String> {
-    let var = api_key_var(provider);
-    if var == "API_KEY" {
-        return None;
-    }
+    let var = provider_spec(provider).and_then(|p| p.api_key_env)?;
     std::env::var(var).ok().filter(|v| !v.is_empty())
 }
 
