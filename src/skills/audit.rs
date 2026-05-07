@@ -21,6 +21,12 @@ pub enum AuditEvent<'a> {
         name: &'a str,
         trust: &'a TrustLevel,
     },
+    /// SHA-256 mismatch detected at load time. The skill was rejected.
+    Modified {
+        name: &'a str,
+        expected: &'a str,
+        actual: &'a str,
+    },
 }
 
 fn escape_json_string(s: &str) -> String {
@@ -83,6 +89,19 @@ fn format_event(event: &AuditEvent<'_>) -> String {
                 trust,
             )
         }
+        AuditEvent::Modified {
+            name,
+            expected,
+            actual,
+        } => {
+            format!(
+                r#"{{"timestamp":"{}","event":"modified","name":"{}","expected":"{}","actual":"{}"}}"#,
+                escape_json_string(&ts),
+                escape_json_string(name),
+                escape_json_string(expected),
+                escape_json_string(actual),
+            )
+        }
     }
 }
 
@@ -90,10 +109,11 @@ pub fn log_event(data_dir: &Path, event: &AuditEvent<'_>) {
     let log_path = data_dir.join("skills-audit.log");
     let line = format!("{}\n", format_event(event));
 
-    let file = std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(&log_path);
+    // Open with mode 0o600 on Unix at create time so we never go through a
+    // window where the file is world-readable. The log records every skill
+    // install (source URL, sha256, trust level); on shared hosts the
+    // default 0o644 would let any local user enumerate what's installed.
+    let file = open_append_private(&log_path);
 
     match file {
         Ok(mut f) => {
@@ -105,6 +125,24 @@ pub fn log_event(data_dir: &Path, event: &AuditEvent<'_>) {
             eprintln!("warning: failed to open audit log: {e}");
         }
     }
+}
+
+#[cfg(unix)]
+fn open_append_private(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .mode(0o600)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_append_private(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(path)
 }
 
 #[cfg(test)]

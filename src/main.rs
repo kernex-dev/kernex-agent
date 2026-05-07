@@ -161,10 +161,15 @@ async fn cmd_skills(action: SkillsAction) -> anyhow::Result<()> {
         }
         SkillsAction::Lint { path } => {
             let lint_path = std::path::Path::new(&path);
-            if !skills::cli_handler::lint_skill_dir(lint_path) {
-                std::process::exit(1);
+            if skills::cli_handler::lint_skill_dir(lint_path) {
+                Ok(())
+            } else {
+                // Returning Err lets `main` set the exit code in one place
+                // after the tracing subscriber has flushed. Calling
+                // process::exit here skips tokio destructors and any
+                // buffered tracing output, dropping diagnostic context.
+                Err(anyhow::anyhow!("lint failed"))
             }
-            Ok(())
         }
     }
 }
@@ -1174,25 +1179,44 @@ fn missing_post_validation_paths(paths: &[String], cwd: &std::path::Path) -> Vec
 }
 
 fn dir_contains_pattern(dir: &std::path::Path, pattern: &str) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return false;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let file_name = entry.file_name();
-        let name = file_name.to_string_lossy();
-        if name.starts_with('.') {
-            continue;
+    /// Cap recursion to keep `kx pipeline run` from stack-overflowing on a
+    /// deep node_modules tree (or a symlink loop). 32 levels is well past
+    /// any sane source tree.
+    const MAX_DEPTH: usize = 32;
+    fn walk(dir: &std::path::Path, pattern: &str, depth: usize) -> bool {
+        if depth > MAX_DEPTH {
+            return false;
         }
-        if path.is_dir() {
-            if dir_contains_pattern(&path, pattern) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return false;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let file_name = entry.file_name();
+            let name = file_name.to_string_lossy();
+            if name.starts_with('.') {
+                continue;
+            }
+            // file_type() does not follow symlinks; refuse to descend into
+            // links to avoid loops via /tmp -> ../tmp etc.
+            let file_type = match entry.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                if walk(&path, pattern, depth + 1) {
+                    return true;
+                }
+            } else if matches_glob_pattern(&name, pattern) {
                 return true;
             }
-        } else if matches_glob_pattern(&name, pattern) {
-            return true;
         }
+        false
     }
-    false
+    walk(dir, pattern, 0)
 }
 
 fn matches_glob_pattern(name: &str, pattern: &str) -> bool {

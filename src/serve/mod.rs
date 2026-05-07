@@ -398,9 +398,15 @@ async fn run_workflow(req: JobRequest, wf: workflow::Workflow) -> Result<(String
 
 /// Returns `true` if the reality-checker verdict is anything other than "SHIP IT".
 fn is_verdict_flagged(output: &str) -> bool {
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(output) {
-        if let Some(verdict) = val.get("verdict").and_then(|v| v.as_str()) {
-            return verdict != "SHIP IT";
+    // Cap the input fed into the JSON parser. Provider responses can be
+    // many MB; without a cap a runaway response amplifies cost on every
+    // workflow flag check. 256 KiB is generous for a verdict struct.
+    const MAX_VERDICT_JSON_BYTES: usize = 256 * 1024;
+    if output.len() <= MAX_VERDICT_JSON_BYTES {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(output) {
+            if let Some(verdict) = val.get("verdict").and_then(|v| v.as_str()) {
+                return verdict != "SHIP IT";
+            }
         }
     }
     // Fallback: plain text scan — absence of "SHIP IT" is treated as flagged.
