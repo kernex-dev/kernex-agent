@@ -45,6 +45,20 @@ async fn main() {
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    // Initialize a global tracing subscriber once, before subcommand dispatch.
+    // Previously this was wired only inside `kx serve`, so every other command
+    // (dev REPL, scheduler tick, pipeline runner, audit, docs) silently dropped
+    // its `tracing::info!` / `tracing::warn!` output. `try_init` is used so
+    // multiple subcommands within the same process (tests, or future
+    // composition) don't panic on a re-init attempt.
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+        )
+        .with_writer(std::io::stderr)
+        .try_init();
+
     let provider_flags = ProviderFlags {
         name: cli.provider.clone(),
         model: cli.model.clone(),

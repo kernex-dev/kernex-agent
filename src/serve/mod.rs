@@ -39,9 +39,8 @@ pub async fn cmd_serve(
     workers: usize,
     flags: &ProviderFlags,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // Tracing subscriber is now initialised once in `main::run` for every
+    // subcommand. Don't init again here.
 
     let token = auth_token
         .or_else(|| std::env::var("KERNEX_AUTH_TOKEN").ok())
