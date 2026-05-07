@@ -83,7 +83,7 @@ pub async fn cmd_serve(
     };
 
     let semaphore = Arc::new(Semaphore::new(workers));
-    tokio::spawn(run_worker(rx, job_store, db_arc, semaphore));
+    let worker_handle = tokio::spawn(run_worker(rx, job_store, db_arc, semaphore));
 
     let protected = Router::new()
         .route("/run", post(routes::handle_run))
@@ -103,11 +103,55 @@ pub async fn cmd_serve(
     let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!("kx serve listening on http://{addr}");
-    println!("kx serve listening on http://{addr}");
-    println!("Press Ctrl+C to stop.");
 
-    axum::serve(listener, app).await?;
+    // Graceful shutdown: wait for SIGINT (Ctrl+C) or SIGTERM, then let axum
+    // finish in-flight requests. Once axum::serve returns, the AppState
+    // (and therefore the mpsc sender) is dropped; the worker loop exits as
+    // soon as the channel closes; we await the worker JoinHandle to ensure
+    // any in-flight job's `complete_with_needs` call settles its DB writes
+    // before we return.
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    tracing::info!("kx serve: shutdown signalled, draining worker pool");
+    if let Err(e) = worker_handle.await {
+        tracing::warn!("kx serve: worker task did not exit cleanly: {e}");
+    }
+    tracing::info!("kx serve: stopped");
     Ok(())
+}
+
+/// Future that completes on the first OS shutdown signal we observe.
+/// Listens to both SIGINT (Ctrl+C) and SIGTERM on Unix; falls back to
+/// SIGINT-only on other platforms.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::warn!("failed to install ctrl_c handler: {e}");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sig) => {
+                sig.recv().await;
+            }
+            Err(e) => {
+                tracing::warn!("failed to install SIGTERM handler: {e}");
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
 }
 
 async fn auth_middleware(
@@ -141,13 +185,27 @@ async fn run_worker(
     semaphore: Arc<Semaphore>,
 ) {
     while let Some(req) = rx.recv().await {
+        // Acquire the worker permit *before* spawning so we apply real
+        // back-pressure: when all `workers` slots are busy, recv() blocks
+        // and the bounded channel fills up, causing handlers to surface a
+        // 503 'job queue full' to clients. Acquiring inside the spawned
+        // task instead would let recv drain the channel ahead of execution
+        // capacity and pile up parked tasks awaiting a permit.
+        let permit = match semaphore.clone().acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => {
+                // Semaphore was closed (only happens during shutdown). Stop
+                // pulling new work; the channel will drain on its own as
+                // senders are dropped.
+                tracing::warn!("worker semaphore closed; stopping pull loop");
+                return;
+            }
+        };
         let jobs_clone = jobs.clone();
         let db_clone = db.clone();
-        let sem_clone = semaphore.clone();
         tokio::spawn(async move {
-            let Ok(_permit) = sem_clone.acquire_owned().await else {
-                return;
-            };
+            // Hold the permit for the duration of the job; drop on completion.
+            let _permit = permit;
             execute_job(req, jobs_clone, db_clone).await;
         });
     }
