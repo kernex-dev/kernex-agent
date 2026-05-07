@@ -6,6 +6,7 @@ pub mod workflow;
 
 use std::sync::Arc;
 
+use axum::extract::DefaultBodyLimit;
 use axum::extract::Request;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -95,9 +96,17 @@ pub async fn cmd_serve(
             auth_middleware,
         ));
 
+    // Cap every request body at 1 MiB at the router layer. /run already
+    // performs a stricter 64 KiB check on its `message` field inside the
+    // handler; this ceiling protects /webhook/{event} (which reads
+    // raw Bytes) and any future endpoint from a flood of arbitrarily
+    // large bodies (status pages, attacker payloads, accidental file uploads).
+    const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
+
     let app = Router::new()
         .route("/health", get(routes::handle_health))
         .merge(protected)
+        .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
         .with_state(state);
 
     let addr = format!("{host}:{port}");
