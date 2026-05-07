@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-07
+
+### Changed
+
+- **Bumped to `kernex-* 0.5.0`** to consume the new per-crate typed errors landed in the workspace's M5 release (see [kernex-dev CHANGELOG `[0.5.0]`](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md#050---2026-05-07) for the full migration notes and design rationale).
+- No source changes required in `kernex-agent`: the agent uses `anyhow::Result` end-to-end and does not pattern-match on `KernexError` variants, so the breaking change in the workspace's error shape is invisible at this layer.
+
+### Notes
+
+- This release is a coordinated bump with the kernex-dev workspace's 0.5.0 milestone; agent and runtime stay version-locked.
+- Downstream code that calls into `kernex-agent` and previously matched on the agent's `anyhow::Error` chain via `downcast_ref::<KernexError>()` can now drill one level further with `.downcast_ref::<kernex_providers::ProviderError>()` etc. on the boxed inner errors. See the workspace CHANGELOG for examples.
+
 ## [0.4.4] - 2026-05-07
 
 ### Changed
