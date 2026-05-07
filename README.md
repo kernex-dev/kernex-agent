@@ -1,19 +1,25 @@
 <p align="center">
-  <img src="favicon-kernex.png" alt="Kernex" width="80">
+  <img src="favicon.svg" alt="Kernex" width="80">
 </p>
 
 # kx
 
-CLI dev assistant powered by [Kernex](https://github.com/kernex-dev/kernex-dev).
+CLI dev assistant powered by [Kernex](https://github.com/kernex-dev/kernex).
 
 ## Features
 
+- **11 LLM providers** - Claude Code (default), Anthropic, OpenAI, Gemini, Ollama, OpenRouter, Groq, Mistral, DeepSeek, Fireworks, xAI; AWS Bedrock available behind a Cargo feature
 - **Stack detection** - Automatically detects Rust, Node/TypeScript, Python, Flutter/Dart, PHP, Go, Java, and Swift projects
-- **Persistent memory** - Remembers decisions, patterns, and context across sessions per project
-- **One-shot mode** - Quick answers without entering interactive mode
-- **Multiline input** - Paste code blocks with `"""` delimiters
+- **Persistent memory** - Remembers decisions, patterns, and context across sessions per project, with FTS5 full-text search
+- **Cost telemetry** - `/cost` slash command surfaces cumulative tokens, estimated cost, and prompt-cache hit ratio
+- **OS sandbox** - Tool execution runs under Seatbelt (macOS) or Landlock (Linux) for filesystem and network isolation
+- **Skills system** - Install reusable behavior packages (`kx skills add owner/repo`) with SHA-256 integrity verification and trust levels
+- **MCP integration** - Connects to MCP servers per skill or project for extra tool surface
+- **Headless server** - `kx serve` exposes an authenticated HTTP API for job submission, webhooks, and multi-step workflows
+- **Multi-agent pipelines** - Topology-driven workflows with reality-check gates
+- **Auto-compact** - Optional automatic context summarization when approaching the model's window
+- **One-shot or interactive** - Run `kx "question"` for quick answers or `kx dev` for a REPL with multiline input via `"""` delimiters
 - **Project configuration** - Per-project settings via `.kx.toml`
-- **Full-text search** - Search past conversations with FTS5
 
 ## What Can kx Do?
 
@@ -27,34 +33,49 @@ kx is your AI coding assistant. It can:
 - **Search conversations** with full-text search
 
 **Limitations:**
-- Cannot modify files directly (suggests changes for you to apply)
-- Cannot run shell commands (use your terminal for that)
-- Requires Claude CLI for AI capabilities
+- File and shell tools run under sandbox; outside that surface kx suggests changes rather than applying them.
+- An LLM provider must be available (default: Claude Code CLI; alternatives use API keys via env or `.kx.toml`).
 
 ## Requirements
 
-| Dependency | Minimum Version | Notes |
+kx needs at least one LLM provider configured. The default is the Claude Code CLI; any other provider can be selected via `--provider` or `.kx.toml`.
+
+| Dependency | Minimum Version | When required |
 |---|---|---|
-| **Claude CLI** | 2.0+ | AI backend, requires Claude Max subscription |
-| **Rust** | 1.74+ | Only needed for `cargo install` (not needed for Docker) |
-| **Docker + Compose v2** | 24+ | Only needed for the Docker deployment path |
+| **Rust toolchain** | 1.74+ | For `cargo install kernex-agent` (not needed if using Docker) |
+| **Claude CLI** | 2.0+ | Only when using the default `claude-code` provider |
+| **Docker + Compose v2** | 24+ | Only for the Docker deployment path |
 
-**Claude CLI must be installed.** kx uses the Claude Code CLI as its AI backend.
+### Provider options
 
-Claude Code is Anthropic's official AI coding assistant that runs locally. To install:
+| Provider | Auth | Set with |
+|---|---|---|
+| `claude-code` (default) | Subscription via local CLI | `claude --version` to verify |
+| `anthropic` | API key | `ANTHROPIC_API_KEY` env var |
+| `openai` | API key | `OPENAI_API_KEY` env var |
+| `gemini` | API key | `GEMINI_API_KEY` env var |
+| `ollama` | Local | Run `ollama serve` |
+| `openrouter` | API key | `OPENROUTER_API_KEY` env var |
+| `groq` | API key | `GROQ_API_KEY` env var |
+| `mistral` | API key | `MISTRAL_API_KEY` env var |
+| `deepseek` | API key | `DEEPSEEK_API_KEY` env var |
+| `fireworks` | API key | `FIREWORKS_API_KEY` env var |
+| `xai` | API key | `XAI_API_KEY` env var |
+
+To install Claude Code (the default):
 
 1. Visit [claude.ai/download](https://claude.ai/download)
 2. Download and install for your platform (macOS, Linux, Windows)
 3. Run `claude --version` to verify installation (must be 2.0+)
 
-For documentation: [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code)
+Documentation: [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code)
 
 ### Platform Support
 
 | Platform | Status | Notes |
 |---|---|---|
 | **macOS** (Apple Silicon & Intel) | Fully supported | Sandbox via Seatbelt |
-| **Linux** (x86_64, aarch64) | Fully supported | Sandbox via Landlock (kernel 5.13+) |
+| **Linux** (x86_64, aarch64) | Fully supported | Sandbox via Landlock; partial enforcement on kernel 5.13+, full enforcement on 6.x+ |
 | **Windows** | Experimental | No sandbox support; requires WSL2 for best experience |
 
 The sandbox layer comes from `kernex-sandbox` and is used by the runtime to isolate AI subprocesses. On platforms without sandbox support, kx still works but without process isolation.
@@ -436,9 +457,9 @@ kx is a thin CLI wrapper around the Kernex runtime:
 
 The `HookRunner` trait lets you intercept tool calls before and after execution (`pre_tool` / `post_tool` / `on_stop`). kx uses this for `--verbose` output and session summaries.
 
-For the full implementation spec (provider resolution, runtime wiring, hook runner, KAIROS scheduler), see [kernex-dev/docs/kernex-agent.md](https://github.com/kernex-dev/kernex-dev/blob/main/docs/kernex-agent.md).
+For the full implementation spec (provider resolution, runtime wiring, hook runner, KAIROS scheduler), see [kernex/docs/kernex-agent.md](https://github.com/kernex-dev/kernex/blob/main/docs/kernex-agent.md).
 
-For details on the underlying runtime, see [kernex-dev](https://github.com/kernex-dev/kernex-dev).
+For details on the underlying runtime, see [kernex-dev/kernex](https://github.com/kernex-dev/kernex).
 
 ## Extending with Skills
 
@@ -471,6 +492,12 @@ mkdir -p ~/.kx
 ### Database locked
 
 Only one kx session per project can run at a time. Close other sessions or wait for them to complete.
+
+## Security
+
+The runtime executes LLM tool calls (file reads/writes, shell commands, MCP tools, custom toolboxes) inside an OS sandbox: Seatbelt on macOS, Landlock on Linux. Skills installed via `kx skills add` are pinned by SHA-256 in `~/.kx/projects/<name>/skills.toml` and verified on every load; tampering causes the skill to be refused and an audit-log entry written.
+
+If you find a vulnerability, please open a private security advisory at [github.com/kernex-dev/kernex-agent/security/advisories/new](https://github.com/kernex-dev/kernex-agent/security/advisories/new) rather than a public issue. We rotate token-bound auth and ship sandbox fixes as patch releases.
 
 ## License
 
