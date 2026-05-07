@@ -54,17 +54,30 @@ impl SystemPromptLoader {
     }
 }
 
+/// Maximum size for an imported file. Anything larger is silently dropped to
+/// prevent a hostile CLAUDE.md from bloating the system prompt past provider
+/// context limits.
+const MAX_IMPORT_BYTES: u64 = 256 * 1024;
+
 /// Expand `@import path/to/file.md` directives in `content`.
 ///
 /// Lines that start with `@import ` (after trimming) are replaced with the
-/// contents of the referenced file. Paths are resolved relative to `base_dir`.
-/// Missing imports are silently dropped.
+/// contents of the referenced file. Paths are resolved relative to `base_dir`
+/// and confined to descendants of `base_dir` to prevent a hostile CLAUDE.md
+/// from reading arbitrary host files (e.g. `~/.ssh/id_rsa`, `/etc/passwd`)
+/// into the system prompt that ships to the LLM provider.
+///
+/// Imports are dropped silently if:
+/// - the path is absolute,
+/// - the resolved path escapes `base_dir` via `..`,
+/// - the file does not exist,
+/// - the file exceeds [`MAX_IMPORT_BYTES`].
 fn resolve_imports(content: &str, base_dir: &Path) -> String {
     let mut out: Vec<String> = Vec::with_capacity(content.lines().count());
     for line in content.lines() {
         if let Some(rest) = line.trim().strip_prefix("@import ") {
-            let import_path = base_dir.join(rest.trim());
-            if let Ok(imported) = std::fs::read_to_string(&import_path) {
+            let raw = rest.trim();
+            if let Some(imported) = read_confined_import(raw, base_dir) {
                 out.push(imported);
             }
         } else {
@@ -72,6 +85,37 @@ fn resolve_imports(content: &str, base_dir: &Path) -> String {
         }
     }
     out.join("\n")
+}
+
+fn read_confined_import(raw: &str, base_dir: &Path) -> Option<String> {
+    let candidate = Path::new(raw);
+    if candidate.is_absolute() {
+        tracing::warn!(import = raw, "rejected @import: absolute path");
+        return None;
+    }
+
+    let joined = base_dir.join(candidate);
+    let canonical_target = std::fs::canonicalize(&joined).ok()?;
+    let canonical_base = std::fs::canonicalize(base_dir).ok()?;
+    if !canonical_target.starts_with(&canonical_base) {
+        tracing::warn!(
+            import = raw,
+            "rejected @import: resolves outside base directory"
+        );
+        return None;
+    }
+
+    let metadata = std::fs::metadata(&canonical_target).ok()?;
+    if metadata.len() > MAX_IMPORT_BYTES {
+        tracing::warn!(
+            import = raw,
+            size = metadata.len(),
+            "rejected @import: file exceeds size cap"
+        );
+        return None;
+    }
+
+    std::fs::read_to_string(&canonical_target).ok()
 }
 
 #[cfg(test)]
@@ -206,6 +250,48 @@ mod tests {
         let content = "  @import extra.md";
         let result = resolve_imports(content, &tmp);
         assert!(result.contains("extra rules"));
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn resolve_imports_rejects_absolute_path() {
+        let tmp = tmp_dir("import_abs");
+        // Even if /etc/passwd exists on the host, an absolute path must be
+        // rejected outright so a hostile CLAUDE.md cannot exfiltrate it.
+        let content = "before\n@import /etc/passwd\nafter";
+        let result = resolve_imports(content, &tmp);
+        assert!(result.contains("before"));
+        assert!(result.contains("after"));
+        assert!(!result.contains("root:"));
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn resolve_imports_rejects_parent_traversal() {
+        let outer = tmp_dir("import_outer");
+        let inner = outer.join("inner");
+        fs::create_dir_all(&inner).unwrap();
+        fs::write(outer.join("secret.md"), "should not leak").unwrap();
+        fs::write(inner.join("ok.md"), "fine").unwrap();
+
+        let content = "@import ../secret.md\n@import ok.md";
+        let result = resolve_imports(content, &inner);
+        assert!(!result.contains("should not leak"));
+        assert!(result.contains("fine"));
+        let _ = fs::remove_dir_all(&outer);
+    }
+
+    #[test]
+    fn resolve_imports_drops_oversized_file() {
+        let tmp = tmp_dir("import_huge");
+        let big = "X".repeat((MAX_IMPORT_BYTES as usize) + 1);
+        fs::write(tmp.join("big.md"), &big).unwrap();
+
+        let content = "head\n@import big.md\ntail";
+        let result = resolve_imports(content, &tmp);
+        assert!(result.contains("head"));
+        assert!(result.contains("tail"));
+        assert!(!result.contains("XXXX"));
         let _ = fs::remove_dir_all(&tmp);
     }
 }
