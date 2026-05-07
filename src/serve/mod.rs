@@ -49,9 +49,32 @@ pub async fn cmd_serve(
             anyhow::anyhow!("auth token required: pass --auth-token or set KERNEX_AUTH_TOKEN")
         })?;
 
-    if token.is_empty() {
-        anyhow::bail!("auth token cannot be empty");
+    // Reject short tokens up front. 32 bytes is roughly equivalent to a
+    // base32-encoded 160-bit secret and matches the strength we expect for
+    // any HTTP bearer over the network. A short, guessable token here
+    // would trivially bypass the entire serve auth boundary.
+    const MIN_AUTH_TOKEN_LEN: usize = 32;
+    if token.len() < MIN_AUTH_TOKEN_LEN {
+        anyhow::bail!(
+            "auth token must be at least {MIN_AUTH_TOKEN_LEN} bytes (got {})",
+            token.len()
+        );
     }
+
+    // Clamp the worker count to a sane upper bound. Each slot keeps a
+    // long-lived runtime + provider client around, so very large values
+    // are almost certainly a typo (e.g. `--workers 1000`) and would chew
+    // through file descriptors and memory before doing useful work.
+    const MAX_WORKERS: usize = 256;
+    if workers == 0 {
+        anyhow::bail!("--workers must be >= 1");
+    }
+    let workers = if workers > MAX_WORKERS {
+        tracing::warn!("requested --workers {workers} exceeds cap of {MAX_WORKERS}; clamping");
+        MAX_WORKERS
+    } else {
+        workers
+    };
 
     let serve_data_dir = data_dir_for("serve");
     let db_arc = match db::JobDb::init(&serve_data_dir) {
