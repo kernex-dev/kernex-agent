@@ -1,6 +1,6 @@
 [package]
 name = "kernex-agent"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 rust-version = "1.74"
 description = "CLI dev assistant powered by Kernex runtime"
@@ -17,10 +17,10 @@ name = "kx"
 path = "src/main.rs"
 
 [dependencies]
-kernex-runtime = "0.4"
-kernex-core = "0.4"
-kernex-providers = "0.4"
-kernex-pipelines = "0.4"
+kernex-runtime = "0.4.1"
+kernex-core = "0.4.1"
+kernex-providers = "0.4.1"
+kernex-pipelines = "0.4.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "rt", "net", "signal"] }
 clap = { version = "4", features = ["derive", "env"] }
 colored = "2"
@@ -31,7 +31,7 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 sha2 = "0.10"
 ureq = "2"
-kernex-sandbox = "0.4"
+kernex-sandbox = "0.4.1"
 tracing = "0.1"
 async-trait = "0.1"
 serde_json = "1"
@@ -48,3 +48,17 @@ anyhow = "1"
 # RAII cleanup. Avoids races when tests run in parallel and the prior
 # `temp_dir().join("__kx_xxx__")` pattern was reused across cases.
 tempfile = "3"
+
+# Development-time override pointing at the sibling kernex-dev workspace.
+# Active only when both repos are checked out side-by-side; CI and
+# crates.io consumers ignore this section because [patch] only affects the
+# workspace doing the building. The override exists so kx can track
+# unpublished kernex-dev API additions (e.g. RuntimeBuilder::auto_compact
+# from kernex-dev 0.4.1) without waiting for a release. Remove this block
+# once the matching kernex-dev version is published.
+[patch.crates-io]
+kernex-runtime = { path = "../kernex-dev/crates/kernex-runtime" }
+kernex-core = { path = "../kernex-dev/crates/kernex-core" }
+kernex-providers = { path = "../kernex-dev/crates/kernex-providers" }
+kernex-pipelines = { path = "../kernex-dev/crates/kernex-pipelines" }
+kernex-sandbox = { path = "../kernex-dev/crates/kernex-sandbox" }
