@@ -128,7 +128,7 @@ pub(crate) struct ProviderFlags {
 
 async fn cmd_skills(action: SkillsAction) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
-    let project_config = config::ProjectConfig::load(&cwd);
+    let project_config = config::ProjectConfig::load(&cwd)?;
     let project_name = stack::project_name(&cwd);
     let data_dir = data_dir_for(&project_name);
     let policy = project_config.skills_policy();
@@ -175,7 +175,7 @@ pub(crate) fn context_needs(no_memory: bool) -> ContextNeeds {
 
 async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
-    let project_config = config::ProjectConfig::load(&cwd);
+    let project_config = config::ProjectConfig::load(&cwd)?;
     let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
     let project_name = flags
         .project
@@ -470,10 +470,12 @@ pub(crate) fn build_provider(
         .clone()
         .or_else(|| config.provider.as_ref().and_then(|pc| pc.model.clone()));
 
+    // API keys come from `--api-key` or per-provider env vars only. We
+    // intentionally do not honor an `api_key` field in `.kx.toml` so secrets
+    // never get committed alongside repo configuration.
     let api_key = flags
         .api_key
         .clone()
-        .or_else(|| config.provider.as_ref().and_then(|pc| pc.api_key.clone()))
         .or_else(|| env_api_key(&provider_name));
 
     let base_url = flags
@@ -663,7 +665,7 @@ async fn cmd_init() -> anyhow::Result<()> {
 
 async fn cmd_pipeline(action: PipelineAction, flags: &ProviderFlags) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
-    let project_config = config::ProjectConfig::load(&cwd);
+    let project_config = config::ProjectConfig::load(&cwd)?;
     let project_name = stack::project_name(&cwd);
     let data_dir = data_dir_for(&project_name);
 
@@ -847,7 +849,7 @@ async fn run_oneshot_command(
     build_prompt: impl FnOnce(stack::Stack, &str) -> String,
 ) -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
-    let project_config = config::ProjectConfig::load(&cwd);
+    let project_config = config::ProjectConfig::load(&cwd)?;
     let detected_stack = project_config.resolve_stack(stack::detect(&cwd));
     let project_name = stack::project_name(&cwd);
     let data_dir = data_dir_for(&project_name);
