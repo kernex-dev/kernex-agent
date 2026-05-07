@@ -132,6 +132,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn max_retries_is_nonzero() {
         assert!(MAX_RETRIES > 0);
     }
