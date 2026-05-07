@@ -65,6 +65,8 @@ pub enum Command {
     Docs,
     /// Initialize kx for current project (installs builtin skills)
     Init,
+    /// Diagnose the local install: provider availability, env vars, data dir
+    Doctor,
     /// Run a multi-agent pipeline
     Pipeline {
         #[command(subcommand)]

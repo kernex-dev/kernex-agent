@@ -78,6 +78,7 @@ async fn run() -> anyhow::Result<()> {
         Some(Command::Audit) => cmd_audit(&provider_flags).await,
         Some(Command::Docs) => cmd_docs(&provider_flags).await,
         Some(Command::Init) => cmd_init().await,
+        Some(Command::Doctor) => cmd_doctor(&provider_flags).await,
         Some(Command::Pipeline { action }) => cmd_pipeline(action, &provider_flags).await,
         Some(Command::Skills { action }) => cmd_skills(action).await,
         Some(Command::Cron { action }) => cmd_cron(action).await,
@@ -712,6 +713,89 @@ async fn cmd_init() -> anyhow::Result<()> {
         "Skills:".dimmed()
     );
     println!("\n  Run {} to start coding.\n", "kx dev".cyan());
+    Ok(())
+}
+
+/// Diagnose the local kx install. Reports binary version, project + stack
+/// detection, data dir status, `.kx.toml` parse health, the per-provider
+/// API-key matrix (which env vars are set), and an availability probe of the
+/// active provider. Surfaces the common case where a stale `KERNEX_*_API_KEY`
+/// export shadows a saved config or where the configured provider's CLI/SDK
+/// is simply not reachable.
+async fn cmd_doctor(flags: &ProviderFlags) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let project_name = flags
+        .project
+        .clone()
+        .unwrap_or_else(|| stack::project_name(&cwd));
+    let detected = stack::detect(&cwd);
+    let data_dir = data_dir_for(&project_name);
+
+    println!("\n  {}", "kx doctor".bold());
+    println!("  {} {}", "version:".dimmed(), env!("CARGO_PKG_VERSION"));
+    if let Ok(exe) = std::env::current_exe() {
+        println!("  {} {}", "binary:".dimmed(), exe.display());
+    }
+
+    println!("\n  {}", "Project".bold());
+    println!("  {} {}", "cwd:".dimmed(), cwd.display());
+    println!("  {} {project_name}", "name:".dimmed());
+    println!("  {} {detected}", "stack:".dimmed());
+    println!("  {} {}", "data dir:".dimmed(), data_dir.display());
+    if data_dir.exists() {
+        println!("  {} present", "data dir status:".dimmed());
+    } else {
+        println!(
+            "  {} missing — run {} to bootstrap",
+            "WARN".yellow().bold(),
+            "kx init".cyan()
+        );
+    }
+
+    let kx_toml = cwd.join(".kx.toml");
+    if kx_toml.exists() {
+        match config::ProjectConfig::load(&cwd) {
+            Ok(_) => println!("  {} .kx.toml parses cleanly", "OK".green().bold()),
+            Err(e) => println!("  {} .kx.toml: {e}", "FAIL".red().bold()),
+        }
+    } else {
+        println!("  {} no .kx.toml (using defaults)", "info:".dimmed());
+    }
+
+    println!("\n  {}", "Providers".bold());
+    let active_name = flags.name.as_str();
+    for spec in PROVIDERS {
+        let marker = if spec.name == active_name { "*" } else { " " };
+        let key_status = match spec.api_key_env {
+            None => "(no API key required)".dimmed().to_string(),
+            Some(env_var) => match std::env::var(env_var) {
+                Ok(v) if !v.is_empty() => format!("{} via {env_var}", "set".green()),
+                _ => format!("{} ({env_var} unset)", "missing".yellow()),
+            },
+        };
+        println!("  {marker} {:<12} {key_status}", spec.name);
+    }
+
+    println!("\n  {}", "Active provider check".bold());
+    let project_config = config::ProjectConfig::load(&cwd).unwrap_or_default();
+    match build_provider(flags, &project_config) {
+        Ok((provider, label)) => {
+            println!("  {} {label}", "selected:".dimmed());
+            match check_provider(provider.as_ref()).await {
+                Ok(()) => {
+                    println!("  {} provider is reachable", "OK".green().bold());
+                }
+                Err(e) => {
+                    println!("  {} {e}", "FAIL".red().bold());
+                }
+            }
+        }
+        Err(e) => {
+            println!("  {} could not build provider: {e}", "FAIL".red().bold());
+        }
+    }
+
+    println!();
     Ok(())
 }
 
