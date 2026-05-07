@@ -498,7 +498,18 @@ pub(crate) fn build_provider(
         .clone()
         .or_else(|| config.provider.as_ref().and_then(|pc| pc.base_url.clone()));
 
-    let cwd = std::env::current_dir().ok();
+    // current_dir() failing is unusual (parent dir deleted, permissions
+    // changed under us) but real. We let it fall through to None because
+    // most providers can still operate without a workspace path; the
+    // claude-code provider degrades to no --working-dir flag. Log so
+    // diagnostic context isn't lost when something downstream complains.
+    let cwd = match std::env::current_dir() {
+        Ok(d) => Some(d),
+        Err(e) => {
+            tracing::warn!("current_dir() failed: {e}; provider workspace will be unset");
+            None
+        }
+    };
 
     let label = display_model(&provider_name, model.as_deref());
 
@@ -1348,9 +1359,19 @@ async fn execute_single_phase(
 }
 
 pub(crate) fn data_dir_for(project_name: &str) -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".kx")
-        .join("projects")
-        .join(project_name)
+    let base = match dirs::home_dir() {
+        Some(home) => home,
+        None => {
+            // No HOME (stripped containers, init scripts running as a
+            // service account, etc.). Falling back to "." would scatter
+            // memory.db / skills.toml / jobs.db into the user's project
+            // directory and risk committing them. Use /tmp instead and
+            // warn so the operator notices.
+            tracing::warn!(
+                "dirs::home_dir() returned None; falling back to /tmp/.kx (set HOME explicitly)"
+            );
+            PathBuf::from("/tmp")
+        }
+    };
+    base.join(".kx").join("projects").join(project_name)
 }
