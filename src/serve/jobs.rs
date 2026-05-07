@@ -40,7 +40,7 @@ pub struct JobRequest {
     pub base_url: Option<String>,
     pub project: Option<String>,
     pub channel: Option<String>,
-    pub max_turns: Option<usize>,
+    pub max_tokens: Option<u32>,
     pub verbose: bool,
     /// Named skills to activate for this job (Level 1 metadata injected into prompt).
     pub skills: Option<Vec<String>>,

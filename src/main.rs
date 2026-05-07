@@ -52,7 +52,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         base_url: cli.base_url.clone(),
         project: cli.project.clone(),
         channel: cli.channel.clone(),
-        max_turns: cli.max_turns,
+        max_tokens: cli.max_tokens,
         no_memory: cli.no_memory,
         verbose: cli.verbose,
     };
@@ -106,7 +106,7 @@ pub(crate) struct ProviderFlags {
     pub(crate) base_url: Option<String>,
     pub(crate) project: Option<String>,
     pub(crate) channel: Option<String>,
-    pub(crate) max_turns: Option<usize>,
+    pub(crate) max_tokens: Option<u32>,
     pub(crate) no_memory: bool,
     pub(crate) verbose: bool,
 }
@@ -464,9 +464,8 @@ pub(crate) fn build_provider(
         api_key,
         model,
         max_tokens: flags
-            .max_turns
-            .map(|n| n as u32)
-            .or_else(|| config.provider.as_ref().and_then(|pc| pc.max_turns)),
+            .max_tokens
+            .or_else(|| config.provider.as_ref().and_then(|pc| pc.max_tokens)),
         workspace_path: cwd,
         ..Default::default()
     };

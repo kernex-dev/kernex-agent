@@ -226,8 +226,8 @@ fn print_config(runtime: &Runtime, detected_stack: Stack, config: &ProjectConfig
         if let Some(model) = &pc.model {
             println!("  {} {model}", "Model:".dimmed());
         }
-        if let Some(turns) = pc.max_turns {
-            println!("  {} {turns}", "Max turns:".dimmed());
+        if let Some(tokens) = pc.max_tokens {
+            println!("  {} {tokens}", "Max tokens:".dimmed());
         }
         if let Some(timeout) = pc.timeout_secs {
             println!("  {} {timeout}s", "Timeout:".dimmed());

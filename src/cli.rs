@@ -36,9 +36,9 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub channel: Option<String>,
 
-    /// Max agentic loop turns per request (default: 50)
+    /// Max response tokens per provider request (default: provider-specific)
     #[arg(long, global = true)]
-    pub max_turns: Option<usize>,
+    pub max_tokens: Option<u32>,
 
     /// Disable persistent memory for this session
     #[arg(long, global = true)]
@@ -551,9 +551,9 @@ mod tests {
     }
 
     #[test]
-    fn cli_parses_max_turns_flag() {
-        let cli = Cli::try_parse_from(["kx", "--max-turns", "20", "dev"]).unwrap();
-        assert_eq!(cli.max_turns, Some(20));
+    fn cli_parses_max_tokens_flag() {
+        let cli = Cli::try_parse_from(["kx", "--max-tokens", "2048", "dev"]).unwrap();
+        assert_eq!(cli.max_tokens, Some(2048));
     }
 
     #[test]
@@ -575,6 +575,6 @@ mod tests {
         assert!(!cli.verbose);
         assert!(cli.project.is_none());
         assert!(cli.channel.is_none());
-        assert!(cli.max_turns.is_none());
+        assert!(cli.max_tokens.is_none());
     }
 }
