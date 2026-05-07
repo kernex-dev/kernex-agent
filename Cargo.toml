@@ -1,6 +1,6 @@
 [package]
 name = "kernex-agent"
-version = "0.4.4"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.74"
 description = "CLI dev assistant powered by Kernex runtime"
@@ -17,10 +17,10 @@ name = "kx"
 path = "src/main.rs"
 
 [dependencies]
-kernex-runtime = "0.4.2"
-kernex-core = "0.4.2"
-kernex-providers = "0.4.2"
-kernex-pipelines = "0.4.2"
+kernex-runtime = "0.5.0"
+kernex-core = "0.5.0"
+kernex-providers = "0.5.0"
+kernex-pipelines = "0.5.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "rt", "net", "signal"] }
 clap = { version = "4", features = ["derive", "env"] }
 colored = "2"
@@ -31,7 +31,7 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 sha2 = "0.10"
 ureq = "2"
-kernex-sandbox = "0.4.2"
+kernex-sandbox = "0.5.0"
 tracing = "0.1"
 async-trait = "0.1"
 serde_json = "1"
