@@ -358,7 +358,7 @@ mod tests {
     fn health_response_serializes_with_jobs() {
         let r = HealthResponse {
             status: "ok",
-            version: "0.4.0",
+            version: env!("CARGO_PKG_VERSION"),
             jobs: JobStats {
                 queued: 1,
                 running: 2,
@@ -370,7 +370,7 @@ mod tests {
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains("\"status\":\"ok\""));
-        assert!(json.contains("\"version\":\"0.4.0\""));
+        assert!(json.contains(&format!("\"version\":\"{}\"", env!("CARGO_PKG_VERSION"))));
         assert!(json.contains("\"jobs\":{"));
         assert!(json.contains("\"total\":7"));
     }
