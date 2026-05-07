@@ -278,7 +278,7 @@ fn verify_webhook_hmac(
         )
     })?;
 
-    let sig_bytes = hex_decode(hex).ok_or_else(|| {
+    let sig_bytes = utils::hex_decode(hex).ok_or_else(|| {
         (
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
@@ -316,16 +316,6 @@ fn is_valid_webhook_event(event: &str) -> bool {
     event
         .bytes()
         .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-}
-
-fn hex_decode(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
-        return None;
-    }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
-        .collect()
 }
 
 #[cfg(test)]
@@ -428,20 +418,6 @@ mod tests {
         let raw = r#"{"message":"deploy"}"#;
         let body: WebhookBody = serde_json::from_str(raw).unwrap();
         assert_eq!(body.message, Some("deploy".to_string()));
-    }
-
-    #[test]
-    fn hex_decode_valid() {
-        assert_eq!(hex_decode("deadbeef"), Some(vec![0xde, 0xad, 0xbe, 0xef]));
-        assert_eq!(hex_decode(""), Some(vec![]));
-        assert_eq!(hex_decode("00ff"), Some(vec![0x00, 0xff]));
-    }
-
-    #[test]
-    fn hex_decode_invalid() {
-        assert_eq!(hex_decode("xyz"), None); // odd length
-        assert_eq!(hex_decode("zz"), None); // non-hex chars
-        assert_eq!(hex_decode("abc"), None); // odd length
     }
 
     #[test]
