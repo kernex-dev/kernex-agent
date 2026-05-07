@@ -407,7 +407,7 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
         skills::build_serve_system_prompt(skill_names, &data_dir, req.mode.as_deref());
 
     let runtime = RuntimeBuilder::new()
-        .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
+        .data_dir(&data_dir.to_string_lossy())
         .system_prompt(&system_prompt)
         .channel(channel)
         .project(project_name)

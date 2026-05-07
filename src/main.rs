@@ -210,7 +210,7 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
 
     let runtime = Arc::new(
         RuntimeBuilder::new()
-            .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
+            .data_dir(&data_dir.to_string_lossy())
             .system_prompt(&system_prompt)
             .channel(flags.channel.as_deref().unwrap_or("cli"))
             .project(&project_name)
@@ -723,8 +723,8 @@ async fn cmd_pipeline(action: PipelineAction, flags: &ProviderFlags) -> anyhow::
 
     match action {
         PipelineAction::Run { name } => {
-            let data_str = data_dir.to_str().unwrap_or("~/.kx");
-            let loaded = kernex_pipelines::load_topology(data_str, &name)?;
+            let data_str = data_dir.to_string_lossy();
+            let loaded = kernex_pipelines::load_topology(&data_str, &name)?;
 
             println!(
                 "{} {} (v{})",
@@ -752,7 +752,7 @@ async fn cmd_pipeline(action: PipelineAction, flags: &ProviderFlags) -> anyhow::
                 std::collections::HashMap::new();
             for phase in &loaded.topology.phases {
                 build_agent_runtime(
-                    data_str,
+                    &data_str,
                     &loaded,
                     &phase.agent,
                     &project_name,
@@ -762,7 +762,7 @@ async fn cmd_pipeline(action: PipelineAction, flags: &ProviderFlags) -> anyhow::
                 if phase.phase_type == kernex_pipelines::PhaseType::CorrectiveLoop {
                     if let Some(ref retry) = phase.retry {
                         build_agent_runtime(
-                            data_str,
+                            &data_str,
                             &loaded,
                             &retry.fix_agent,
                             &project_name,
@@ -912,7 +912,7 @@ async fn run_oneshot_command(
     let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
 
     let runtime = RuntimeBuilder::new()
-        .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
+        .data_dir(&data_dir.to_string_lossy())
         .system_prompt(&system_prompt)
         .channel(channel)
         .project(&project_name)
@@ -958,7 +958,7 @@ async fn cmd_cron(action: CronAction) -> anyhow::Result<()> {
     let data_dir = data_dir_for(&project_name);
 
     let runtime = RuntimeBuilder::new()
-        .data_dir(data_dir.to_str().unwrap_or("~/.kx"))
+        .data_dir(&data_dir.to_string_lossy())
         .system_prompt("")
         .channel("cron")
         .project(&project_name)
