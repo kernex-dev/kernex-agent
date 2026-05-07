@@ -130,6 +130,10 @@ pub enum SkillsAction {
         /// Trust level to assign (sandboxed, standard, trusted)
         #[arg(short, long, default_value = "sandboxed")]
         trust: String,
+        /// Replace an existing skill of the same name even if it came from
+        /// a different source. Required to shadow a trusted builtin.
+        #[arg(long)]
+        force: bool,
     },
     /// Remove an installed skill
     Remove {
@@ -321,7 +325,12 @@ mod tests {
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         if let Some(Command::Skills { action }) = cli.command {
-            if let SkillsAction::Add { source, trust } = action {
+            if let SkillsAction::Add {
+                source,
+                trust,
+                force: _,
+            } = action
+            {
                 assert_eq!(source, "acme/repo");
                 assert_eq!(trust, "sandboxed");
             } else {
@@ -338,7 +347,12 @@ mod tests {
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         if let Some(Command::Skills { action }) = cli.command {
-            if let SkillsAction::Add { source, trust } = action {
+            if let SkillsAction::Add {
+                source,
+                trust,
+                force: _,
+            } = action
+            {
                 assert_eq!(source, "acme/repo");
                 assert_eq!(trust, "trusted");
             } else {

@@ -145,11 +145,13 @@ async fn cmd_skills(action: SkillsAction) -> anyhow::Result<()> {
             skills::cli_handler::list_skills(&data_dir).await;
             Ok(())
         }
-        SkillsAction::Add { source, trust } => {
-            skills::cli_handler::add_skill(&data_dir, &source, &trust, &policy)
-                .await
-                .map_err(anyhow::Error::msg)
-        }
+        SkillsAction::Add {
+            source,
+            trust,
+            force,
+        } => skills::cli_handler::add_skill(&data_dir, &source, &trust, &policy, force)
+            .await
+            .map_err(anyhow::Error::msg),
         SkillsAction::Remove { name } => skills::cli_handler::remove_skill(&data_dir, &name)
             .await
             .map_err(anyhow::Error::msg),

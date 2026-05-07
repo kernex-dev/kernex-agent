@@ -218,6 +218,15 @@ async fn run_worker(
     db: Option<Arc<db::JobDb>>,
     semaphore: Arc<Semaphore>,
 ) {
+    // Track the JoinHandle for every spawned job so a graceful shutdown can
+    // await them before returning. Without this, axum::serve exits as soon
+    // as rx.recv() returns None, then run_worker returns, and the runtime
+    // drops every in-flight execute_job future mid-completion: the final
+    // set_status (and the SQLite UPDATE) never run, the provider response
+    // is lost, and the boot-time mark_running_as_failed sweep papers over
+    // it on the next start. The JoinSet here is the missing drain step.
+    let mut joinset: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
+
     while let Some(req) = rx.recv().await {
         // Acquire the worker permit *before* spawning so we apply real
         // back-pressure: when all `workers` slots are busy, recv() blocks
@@ -228,27 +237,43 @@ async fn run_worker(
         let permit = match semaphore.clone().acquire_owned().await {
             Ok(p) => p,
             Err(_) => {
-                // Semaphore was closed (only happens during shutdown). Stop
-                // pulling new work; the channel will drain on its own as
-                // senders are dropped.
                 tracing::warn!("worker semaphore closed; stopping pull loop");
-                return;
+                break;
             }
         };
         let jobs_clone = jobs.clone();
         let db_clone = db.clone();
-        tokio::spawn(async move {
+        joinset.spawn(async move {
             // Hold the permit for the duration of the job; drop on completion.
             let _permit = permit;
             execute_job(req, jobs_clone, db_clone).await;
         });
+    }
+
+    // rx closed => shutdown signal. Drain in-flight jobs with a per-task
+    // budget so a stuck provider can't block forever; whatever doesn't
+    // finish in time will be picked up by the next start's
+    // mark_running_as_failed sweep.
+    const SHUTDOWN_DRAIN_SECS: u64 = 30;
+    let drain_deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(SHUTDOWN_DRAIN_SECS);
+    while joinset.join_next().await.is_some() {
+        if std::time::Instant::now() >= drain_deadline {
+            tracing::warn!(
+                in_flight = joinset.len(),
+                "shutdown drain timeout reached; aborting remaining jobs"
+            );
+            joinset.abort_all();
+            while joinset.join_next().await.is_some() {}
+            break;
+        }
     }
 }
 
 async fn execute_job(req: JobRequest, jobs: JobStore, db: Option<Arc<db::JobDb>>) {
     set_status(
         &jobs,
-        db.as_deref(),
+        db.clone(),
         &req.job_id,
         JobStatus::Running,
         None,
@@ -278,11 +303,11 @@ async fn execute_job(req: JobRequest, jobs: JobStore, db: Option<Arc<db::JobDb>>
 
     match result {
         Ok((output, status)) => {
-            set_status(&jobs, db.as_deref(), &id, status, Some(output), None).await;
+            set_status(&jobs, db.clone(), &id, status, Some(output), None).await;
         }
         Err(e) => {
             tracing::warn!(job_id = %id, error = %e, "job failed");
-            set_status(&jobs, db.as_deref(), &id, JobStatus::Failed, None, Some(e)).await;
+            set_status(&jobs, db.clone(), &id, JobStatus::Failed, None, Some(e)).await;
         }
     }
 }
@@ -438,7 +463,7 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
 
 async fn set_status(
     jobs: &JobStore,
-    db: Option<&db::JobDb>,
+    db: Option<Arc<db::JobDb>>,
     job_id: &str,
     status: JobStatus,
     output: Option<String>,
@@ -468,13 +493,22 @@ async fn set_status(
         }
     }
     if let Some(db) = db {
-        db.update_status(
-            job_id,
-            &status,
-            output.as_deref(),
-            error.as_deref(),
-            finished_at.as_deref(),
-        );
+        // SQLite update_status takes a sync Mutex across an UPDATE; punt off
+        // the tokio worker thread.
+        let job_id = job_id.to_string();
+        let status_owned = status;
+        let finished_at_owned = finished_at;
+        tokio::task::spawn_blocking(move || {
+            db.update_status(
+                &job_id,
+                &status_owned,
+                output.as_deref(),
+                error.as_deref(),
+                finished_at_owned.as_deref(),
+            );
+        })
+        .await
+        .ok();
     }
 }
 
