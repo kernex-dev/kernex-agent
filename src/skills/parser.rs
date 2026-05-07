@@ -310,15 +310,15 @@ pub fn validate_skill_name(name: &str) -> Result<(), SkillParseError> {
         ));
     }
 
-    // Must start and end with alphanumeric
-    let first = name.as_bytes()[0];
-    if !first.is_ascii_alphanumeric() {
+    // Must start and end with alphanumeric. Hyphens are allowed in the
+    // middle but never at the boundary; see the per-char loop below for
+    // the rest of the character-set check.
+    if !name.starts_with(|c: char| c.is_ascii_alphanumeric()) {
         return Err(SkillParseError::InvalidName(
             "name must start with an alphanumeric character".to_string(),
         ));
     }
-    let last = name.as_bytes()[name.len() - 1];
-    if !last.is_ascii_alphanumeric() {
+    if !name.ends_with(|c: char| c.is_ascii_alphanumeric()) {
         return Err(SkillParseError::InvalidName(
             "name must end with an alphanumeric character".to_string(),
         ));
