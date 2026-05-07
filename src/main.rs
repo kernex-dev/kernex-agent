@@ -70,6 +70,7 @@ async fn run() -> anyhow::Result<()> {
         channel: cli.channel.clone(),
         max_tokens: cli.max_tokens,
         no_memory: cli.no_memory,
+        auto_compact: !cli.no_auto_compact,
         verbose: cli.verbose,
     };
 
@@ -125,6 +126,10 @@ pub(crate) struct ProviderFlags {
     pub(crate) channel: Option<String>,
     pub(crate) max_tokens: Option<u32>,
     pub(crate) no_memory: bool,
+    /// When true, the runtime summarizes overflow context instead of
+    /// silently dropping it. Defaults to true; user can disable with
+    /// `--no-auto-compact`.
+    pub(crate) auto_compact: bool,
     pub(crate) verbose: bool,
 }
 
@@ -215,6 +220,7 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
             .system_prompt(&system_prompt)
             .channel(flags.channel.as_deref().unwrap_or("cli"))
             .project(&project_name)
+            .auto_compact(flags.auto_compact)
             .hook_runner(Arc::new(CliHookRunner {
                 verbose: flags.verbose,
             }))
@@ -1000,6 +1006,7 @@ async fn run_oneshot_command(
         .system_prompt(&system_prompt)
         .channel(channel)
         .project(&project_name)
+        .auto_compact(flags.auto_compact)
         .hook_runner(Arc::new(CliHookRunner {
             verbose: flags.verbose,
         }))

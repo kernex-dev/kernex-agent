@@ -44,6 +44,15 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub no_memory: bool,
 
+    /// Disable automatic conversation summarization on overflow.
+    /// kx defaults to summarizing the oldest messages when a session
+    /// exceeds the runtime's context cap; pass --no-auto-compact to
+    /// fall back to the kernex-runtime default behavior (silent drop)
+    /// for cost reasons or when running against a provider where the
+    /// extra summarization round-trip is undesirable.
+    #[arg(long, global = true)]
+    pub no_auto_compact: bool,
+
     /// Print tool calls and hook events to stderr
     #[arg(long, global = true)]
     pub verbose: bool,
