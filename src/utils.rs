@@ -28,6 +28,19 @@ pub fn iso_timestamp() -> String {
     format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
 }
 
+/// Decode a lowercase / uppercase hex string into bytes. Returns `None`
+/// for odd-length input or any non-hex character. Used by webhook HMAC
+/// signature verification.
+pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -40,5 +53,19 @@ mod tests {
         assert_eq!(&ts[4..5], "-");
         assert_eq!(&ts[7..8], "-");
         assert_eq!(&ts[10..11], "T");
+    }
+
+    #[test]
+    fn hex_decode_valid() {
+        assert_eq!(hex_decode("deadbeef"), Some(vec![0xde, 0xad, 0xbe, 0xef]));
+        assert_eq!(hex_decode(""), Some(vec![]));
+        assert_eq!(hex_decode("00ff"), Some(vec![0x00, 0xff]));
+    }
+
+    #[test]
+    fn hex_decode_invalid() {
+        assert_eq!(hex_decode("xyz"), None); // odd length
+        assert_eq!(hex_decode("zz"), None); // non-hex chars
+        assert_eq!(hex_decode("abc"), None); // odd length
     }
 }
