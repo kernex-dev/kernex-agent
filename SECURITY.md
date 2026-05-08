@@ -19,8 +19,8 @@ recommended remediation; backports are not provided.
 
 | Version | Supported |
 |---------|-----------|
-| 0.4.x   | Yes       |
-| < 0.4   | No        |
+| 0.5.x   | Yes       |
+| < 0.5   | No        |
 
 ## Security Model
 
@@ -81,3 +81,17 @@ release and bundled at build time, so they do not present a runtime
 fetch attack surface, but they also do not require operator
 confirmation. If you do not want builtins on a host, either skip
 `kx init` for that project or run `kx skills remove <name>` after init.
+
+### Filesystem permissions are enforced on Unix only
+
+`kx serve` chmods its SQLite job database to `0o600` and its data
+directory to `0o700` at startup so other local accounts cannot read
+queued messages, provider responses, or webhook payloads. This
+hardening is `#[cfg(unix)]` only; on Windows the equivalent ACL
+restrictions are not applied today, and the files inherit whatever
+default ACL the parent directory grants.
+
+Guidance: if you run `kx serve` on Windows, treat the data directory
+(`%LOCALAPPDATA%\kernex\projects\serve\`) as needing manual ACL
+hardening, or run the daemon under a dedicated low-privilege user
+whose profile is not readable by others.
