@@ -111,28 +111,7 @@ pub async fn cmd_serve(
     let semaphore = Arc::new(Semaphore::new(workers));
     let worker_handle = tokio::spawn(run_worker(rx, job_store, db_arc, semaphore));
 
-    let protected = Router::new()
-        .route("/run", post(routes::handle_run))
-        .route("/jobs", get(routes::handle_list_jobs))
-        .route("/jobs/{id}", get(routes::handle_get_job))
-        .route("/webhook/{event}", post(routes::handle_webhook))
-        .route_layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            auth_middleware,
-        ));
-
-    // Cap every request body at 1 MiB at the router layer. /run already
-    // performs a stricter 64 KiB check on its `message` field inside the
-    // handler; this ceiling protects /webhook/{event} (which reads
-    // raw Bytes) and any future endpoint from a flood of arbitrarily
-    // large bodies (status pages, attacker payloads, accidental file uploads).
-    const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
-
-    let app = Router::new()
-        .route("/health", get(routes::handle_health))
-        .merge(protected)
-        .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
-        .with_state(state);
+    let app = build_app(state, MAX_REQUEST_BODY_BYTES);
 
     let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
@@ -154,6 +133,34 @@ pub async fn cmd_serve(
     }
     tracing::info!("kx serve: stopped");
     Ok(())
+}
+
+// Cap every request body at 1 MiB at the router layer. /run already
+// performs a stricter 64 KiB check on its `message` field inside the
+// handler; this ceiling protects /webhook/{event} (which reads raw
+// Bytes) and any future endpoint from a flood of arbitrarily large
+// bodies (status pages, attacker payloads, accidental file uploads).
+pub(crate) const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
+
+/// Build the Axum router used by `kx serve`. Extracted from `cmd_serve`
+/// so integration tests can exercise the router (and the auth + body
+/// limit layers) without spinning up a real TCP listener or worker.
+pub(crate) fn build_app(state: AppState, max_body_bytes: usize) -> Router {
+    let protected = Router::new()
+        .route("/run", post(routes::handle_run))
+        .route("/jobs", get(routes::handle_list_jobs))
+        .route("/jobs/{id}", get(routes::handle_get_job))
+        .route("/webhook/{event}", post(routes::handle_webhook))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
+
+    Router::new()
+        .route("/health", get(routes::handle_health))
+        .merge(protected)
+        .layer(DefaultBodyLimit::max(max_body_bytes))
+        .with_state(state)
 }
 
 /// Future that completes on the first OS shutdown signal we observe.
@@ -648,5 +655,259 @@ mod tests {
     #[test]
     fn is_verdict_flagged_non_json_no_ship_it() {
         assert!(is_verdict_flagged("Something went wrong with the output."));
+    }
+
+    // -- HTTP boundary tests for `kx serve` ---------------------------
+    //
+    // These exercise the Axum router built by `build_app` via tower's
+    // `ServiceExt::oneshot`. They cover the auth + body-limit + webhook
+    // fail-closed paths without spinning up a real TCP listener or a
+    // worker pool.
+
+    use axum::body::Body;
+    use axum::http::{header, Method, Request, StatusCode};
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    const TEST_TOKEN: &str = "test-token-must-be-at-least-32-bytes-long-yes";
+    const TEST_MAX_BODY: usize = 1024 * 1024;
+
+    fn make_test_state(token: &str) -> (AppState, mpsc::Receiver<JobRequest>) {
+        let (tx, rx) = mpsc::channel::<JobRequest>(8);
+        let flags = Arc::new(crate::ProviderFlags {
+            name: "ollama".to_string(),
+            model: None,
+            api_key: None,
+            base_url: None,
+            project: None,
+            channel: None,
+            max_tokens: None,
+            no_memory: false,
+            auto_compact: true,
+            verbose: false,
+        });
+        let state = AppState {
+            jobs: jobs::new_store(),
+            tx,
+            default_flags: flags,
+            auth_token: token.to_string(),
+            db: None,
+        };
+        (state, rx)
+    }
+
+    #[tokio::test]
+    async fn health_does_not_require_auth() {
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let app = build_app(state, TEST_MAX_BODY);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["status"], "ok");
+        assert!(json["version"].is_string());
+    }
+
+    #[tokio::test]
+    async fn jobs_rejects_missing_bearer() {
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let app = build_app(state, TEST_MAX_BODY);
+
+        let resp = app
+            .oneshot(Request::builder().uri("/jobs").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn jobs_rejects_wrong_bearer() {
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let app = build_app(state, TEST_MAX_BODY);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/jobs")
+                    .header(header::AUTHORIZATION, "Bearer not-the-real-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn jobs_with_valid_bearer_returns_empty_list() {
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let app = build_app(state, TEST_MAX_BODY);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/jobs")
+                    .header(header::AUTHORIZATION, format!("Bearer {TEST_TOKEN}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(json.is_array());
+        assert_eq!(json.as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn run_enqueues_job_with_default_provider() {
+        let (state, mut rx) = make_test_state(TEST_TOKEN);
+        let app = build_app(state, TEST_MAX_BODY);
+
+        let body = serde_json::json!({ "message": "hello" }).to_string();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/run")
+                    .header(header::AUTHORIZATION, format!("Bearer {TEST_TOKEN}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let queued = rx.try_recv().expect("expected queued job in channel");
+        assert_eq!(queued.message, "hello");
+        assert_eq!(queued.provider, "ollama");
+    }
+
+    #[tokio::test]
+    async fn run_rejects_message_above_64kib() {
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let app = build_app(state, TEST_MAX_BODY);
+
+        // 64 KiB + 1 byte; exceeds the per-handler MAX_MESSAGE_BYTES but
+        // stays below the router-level body limit.
+        let big = "a".repeat(65_537);
+        let body = serde_json::json!({ "message": big }).to_string();
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/run")
+                    .header(header::AUTHORIZATION, format!("Bearer {TEST_TOKEN}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn router_enforces_body_limit() {
+        const SMALL_LIMIT: usize = 1024;
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let app = build_app(state, SMALL_LIMIT);
+
+        let big = "a".repeat(SMALL_LIMIT + 256);
+        let body = serde_json::json!({ "message": big }).to_string();
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/run")
+                    .header(header::AUTHORIZATION, format!("Bearer {TEST_TOKEN}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn webhook_rejects_invalid_event_name() {
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let app = build_app(state, TEST_MAX_BODY);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/webhook/UPPERCASE")
+                    .header(header::AUTHORIZATION, format!("Bearer {TEST_TOKEN}"))
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn webhook_fails_closed_when_secret_unset() {
+        // Unique event name so we do not collide with an env var that
+        // some other test or the developer's shell might have set.
+        let event = "kx-test-no-secret-event-z9";
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let app = build_app(state, TEST_MAX_BODY);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(format!("/webhook/{event}"))
+                    .header(header::AUTHORIZATION, format!("Bearer {TEST_TOKEN}"))
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn webhook_rejects_missing_bearer() {
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let app = build_app(state, TEST_MAX_BODY);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/webhook/test-event")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 }

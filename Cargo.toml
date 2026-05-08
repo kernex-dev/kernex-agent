@@ -48,4 +48,9 @@ anyhow = "1"
 # RAII cleanup. Avoids races when tests run in parallel and the prior
 # `temp_dir().join("__kx_xxx__")` pattern was reused across cases.
 tempfile = "3"
+# `tests/serve_routes.rs` exercises the Axum router via tower's
+# `ServiceExt::oneshot` so we cover auth, body limits, and webhook
+# fail-closed paths without spinning up a real listener or provider.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
 
