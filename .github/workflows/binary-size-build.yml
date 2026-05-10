@@ -1,0 +1,184 @@
+# Binary-size build workflow.
+#
+# Builds the three feature-matrix variants of `kx` (minimal / default / full)
+# on Linux, captures the current size against `main`'s baseline, and uploads
+# a `size-report` artifact containing `size_report.md` and `pr_number.txt`.
+# The companion `binary-size-comment.yml` workflow consumes the artifact
+# and posts a sticky `## Binary Sizes` comment on the PR.
+#
+# Hard-fail discipline is preserved: the `default` variant still hard-fails
+# on the 15 MB ceiling via `scripts/check-size.sh`. The `minimal` variant
+# soft-warns at 8 MB. The `full` variant is informational.
+#
+# Runs as a read-only-token workflow on `pull_request`. The PR-comment
+# write-token operation lives in the separate `binary-size-comment.yml`
+# workflow that triggers on `workflow_run`.
+
+name: binary-size-build
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+concurrency:
+  group: binary-size-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build kx ${{ matrix.config.name }} (vs main)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - name: minimal
+            flags: "--no-default-features --features memory-cli"
+            mode: soft
+            limit: 8388608
+          - name: default
+            flags: ""
+            mode: hard
+            limit: 15728640
+          - name: full
+            flags: "--features agent-all,tui,serve,preset-all"
+            mode: info
+            limit: 26214400
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Build PR variant
+        run: cargo build --release --bin kx ${{ matrix.config.flags }} --locked
+
+      - name: Hard ceiling check (default variant only)
+        if: matrix.config.mode == 'hard'
+        run: bash scripts/check-size.sh ${{ matrix.config.name }} ${{ matrix.config.limit }} target/release/kx
+
+      - name: Capture PR size
+        id: pr-size
+        run: |
+          set -euo pipefail
+          SIZE=$(stat -c%s target/release/kx)
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Build main baseline
+        id: main-build
+        run: |
+          set -euo pipefail
+          PR_HEAD=$(git rev-parse HEAD)
+          git fetch origin main:refs/remotes/origin/main
+          git checkout origin/main
+          cargo build --release --bin kx ${{ matrix.config.flags }} --locked
+          MAIN_SIZE=$(stat -c%s target/release/kx)
+          git checkout "$PR_HEAD"
+          echo "size=$MAIN_SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Write size fragment
+        run: |
+          set -euo pipefail
+          PR_SIZE=${{ steps.pr-size.outputs.size }}
+          MAIN_SIZE=${{ steps.main-build.outputs.size }}
+          DELTA=$((PR_SIZE - MAIN_SIZE))
+          # pipe-separated fragment: name|pr_bytes|delta|mode|limit
+          echo "${{ matrix.config.name }}|${PR_SIZE}|${DELTA}|${{ matrix.config.mode }}|${{ matrix.config.limit }}" \
+            > size-fragment.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: size-fragment-${{ matrix.config.name }}
+          path: size-fragment.txt
+          retention-days: 1
+
+  report:
+    name: Format size report
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+          pattern: size-fragment-*
+          merge-multiple: true
+
+      - name: Compose size_report.md
+        run: |
+          set -euo pipefail
+          {
+            echo "## Binary Sizes"
+            echo ""
+            echo "| Variant | Bytes | Δ vs main | Status |"
+            echo "|---------|-------|-----------|--------|"
+            for name in minimal default full; do
+              FRAG="artifacts/size-fragment-${name}/size-fragment.txt"
+              if [ ! -f "$FRAG" ]; then
+                # try merged path
+                FRAG="artifacts/size-fragment.txt"
+              fi
+              if [ ! -f "$FRAG" ]; then
+                echo "| ${name} | (build failed) | n/a | - |"
+                continue
+              fi
+              IFS='|' read -r NAME BYTES DELTA MODE LIMIT < "$FRAG"
+              # human-readable bytes
+              MB=$(awk -v n="$BYTES" 'BEGIN{ printf "%.2f MiB", n/1048576 }')
+              # signed delta, suppressed if zero
+              if [ "$DELTA" = "0" ]; then
+                DELTA_STR="-"
+              else
+                DELTA_BYTES_HUMAN=$(awk -v n="$DELTA" 'BEGIN{ if (n>0) printf "+%d", n; else printf "%d", n }')
+                DELTA_STR="${DELTA_BYTES_HUMAN}"
+              fi
+              # status emoji-free (per project convention)
+              case "$MODE" in
+                hard)
+                  if [ "$BYTES" -gt "$LIMIT" ]; then
+                    STATUS="OVER ${LIMIT} hard"
+                  else
+                    STATUS="under hard ceiling"
+                  fi
+                  ;;
+                soft)
+                  if [ "$BYTES" -gt "$LIMIT" ]; then
+                    STATUS="over ${LIMIT} soft warn"
+                  else
+                    STATUS="under soft warn"
+                  fi
+                  ;;
+                info)
+                  STATUS="informational"
+                  ;;
+                *)
+                  STATUS="-"
+                  ;;
+              esac
+              echo "| ${NAME} | ${MB} (${BYTES}) | ${DELTA_STR} | ${STATUS} |"
+            done
+            echo ""
+            echo "*Commit: ${{ github.event.pull_request.head.sha }}*"
+          } > size_report.md
+          cat size_report.md
+
+      - name: Capture PR number
+        run: echo "${{ github.event.pull_request.number }}" > pr_number.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: size-report
+          path: |
+            size_report.md
+            pr_number.txt
+          retention-days: 7
