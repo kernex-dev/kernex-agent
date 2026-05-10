@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Bumped to `kernex-* 0.6.0`** to consume the workspace's M6 release (MemoryStore trait + soft-delete on facts in `kernex-memory`, `Runtime::store_handle()` returning `Arc<dyn MemoryStore>`, workspace split into `kernex-adapter-core` / `kernex-presets` / `kernex-brain`, and the new `release` / `release-fast` cargo profiles). See [kernex-dev CHANGELOG `[0.6.0]`](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md) for the full set of changes. The agent stays version-locked with the workspace.
+- No source changes required in `kernex-agent`: the agent does not construct `Store` directly and does not depend on the new `kernex-adapter-core` symbols, so the workspace split is invisible at this layer.
+
 ### Added
 
 - **Cargo feature graph.** `default = ["agent-claude", "memory-cli", "serve"]` plus five non-default adapter feature flags (`agent-codex`, `agent-opencode`, `agent-cursor`, `agent-cline`, `agent-windsurf`), `tui`, and five preset feature flags (declared, no implementation yet). The default `kx` binary stays under the 15 MB hard ceiling on macOS aarch64 release builds. See `openspec/archive/2026-05-cargo-feature-graph/`.
