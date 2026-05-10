@@ -11,95 +11,16 @@ env:
   RUSTFLAGS: "-D warnings"
 
 # This file lives in kernex-agent (the public kx binary crate). It enforces
-# the cargo-feature-graph contract: per-variant binary ceilings plus a
-# minimal-variant dep-tree leak audit. The bloat and unused-deps jobs
-# mirror the conventions used in the sister workspace at kernex-dev/kernex.
+# the cargo-feature-graph contract: a minimal-variant dep-tree leak audit
+# plus the bloat and unused-deps jobs that mirror the conventions used in
+# the sister workspace at kernex-dev/kernex.
+#
+# The per-variant binary-size matrix and the macOS-aarch64 hard-ceiling
+# check moved to `binary-size-build.yml` so the size results can be posted
+# as a sticky `## Binary Sizes` comment on every PR via the companion
+# `binary-size-comment.yml` workflow.
 
 jobs:
-  binary-size:
-    name: Binary size (kx default, macOS aarch64)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Build kx (default features)
-        run: cargo build --release --bin kx --locked
-      - name: Hard ceiling check (15 MB)
-        run: bash scripts/check-size.sh kx 15728640 target/release/kx
-      - name: Soft warn at 13 MB (informational, not a gate)
-        if: always()
-        run: |
-          set -euo pipefail
-          BIN=target/release/kx
-          if [ ! -f "$BIN" ]; then
-            echo "binary not present; skipping soft warn" >&2
-            exit 0
-          fi
-          SIZE=$(stat -f%z "$BIN")
-          SOFT=13631488  # 13 MiB
-          HUMAN_MB=$(awk -v n="$SIZE" 'BEGIN{ printf "%.2f", n/1048576 }')
-          {
-            echo "### kx default (macOS aarch64): ${HUMAN_MB} MiB"
-            echo ""
-            echo "- hard ceiling: 15.00 MiB"
-            echo "- soft warn: 13.00 MiB"
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$SIZE" -gt "$SOFT" ]; then
-            echo "::warning::kx default is ${HUMAN_MB} MiB (> 13.00 MiB soft warn)"
-          fi
-
-  feature-matrix:
-    name: Feature matrix (per-variant build and size)
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - name: default
-            flags: ""
-            mode: hard
-            limit: 15728640
-          - name: minimal
-            flags: "--no-default-features --features memory-cli"
-            mode: soft
-            limit: 8388608
-          - name: full
-            flags: "--features agent-all,tui,serve,preset-all"
-            mode: info
-            limit: 0
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Build variant
-        run: cargo build --release --bin kx ${{ matrix.config.flags }} --locked
-      - name: Hard ceiling check (default only)
-        if: matrix.config.mode == 'hard'
-        run: bash scripts/check-size.sh "${{ matrix.config.name }}" ${{ matrix.config.limit }} target/release/kx
-      - name: Record size and soft warn
-        if: matrix.config.mode != 'hard'
-        run: |
-          set -euo pipefail
-          BIN=target/release/kx
-          SIZE=$(stat -c%s "$BIN")
-          HUMAN_MB=$(awk -v n="$SIZE" 'BEGIN{ printf "%.2f", n/1048576 }')
-          NAME="${{ matrix.config.name }}"
-          MODE="${{ matrix.config.mode }}"
-          LIMIT="${{ matrix.config.limit }}"
-          {
-            echo "### kx ${NAME}: ${HUMAN_MB} MiB"
-            echo ""
-            echo "- mode: ${MODE} (informational, not a gate)"
-            if [ "${MODE}" = "soft" ]; then
-              SOFT_HUMAN=$(awk -v n="$LIMIT" 'BEGIN{ printf "%.2f", n/1048576 }')
-              echo "- soft warn target: ${SOFT_HUMAN} MiB"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "${MODE}" = "soft" ] && [ "$SIZE" -gt "$LIMIT" ]; then
-            echo "::warning::${NAME} is ${HUMAN_MB} MiB (> soft warn target)"
-          fi
-
   dep-tree-audit:
     name: Minimal-variant dep-tree leak audit
     runs-on: ubuntu-latest

@@ -1,0 +1,65 @@
+# Binary-size PR-comment workflow.
+#
+# Triggers on completion of the `binary-size-build` workflow. Downloads the
+# `size-report` artifact (size_report.md + pr_number.txt) and posts or
+# updates a sticky `## Binary Sizes` comment on the PR.
+#
+# This workflow runs from the default branch's code with `pull-requests: write`
+# permission so it can post comments. The build workflow itself runs from
+# untrusted PR code with read-only permissions; the split is the standard
+# GitHub security pattern for PR-comment bots that consume artifacts produced
+# by `pull_request`-triggered workflows.
+
+name: binary-size-comment
+
+on:
+  workflow_run:
+    workflows: [binary-size-build]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  comment:
+    name: Post or update sticky comment
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download size-report artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: size-report
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read PR number
+        id: pr
+        run: |
+          set -euo pipefail
+          if [ ! -f pr_number.txt ]; then
+            echo "pr_number.txt missing; skipping comment"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          NUMBER=$(cat pr_number.txt)
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Find existing sticky comment
+        if: steps.pr.outputs.skip != 'true'
+        id: find
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3
+        with:
+          issue-number: ${{ steps.pr.outputs.number }}
+          comment-author: github-actions[bot]
+          body-includes: "## Binary Sizes"
+
+      - name: Create or update sticky comment
+        if: steps.pr.outputs.skip != 'true'
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
+        with:
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          issue-number: ${{ steps.pr.outputs.number }}
+          body-path: size_report.md
+          edit-mode: replace
