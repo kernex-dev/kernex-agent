@@ -1,0 +1,17 @@
+# kernex-agent release binary size baseline
+# date: 2026-05-10
+# branch: main  commit: d0a6744
+# rust: rustc 1.94.0 (4a4ef493e 2026-03-02)
+# profile: release (lto=fat, codegen-units=1, strip=symbols, panic=abort, opt-level=z)
+# features: <default; no [features] table defined yet>
+# command: stat -f '%z bytes  %N' target/release/kx
+
+14851984 bytes  target/release/kx
+
+# Human-readable:
+14M target/release/kx
+
+# Reference ceilings:
+#   default ceiling: 15728640 bytes (15 MB)
+#   minimal ceiling:  8388608 bytes ( 8 MB)
+#   full ceiling:    26214400 bytes (25 MB)

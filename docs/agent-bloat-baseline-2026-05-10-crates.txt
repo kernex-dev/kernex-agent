@@ -1,0 +1,41 @@
+# kernex-agent cargo bloat by crate (release baseline)
+# date: 2026-05-10
+# branch: main  commit: d0a6744
+# rust: rustc 1.94.0 (4a4ef493e 2026-03-02)
+# command: cargo bloat --release --crates -n 30
+
+ File  .text     Size Crate
+10.1%  17.9%   1.5MiB std
+ 9.2%  16.3%   1.4MiB [Unknown]
+ 4.6%   8.2% 709.7KiB kernex_providers
+ 2.9%   5.1% 442.9KiB kx
+ 2.7%   4.8% 409.8KiB rustls
+ 2.5%   4.4% 381.3KiB reqwest
+ 1.8%   3.2% 278.7KiB tokio
+ 1.8%   3.2% 271.9KiB toml_edit
+ 1.7%   2.9% 253.7KiB clap_builder
+ 1.5%   2.6% 227.2KiB sqlx_sqlite
+ 1.4%   2.5% 214.6KiB kernex_skills
+ 1.0%   1.8% 157.7KiB regex_syntax
+ 1.0%   1.7% 148.1KiB rustyline
+ 1.0%   1.7% 146.2KiB ring
+ 1.0%   1.7% 145.7KiB ureq
+ 0.8%   1.5% 129.4KiB regex_automata
+ 0.8%   1.4% 117.8KiB kernex_runtime
+ 0.7%   1.3% 111.7KiB kernex_pipelines
+ 0.7%   1.3% 111.0KiB axum
+ 0.7%   1.2% 106.2KiB hyper
+ 0.7%   1.2% 101.0KiB tracing_subscriber
+ 0.6%   1.2%  99.2KiB sqlx_core
+ 0.6%   1.1%  96.4KiB libsqlite3_sys
+ 0.6%   1.0%  89.0KiB kernex_memory
+ 0.5%   0.9%  74.9KiB serde_json
+ 0.5%   0.8%  71.4KiB hyper_util
+ 0.4%   0.8%  67.2KiB webpki
+ 0.4%   0.6%  55.7KiB indicatif
+ 0.4%   0.6%  55.1KiB http
+ 0.3%   0.6%  47.9KiB url
+ 3.6%   6.4% 547.8KiB And 96 more crates. Use -n N to show more.
+56.4% 100.0%   8.4MiB .text section size, the file size is 14.9MiB
+
+Note: numbers above are a result of guesswork. They are not 100% correct and never will be.
