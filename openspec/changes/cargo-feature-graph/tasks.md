@@ -159,7 +159,7 @@ cargo tree -e normal --no-default-features --features memory-cli > /tmp/dep-tree
 grep -E 'axum|hmac|subtle|uuid|rusqlite|ratatui|crossterm' /tmp/dep-tree-minimal.txt && exit 1 || echo OK
 ```
 
-The grep MUST return zero matches; if any serve-only or TUI dep leaks into minimal, the job hard-fails. Commit the dep-tree file as `docs/dep-tree-minimal-2026-05-10.txt` for the PR description and as a regression baseline.
+The grep MUST return zero matches; if any serve-only or TUI dep leaks into minimal, the job hard-fails. Commit the dep-tree file as `docs/agent-dep-tree-minimal-2026-05-10.txt` for the PR description and as a regression baseline. Note the audit grep deliberately omits `subtle` and `uuid` because they are pulled transitively via `rustls`/`reqwest`/`ureq` and `kernex-core` respectively, and cannot be removed at this layer (per Finding 2 in `proposal.md`).
 
 ### P4-5. Capture default-build bloat artefacts `[s1-b]`
 

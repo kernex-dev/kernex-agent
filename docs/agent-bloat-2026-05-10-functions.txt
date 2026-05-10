@@ -1,0 +1,59 @@
+# kernex-agent cargo bloat by function (post cargo-feature-graph)
+# date: 2026-05-10
+# branch: main  commit: f7f7f05
+# rust: rustc 1.94.0 (4a4ef493e 2026-03-02)
+# command: cargo bloat --release -n 50
+
+ File  .text    Size             Crate Name
+ 0.3%   0.5% 43.4KiB         [Unknown] _sqlite3VdbeExec
+ 0.2%   0.3% 26.4KiB  kernex_providers kernex_providers::tools::ToolExecutor::dispatch::{{closure}}
+ 0.2%   0.3% 26.4KiB  kernex_providers kernex_providers::tools::ToolExecutor::dispatch::{{closure}}
+ 0.2%   0.3% 26.4KiB  kernex_providers kernex_providers::tools::ToolExecutor::dispatch::{{closure}}
+ 0.2%   0.3% 26.4KiB  kernex_providers kernex_providers::tools::ToolExecutor::dispatch::{{closure}}
+ 0.2%   0.3% 26.1KiB               kx? <kx::cli::Command as clap_builder::derive::Subcommand>::augment_subcommands
+ 0.2%   0.3% 25.9KiB  kernex_providers kernex_providers::tools::ToolExecutor::dispatch::{{closure}}
+ 0.2%   0.3% 25.8KiB                kx kx::run::{{closure}}
+ 0.2%   0.3% 25.8KiB                kx kx::run::{{closure}}
+ 0.2%   0.3% 25.8KiB                kx kx::run::{{closure}}
+ 0.1%   0.2% 21.3KiB         [Unknown] _sqlite3Pragma
+ 0.1%   0.2% 20.7KiB         [Unknown] _sqlite3Select
+ 0.1%   0.2% 19.5KiB kernex_providers? <kernex_providers::anthropic::AnthropicProvider as kernex_core::traits::Provider>::complete::{{closure}}
+ 0.1%   0.2% 19.4KiB kernex_providers? <kernex_providers::ollama::OllamaProvider as kernex_core::traits::Provider>::complete::{{closure}}
+ 0.1%   0.2% 19.3KiB kernex_providers? <kernex_providers::gemini::GeminiProvider as kernex_core::traits::Provider>::complete::{{closure}}
+ 0.1%   0.2% 18.9KiB kernex_providers? <kernex_providers::openai::OpenAiProvider as kernex_core::traits::Provider>::complete::{{closure}}
+ 0.1%   0.2% 18.8KiB    kernex_runtime kernex_runtime::Runtime::complete_with_needs::{{closure}}::{{closure}}
+ 0.1%   0.2% 18.7KiB kernex_providers? <kernex_providers::openrouter::OpenRouterProvider as kernex_core::traits::Provider>::complete::{{closure}}
+ 0.1%   0.2% 18.1KiB    kernex_runtime kernex_runtime::Runtime::complete_with_needs::{{closure}}::{{closure}}
+ 0.1%   0.2% 18.0KiB    kernex_runtime kernex_runtime::Runtime::complete_with_needs::{{closure}}::{{closure}}
+ 0.1%   0.2% 18.0KiB    kernex_runtime kernex_runtime::Runtime::complete_with_needs::{{closure}}::{{closure}}
+ 0.1%   0.2% 18.0KiB    kernex_runtime kernex_runtime::Runtime::complete_with_needs::{{closure}}::{{closure}}
+ 0.1%   0.2% 17.5KiB     kernex_memory kernex_memory::store::Store::new::{{closure}}
+ 0.1%   0.2% 17.4KiB       sqlx_sqlite sqlx_sqlite::connection::explain::explain
+ 0.1%   0.2% 17.2KiB                kx kx::commands::handle::{{closure}}
+ 0.1%   0.2% 17.2KiB                kx kx::commands::handle::{{closure}}
+ 0.1%   0.2% 17.2KiB                kx kx::commands::handle::{{closure}}
+ 0.1%   0.2% 15.5KiB  kernex_providers kernex_providers::claude_code::provider::<impl kernex_core::traits::Provider for kernex_providers::claude_code::ClaudeCodeProvider>::complete::{{closure}}
+ 0.1%   0.2% 14.8KiB      clap_builder clap_builder::parser::parser::Parser::get_matches_with
+ 0.1%   0.2% 13.5KiB        hyper_util hyper_util::client::legacy::client::Client<C,B>::send_request::{{closure}}
+ 0.1%   0.2% 13.2KiB     kernex_memory kernex_memory::store::Store::new::{{closure}}
+ 0.1%   0.2% 13.0KiB              http http::header::name::StandardHeader::from_bytes
+ 0.1%   0.1% 12.7KiB         [Unknown] _sqlite3GenerateConstraintChecks
+ 0.1%   0.1% 12.6KiB      clap_builder clap_builder::builder::command::Command::_build_self
+ 0.1%   0.1% 12.6KiB     kernex_skills kernex_skills::skills::load_skills
+ 0.1%   0.1% 12.2KiB         sqlx_core sqlx_core::pool::options::PoolOptions<DB>::connect_with::{{closure}}
+ 0.1%   0.1% 12.1KiB  kernex_providers kernex_providers::anthropic::AnthropicProvider::agentic_loop::{{closure}}
+ 0.1%   0.1% 12.1KiB     kernex_memory kernex_memory::store::Store::new::{{closure}}
+ 0.1%   0.1% 12.0KiB  kernex_providers kernex_providers::gemini::GeminiProvider::agentic_loop::{{closure}}
+ 0.1%   0.1% 11.8KiB    libsqlite3_sys _sqlite3_str_vappendf
+ 0.1%   0.1% 11.4KiB               kx? <kx::cli::Cli as clap_builder::derive::Args>::augment_args
+ 0.1%   0.1% 11.2KiB  kernex_providers kernex_providers::tools::builtin_tool_defs::{{closure}}
+ 0.1%   0.1% 11.2KiB                kx kx::cmd_dev::{{closure}}
+ 0.1%   0.1% 11.2KiB                kx kx::cmd_dev::{{closure}}
+ 0.1%   0.1% 11.2KiB                kx kx::cmd_dev::{{closure}}
+ 0.1%   0.1% 11.1KiB         [Unknown] _sqlite3WhereCodeOneLoopStart
+ 0.1%   0.1% 10.6KiB         [Unknown] _resolveExprStep
+ 0.1%   0.1% 10.5KiB                kx kx::scheduler::spawn::{{closure}}
+ 0.1%   0.1% 10.5KiB  kernex_providers kernex_providers::ollama::OllamaProvider::agentic_loop::{{closure}}
+ 0.1%   0.1% 10.5KiB  kernex_providers kernex_providers::openai::openai_agentic_complete::{{closure}}
+50.7%  90.0%  7.6MiB                   And 20234 smaller methods. Use -n N to show more.
+56.4% 100.0%  8.4MiB                   .text section size, the file size is 14.9MiB

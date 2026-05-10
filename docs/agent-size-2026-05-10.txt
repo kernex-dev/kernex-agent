@@ -1,0 +1,12 @@
+# kernex-agent release binary size (post cargo-feature-graph change)
+# date: 2026-05-10
+# branch: main  commit: f7f7f05
+# rust: rustc 1.94.0 (4a4ef493e 2026-03-02)
+# profile: release (lto=fat, codegen-units=1, strip=symbols, panic=abort, opt-level=z)
+# features: default = [agent-claude, memory-cli, serve]
+
+14854800 bytes  target/release/kx
+
+# Pre-change baseline: 14851984 bytes (docs/agent-size-baseline-2026-05-10.txt)
+# Net delta: +2816 bytes (+0.0002%); default variant byte-equivalent to pre-change.
+# Ceiling: 15728640 bytes (15 MB). Margin: 873840 bytes.
