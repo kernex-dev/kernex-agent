@@ -43,4 +43,7 @@ CLAUDE.local.md
 ROADMAP.md
 RELEASE_CHECKLIST.md
 .claude/
-docs/
+/docs/*
+!/docs/agent-size-*.txt
+!/docs/agent-dep-tree-*.txt
+!/docs/agent-bloat-*.txt
