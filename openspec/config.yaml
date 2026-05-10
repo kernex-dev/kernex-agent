@@ -1,0 +1,58 @@
+schema: spec-driven
+
+context: |
+  Project: kernex-agent (the `kx` binary, public, Apache-2.0 OR MIT).
+  Purpose: CLI dev assistant powered by the Kernex runtime. Composes the
+  `kernex-runtime`, `kernex-core`, `kernex-providers`, `kernex-pipelines`,
+  and `kernex-sandbox` crates from `kernex-dev/kernex` into the `kx`
+  binary that runs locally on the operator's machine.
+  Stack: single-binary Rust crate (`[[bin]] kx`), Rust edition 2021, MSRV
+  1.74, tokio async, `clap` derive for the CLI surface, `tracing` for
+  logs, `thiserror` in libraries.
+  Sister repo: `github.com/kernex-dev/kernex` ships the runtime workspace
+  this binary depends on via crates.io.
+  Style: English in all artifacts. No em-dashes. Conventional commits.
+  Testing: `cargo build`, `cargo clippy --all-targets -- -D warnings`,
+  `cargo test`, `cargo fmt --check` is the pre-commit gate; plus
+  `cargo audit && cargo deny check`.
+
+strict_tdd: false
+
+rules:
+  proposal:
+    - State the operator or framework friction explicitly before the solution.
+    - Name what is intentionally OUT of scope.
+    - Identify cross-repo work and flag it as paired PR coordination.
+  specs:
+    - Use Given/When/Then for behavioral scenarios where applicable.
+    - For pure infrastructure changes (feature graph, profile, hygiene),
+      a spec.md is optional; tasks.md and design.md may be sufficient.
+  design:
+    - Document architecture decisions with rationale (ADR style).
+    - Show source-tree deltas with one-line purpose per new file or module.
+    - Define every public trait, struct, and enum referenced by the spec.
+    - Call out reuse of existing infrastructure; never invent parallel paths.
+  tasks:
+    - Each task completable in under 2 focused hours.
+    - Group tasks by step or block.
+    - Tag every task with change identifier where applicable.
+  apply:
+    - Follow the design's source tree exactly.
+    - Never commit without explicit user approval.
+    - Pre-commit gate must pass on every commit:
+      `cargo build && cargo clippy --all-targets -- -D warnings &&
+       cargo test && cargo fmt --check`.
+  verify:
+    - Pre-commit gate green on every variant the change touches.
+    - For binary-shipping changes, also run `cargo audit && cargo deny check`.
+    - Smoke-run the binary against `kx --help` and the affected subcommands.
+  archive:
+    - Move `openspec/changes/<change-id>/` to
+      `openspec/archive/YYYY-MM-<change-id>/` post-merge.
+
+testing:
+  strict_tdd: false
+  detected: "2026-05-10"
+  runner:
+    command: "cargo build && cargo clippy --all-targets -- -D warnings && cargo test && cargo fmt --check && cargo audit && cargo deny check"
+    framework: "cargo + clippy + rustfmt + audit + deny"
