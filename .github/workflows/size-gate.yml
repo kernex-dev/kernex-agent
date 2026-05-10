@@ -114,7 +114,15 @@ jobs:
       - name: Fail if serve-only or TUI deps leak into minimal
         run: |
           set -euo pipefail
-          if grep -E 'axum|hmac|subtle|uuid|rusqlite|ratatui|crossterm' /tmp/dep-tree-minimal.txt; then
+          # `subtle` and `uuid` are intentionally excluded from this grep:
+          # `subtle` is pulled transitively via `rustls` (which `reqwest`
+          # and `ureq` consume unconditionally), and `uuid` is pulled
+          # transitively via `kernex-core`. Both are structural deps the
+          # `serve` feature flag cannot remove without a workspace-wide
+          # refactor. The serve gate still removes axum, hmac, rusqlite,
+          # which are the actual savings; ratatui and crossterm are gated
+          # by the `tui` feature.
+          if grep -E 'axum|hmac|rusqlite|ratatui|crossterm' /tmp/dep-tree-minimal.txt; then
             echo "::error::serve-only or TUI deps leaked into minimal variant"
             exit 1
           fi
