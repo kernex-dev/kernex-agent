@@ -85,7 +85,7 @@
     {
       "skill": "agents-orchestrator",
       "id": "ao-01",
-      "name": "decomposes PR review into parallel phase 1 tasks",
+      "name": "decomposes PR review into parallel first-pass tasks",
       "input": "Review a pull request: check code quality, security issues, and test coverage.",
       "expect": {
         "required_fields": ["goal", "phases", "aggregation", "risks"],
