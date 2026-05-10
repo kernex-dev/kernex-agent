@@ -2,6 +2,7 @@
 
 > **Reference:** [proposal.md](proposal.md).
 > Each task is sized at roughly two focused hours. Change tag: `[s1-b]`.
+> **Status:** Landed 2026-05-10 at `cb1688b` (six atomic commits: `b578cf4`, `da2ad31`, `8fc4e97`, `f7f7f05`, `a0c5719`, `cb1688b`).
 
 ## Coordination
 
