@@ -2,7 +2,8 @@
 
 > **Change ID:** `cargo-feature-graph`
 > **Author:** Jose Hurtado
-> **Status:** Draft v0.1
+> **Status:** Landed 2026-05-10 at `cb1688b`
+> **Six atomic commits:** `b578cf4`, `da2ad31`, `8fc4e97`, `f7f7f05`, `a0c5719`, `cb1688b`
 > **Estimated effort:** ~3 working days
 > **Repo:** `kernex-dev/kernex-agent` (this repo)
 
