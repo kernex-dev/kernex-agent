@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Cargo feature graph.** `default = ["agent-claude", "memory-cli", "serve"]` plus five non-default adapter feature flags (`agent-codex`, `agent-opencode`, `agent-cursor`, `agent-cline`, `agent-windsurf`), `tui`, and five preset feature flags (declared, no implementation yet). The default `kx` binary stays under the 15 MB hard ceiling on macOS aarch64 release builds. See `openspec/archive/2026-05-cargo-feature-graph/`.
+- **Three-variant size matrix in CI.** `.github/workflows/size-gate.yml` builds the `default`, `--no-default-features --features memory-cli` minimal, and `--features agent-all,tui,serve,preset-all` full variants on every PR. Per-variant ceilings: 8 MB minimal soft-warn, 15 MB default hard-fail, 25 MB full informational. Plus a minimal-variant dep-tree leak audit guarding against `serve`-only or `tui`-only deps regressing into the minimal binary.
+- **Sticky `## Binary Sizes` PR comment.** New workflow pair `.github/workflows/binary-size-build.yml` (matrix build on `pull_request`) and `.github/workflows/binary-size-comment.yml` (comment-write on `workflow_run`) post the three-variant size deltas vs `main` directly to the PR thread. One sticky comment per PR; pushes update in place. See `openspec/changes/binary-size-pr-comment/`.
+
 ## [0.5.0] - 2026-05-07
 
 ### Changed
