@@ -17,11 +17,11 @@ name = "kx"
 path = "src/main.rs"
 
 [dependencies]
-kernex-runtime = "0.5.0"
-kernex-core = "0.5.0"
-kernex-providers = "0.5.0"
-kernex-pipelines = "0.5.0"
-kernex-sandbox = "0.5.0"
+kernex-runtime = "0.6.0"
+kernex-core = "0.6.0"
+kernex-providers = "0.6.0"
+kernex-pipelines = "0.6.0"
+kernex-sandbox = "0.6.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "rt", "net", "signal"] }
 clap = { version = "4", features = ["derive", "env"] }
 colored = "2"
