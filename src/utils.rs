@@ -31,6 +31,7 @@ pub fn iso_timestamp() -> String {
 /// Decode a lowercase / uppercase hex string into bytes. Returns `None`
 /// for odd-length input or any non-hex character. Used by webhook HMAC
 /// signature verification.
+#[cfg(feature = "serve")]
 pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
     if s.len() % 2 != 0 {
         return None;
@@ -56,6 +57,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serve")]
     fn hex_decode_valid() {
         assert_eq!(hex_decode("deadbeef"), Some(vec![0xde, 0xad, 0xbe, 0xef]));
         assert_eq!(hex_decode(""), Some(vec![]));
@@ -63,6 +65,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serve")]
     fn hex_decode_invalid() {
         assert_eq!(hex_decode("xyz"), None); // odd length
         assert_eq!(hex_decode("zz"), None); // non-hex chars

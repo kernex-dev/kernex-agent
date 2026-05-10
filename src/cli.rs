@@ -92,6 +92,7 @@ pub enum Command {
         action: CronAction,
     },
     /// Run kx as a headless HTTP server for remote agent execution
+    #[cfg(feature = "serve")]
     Serve {
         /// Host address to bind
         #[arg(long, default_value = "127.0.0.1")]
@@ -475,6 +476,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serve")]
     fn cli_parses_serve_defaults() {
         let cli = Cli::try_parse_from(["kx", "serve", "--auth-token", "secret"]).unwrap();
         if let Some(Command::Serve {
@@ -494,6 +496,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serve")]
     fn cli_parses_serve_custom_host_port() {
         let cli = Cli::try_parse_from([
             "kx",
@@ -522,6 +525,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serve")]
     fn cli_parses_serve_no_auth_token() {
         let cli = Cli::try_parse_from(["kx", "serve"]).unwrap();
         if let Some(Command::Serve { auth_token, .. }) = cli.command {
