@@ -21,6 +21,7 @@ kernex-runtime = "0.5.0"
 kernex-core = "0.5.0"
 kernex-providers = "0.5.0"
 kernex-pipelines = "0.5.0"
+kernex-sandbox = "0.5.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "rt", "net", "signal"] }
 clap = { version = "4", features = ["derive", "env"] }
 colored = "2"
@@ -28,20 +29,80 @@ dirs = "6"
 rustyline = "15"
 indicatif = "0.18"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 toml = "0.8"
 sha2 = "0.10"
 ureq = "2"
-kernex-sandbox = "0.5.0"
 tracing = "0.1"
-async-trait = "0.1"
-serde_json = "1"
-axum = { version = "0.8", features = ["json"] }
-uuid = { version = "1", features = ["v4"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-hmac = "0.12"
-subtle = "2"
-rusqlite = { version = "0.32", features = ["bundled"] }
+async-trait = "0.1"
 anyhow = "1"
+
+# Optional deps. Each is pulled in only when its owning feature is
+# enabled. Keeping them optional lets `--no-default-features --features
+# memory-cli` ship a slim `kx` for users who only need the local memory
+# CLI surface.
+axum = { version = "0.8", features = ["json"], optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
+hmac = { version = "0.12", optional = true }
+subtle = { version = "2", optional = true }
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+
+# Placeholder optional deps. Reserved for the corresponding feature
+# flag's eventual implementation; currently no source under default
+# activates them.
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
+toml_edit = { version = "0.22", optional = true }
+
+[features]
+# Default build: Claude-first UX, the `kx mem *` cfg surface, and the
+# headless HTTP daemon. Matches the pre-change `cargo install kernex-agent`
+# behaviour byte-for-byte.
+default = ["agent-claude", "memory-cli", "serve"]
+
+# Core features.
+memory-cli = []                                                                # reserves cfg surface for `kx mem *` subcommands
+serve = ["dep:axum", "dep:hmac", "dep:subtle", "dep:uuid", "dep:rusqlite"]     # `kx serve` headless HTTP daemon
+tui = ["dep:ratatui", "dep:crossterm"]                                         # placeholder; no source yet
+
+# Configurator adapters. Each is opt-in. Claude logic remains
+# unconditional in this change; the cfg surface is reserved so the
+# adapter module can move behind the flag without another Cargo edit.
+agent-claude   = []                       # reserved cfg surface, no extra deps
+agent-codex    = ["dep:toml_edit"]        # Intent marker: toml_edit is currently pulled transitively via toml; this gate has zero size effect today
+agent-opencode = []                       # placeholder; serde_json is already unconditional
+agent-cursor   = []                       # placeholder; rules file is plain text
+agent-cline    = []                       # placeholder; serde_json is already unconditional
+agent-windsurf = ["agent-cursor"]         # placeholder; shares the Cursor adapter
+
+# Convenience meta-features for grouped installs.
+agent-shell-cli = ["agent-claude", "agent-codex", "agent-opencode"]
+agent-ide       = ["agent-cursor", "agent-cline", "agent-windsurf"]
+agent-all       = ["agent-shell-cli", "agent-ide"]
+
+# Preset placeholders. Each will embed a small TOML blob when wired up.
+preset-full-kernex        = []   # placeholder; do not implement here
+preset-security-hardened  = []   # placeholder; do not implement here
+preset-airgapped-defense  = []   # placeholder; do not implement here
+preset-solo-dev           = []   # placeholder; do not implement here
+preset-ci-only            = []   # placeholder; do not implement here
+preset-all = [
+    "preset-full-kernex",
+    "preset-security-hardened",
+    "preset-airgapped-defense",
+    "preset-solo-dev",
+    "preset-ci-only",
+]
+
+# Provider features. Forwarded to kernex-providers.
+bedrock = ["kernex-providers/bedrock"]
+
+# Optional deps that are reserved for placeholder features (`tui`,
+# `agent-codex`) get listed here so cargo-machete does not flag them as
+# unused while the implementations are still pending.
+[package.metadata.cargo-machete]
+ignored = ["ratatui", "crossterm", "toml_edit"]
 
 [dev-dependencies]
 # Filesystem tests use TempDir so each test gets a unique random path with
@@ -53,4 +114,3 @@ tempfile = "3"
 # fail-closed paths without spinning up a real listener or provider.
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
-
