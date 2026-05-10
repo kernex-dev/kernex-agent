@@ -9,10 +9,24 @@ mod config;
 mod loader;
 mod prompts;
 mod scheduler;
+#[cfg(feature = "serve")]
 mod serve;
 mod skills;
 mod stack;
 mod utils;
+
+#[cfg(any(
+    feature = "agent-claude",
+    feature = "agent-codex",
+    feature = "agent-opencode",
+    feature = "agent-cursor",
+    feature = "agent-cline",
+    feature = "agent-windsurf",
+))]
+mod adapters;
+
+#[cfg(feature = "tui")]
+mod tui;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,6 +48,7 @@ use serde_json::Value;
 
 use crate::cli::{Cli, Command, CronAction, PipelineAction, SkillsAction};
 use crate::commands::CommandResult;
+#[cfg(feature = "serve")]
 use crate::serve::cmd_serve;
 
 #[tokio::main]
@@ -83,6 +98,7 @@ async fn run() -> anyhow::Result<()> {
         Some(Command::Pipeline { action }) => cmd_pipeline(action, &provider_flags).await,
         Some(Command::Skills { action }) => cmd_skills(action).await,
         Some(Command::Cron { action }) => cmd_cron(action).await,
+        #[cfg(feature = "serve")]
         Some(Command::Serve {
             host,
             port,
