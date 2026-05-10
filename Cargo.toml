@@ -99,10 +99,13 @@ preset-all = [
 bedrock = ["kernex-providers/bedrock"]
 
 # Optional deps that are reserved for placeholder features (`tui`,
-# `agent-codex`) get listed here so cargo-machete does not flag them as
-# unused while the implementations are still pending.
+# `agent-codex`) and direct deps reserved for future surfaces get listed
+# here so cargo-machete does not flag them as unused while the
+# implementations are still pending. `kernex-sandbox` is a direct dep
+# but currently has no `use kernex_sandbox` reference in src/; it is
+# pinned for upcoming sandbox-based agent execution surfaces.
 [package.metadata.cargo-machete]
-ignored = ["ratatui", "crossterm", "toml_edit"]
+ignored = ["ratatui", "crossterm", "toml_edit", "kernex-sandbox"]
 
 [dev-dependencies]
 # Filesystem tests use TempDir so each test gets a unique random path with
