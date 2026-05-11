@@ -4,8 +4,23 @@ use colored::Colorize;
 use kernex_runtime::Runtime;
 
 use crate::config::ProjectConfig;
+use crate::mem::cli::{self as mem_cli, HistoryOpts, SearchOpts, StatsOpts};
+use crate::mem::errors::CliError;
 use crate::skills;
 use crate::stack::{self, Stack};
+
+/// REPL search result count. Matches the pre-refactor behaviour (the
+/// previous `search_messages(..., 10)` call). CLI default is 20; the REPL
+/// keeps 10 because the table sits inline with the chat transcript.
+const REPL_SEARCH_LIMIT: usize = 10;
+
+/// REPL history record count. Matches the pre-refactor behaviour.
+const REPL_HISTORY_LIMIT: usize = 20;
+
+/// Default project name when `runtime.project` is unset. Mirrors the
+/// fallback used by `close_conversation` below and by `cmd_dev` in
+/// `main.rs`.
+const DEFAULT_PROJECT: &str = "default";
 
 pub enum CommandResult {
     Continue,
@@ -194,26 +209,28 @@ pub async fn close_conversation(runtime: &Runtime, summary: &str) {
 }
 
 async fn print_memory_stats(runtime: &Runtime) {
-    match runtime.store.get_memory_stats("user").await {
-        Ok((conversations, messages, facts)) => {
+    let opts = StatsOpts {
+        project: runtime
+            .project
+            .as_deref()
+            .unwrap_or(DEFAULT_PROJECT)
+            .to_string(),
+    };
+    match mem_cli::stats(&runtime.store, opts).await {
+        Ok(record) => {
+            let mb = record.db_size_bytes as f64 / (1024.0 * 1024.0);
             println!("\n{}", "  Memory stats".bold());
-            println!("  {} {conversations}", "Conversations:".dimmed());
-            println!("  {} {messages}", "Messages:".dimmed());
-            println!("  {} {facts}\n", "Facts:".dimmed());
+            println!("  {} {}", "Conversations:".dimmed(), record.conversations);
+            println!("  {} {}", "Messages:".dimmed(), record.observations);
+            println!("  {} {}", "Facts:".dimmed(), record.facts);
+            println!("  {} {mb:.2} MB", "DB size:".dimmed());
+            if let Some(ts) = &record.last_write_at {
+                println!("  {} {ts}\n", "Last write:".dimmed());
+            } else {
+                println!();
+            }
         }
-        Err(e) => {
-            eprintln!("{} fetching memory stats: {e}\n", "error:".red().bold());
-        }
-    }
-
-    match runtime.store.db_size().await {
-        Ok(size) => {
-            let mb = size as f64 / (1024.0 * 1024.0);
-            println!("  {} {:.2} MB\n", "DB size:".dimmed(), mb);
-        }
-        Err(e) => {
-            eprintln!("{} fetching db size: {e}\n", "error:".red().bold());
-        }
+        Err(e) => render_cli_error(&e, "fetching memory stats"),
     }
 }
 
@@ -275,54 +292,90 @@ async fn print_cost_summary(runtime: &Runtime) {
 }
 
 async fn print_facts(runtime: &Runtime) {
-    match runtime.store.get_facts("user").await {
-        Ok(facts) if facts.is_empty() => {
+    match mem_cli::facts_list(&runtime.store).await {
+        Ok(records) if records.is_empty() => {
             println!("{}", "  No facts stored.\n".dimmed());
         }
-        Ok(facts) => {
+        Ok(records) => {
             println!("\n{}", "  Stored facts".bold());
-            for (key, value) in &facts {
-                println!("  {} {}", format!("{key}:").dimmed(), value);
+            for record in &records {
+                println!("  {} {}", format!("{}:", record.key).dimmed(), record.value);
             }
             println!();
         }
-        Err(e) => {
-            eprintln!("{} fetching facts: {e}\n", "error:".red().bold());
-        }
+        Err(e) => render_cli_error(&e, "fetching facts"),
     }
 }
 
 async fn delete_fact(runtime: &Runtime, key: &str) {
-    match runtime.store.delete_fact("user", key).await {
-        Ok(true) => println!("{}", format!("  Deleted fact: {key}\n").dimmed()),
-        Ok(false) => println!("{}", format!("  Fact not found: {key}\n").yellow()),
-        Err(e) => eprintln!("{} deleting fact: {e}\n", "error:".red().bold()),
+    // The REPL now soft-deletes (matches `kx mem facts delete`). The
+    // hand-rolled `Store::delete_fact` hard-delete path stays available
+    // for emergency recovery scripts but is no longer reachable from the
+    // user-facing REPL. `mem_cli::facts_delete` reports `NotFound` when
+    // the row is absent or already soft-deleted; we surface that as the
+    // pre-refactor "not found" yellow message.
+    match mem_cli::facts_delete(&runtime.store, key).await {
+        Ok(()) => println!("{}", format!("  Deleted fact: {key}\n").dimmed()),
+        Err(CliError::NotFound { .. }) => {
+            println!("{}", format!("  Fact not found: {key}\n").yellow())
+        }
+        Err(e) => render_cli_error(&e, "deleting fact"),
     }
 }
 
+/// Pretty-print a [`CliError`] in the REPL's colored-prefix style. The
+/// CLI render path emits a structured stderr line via `mem::render`; the
+/// REPL surface is interactive so the single-line `error: ...` style is
+/// the right form here. Hint text is appended on the same line for
+/// `Usage` errors so the operator sees the fix without a follow-up call.
+fn render_cli_error(err: &CliError, context: &str) {
+    let prefix = format!("{} {context}:", "error:".red().bold());
+    match err {
+        CliError::Usage { message, hint } => {
+            eprintln!("{prefix} {message}");
+            if !hint.is_empty() {
+                eprintln!("{} {hint}", "hint:".yellow().bold());
+            }
+        }
+        _ => eprintln!("{prefix} {err}"),
+    }
+    eprintln!();
+}
+
 async fn print_history(runtime: &Runtime) {
-    let channel = &runtime.channel;
-    match runtime.store.get_history(channel, "user", 20).await {
-        Ok(messages) if messages.is_empty() => {
+    let opts = HistoryOpts {
+        last: REPL_HISTORY_LIMIT,
+        project: runtime
+            .project
+            .as_deref()
+            .unwrap_or(DEFAULT_PROJECT)
+            .to_string(),
+    };
+    match mem_cli::history(&runtime.store, opts).await {
+        Ok(records) if records.is_empty() => {
             println!("{}", "  No history in current session.\n".dimmed());
         }
-        Ok(messages) => {
-            println!("\n  {}\n", "Conversation history (last 20)".bold());
-            for (role, text) in &messages {
-                let label = if role == "user" {
-                    "you:".cyan()
+        Ok(records) => {
+            println!(
+                "\n  {}\n",
+                format!("Conversation history (last {REPL_HISTORY_LIMIT})").bold()
+            );
+            for record in &records {
+                let label = "kx:".green();
+                let body: String = record.content.chars().take(150).collect();
+                let ellipsis = if record.content.len() > 150 {
+                    "..."
                 } else {
-                    "kx:".green()
+                    ""
                 };
-                let preview: String = text.chars().take(150).collect();
-                let ellipsis = if text.len() > 150 { "..." } else { "" };
-                println!("  {label} {preview}{ellipsis}");
+                println!(
+                    "  {label} {body}{ellipsis} {}",
+                    format!("({})", record.updated_at).dimmed()
+                );
             }
             println!();
         }
-        Err(e) => {
-            eprintln!("{} fetching history: {e}\n", "error:".red().bold());
-        }
+        Err(e) => render_cli_error(&e, "fetching history"),
     }
 }
 
@@ -375,27 +428,35 @@ fn print_config(runtime: &Runtime, detected_stack: Stack, config: &ProjectConfig
 }
 
 async fn search_memory(runtime: &Runtime, query: &str) {
-    match runtime.store.search_messages(query, "", "user", 10).await {
-        Ok(results) if results.is_empty() => {
+    let opts = SearchOpts {
+        query: query.to_string(),
+        limit: REPL_SEARCH_LIMIT,
+        since: None,
+        kind: None,
+    };
+    match mem_cli::search(&runtime.store, opts).await {
+        Ok(records) if records.is_empty() => {
             println!("{}", "  No results found.\n".dimmed());
         }
-        Ok(results) => {
+        Ok(records) => {
             println!("\n  {} \"{query}\"\n", "Search results for".bold());
-            for (role, text, _conv_id) in &results {
-                let label = if role == "user" {
+            for record in &records {
+                let label = if record.kind == "user" {
                     "you:".cyan()
                 } else {
                     "kx:".green()
                 };
-                let preview: String = text.chars().take(120).collect();
-                let ellipsis = if text.len() > 120 { "..." } else { "" };
-                println!("  {label} {preview}{ellipsis}");
+                let body: String = record.content.chars().take(120).collect();
+                let ellipsis = if record.content.len() > 120 {
+                    "..."
+                } else {
+                    ""
+                };
+                println!("  {label} {body}{ellipsis}");
             }
             println!();
         }
-        Err(e) => {
-            eprintln!("{} searching memory: {e}\n", "error:".red().bold());
-        }
+        Err(e) => render_cli_error(&e, "searching memory"),
     }
 }
 
