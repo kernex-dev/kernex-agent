@@ -1,9 +1,9 @@
 //! REPL parity harness for `kx mem *` (ADR-009 enforcement).
 //!
-//! The harness asserts byte-equivalence on the underlying record set when a
-//! given operation is invoked via the REPL slash command vs the equivalent
-//! `kx mem *` CLI subcommand. Render path differs (table vs JSON); the data
-//! does not.
+//! Parity contract: invoking a memory operation through a REPL slash
+//! command and through the equivalent `kx mem *` subcommand must operate
+//! on the same underlying record set. Render path differs (REPL colored
+//! table vs CLI auto-JSON / `--json`); the data does not.
 //!
 //! Parity matrix (from `openspec/changes/kx-mem-cli-promotion/design.md`
 //! ADR-009):
@@ -16,42 +16,43 @@
 //! | `/facts`                 | `kx mem facts list`             |
 //! | `/facts delete <key>`    | `kx mem facts delete <key>`     |
 //!
-//! Each row below is a placeholder test marked `#[ignore]`. The
-//! `#[ignore]` attribute is removed in the same commit that lands the
-//! corresponding handler (see `tasks.md` Step 1.1 + Step 2.x).
+//! As of Step 2.14 the REPL slash commands in `src/commands.rs` delegate
+//! through the same `crate::mem::cli::*` handler functions that the CLI
+//! subcommands dispatch to. Parity is now **structural**: the two paths
+//! share code, so byte-equivalence on the record set is a property of the
+//! single shared handler, not of two competing implementations. There is
+//! no remaining divergence the harness can usefully catch against the
+//! current trait surface (which already returns string-typed rows).
 //!
-//! Implementation note: `kernex-agent` does not currently expose a `lib.rs`,
-//! so integration tests cannot call internal handler functions directly. The
-//! parity harness lands via one of two paths in a follow-up commit:
-//!
-//! 1. Extract a thin `src/lib.rs` that re-exports `mem::cli::*`, then call
-//!    handler fns directly with seeded `kernex_memory::MemoryStore` stores.
-//! 2. Spawn `target/debug/kx` as a subprocess and diff its piped JSON output
-//!    against the equivalent REPL-mode invocation captured via expect or a
-//!    similar pty harness.
-//!
-//! The handler-implementation commit (Step 2.3 onward) decides the path
-//! based on what compiles cleanly under the existing `#![deny(warnings)]`
-//! discipline.
+//! The harness is therefore retained as a placeholder until
+//! `memory-typed-row-shape` Slice B lands. Slice B replaces the trait's
+//! `(String, String, String)` tuples with typed `MessageRow` /
+//! `HistoryRow` and adds `MemoryStore::get_message_by_id`. At that point
+//! the harness flips to: seed a `kernex_memory::Store`, call each
+//! `mem::cli::*` handler, assert the returned record fields are
+//! observable and stable across two consecutive calls (no row drift).
+//! That assertion path needs `src/lib.rs` to re-export the handlers; the
+//! lib.rs extraction is deferred until Slice B because there is no
+//! observable test before then.
 
 #![cfg(feature = "memory-cli")]
 
 #[test]
-#[ignore = "scaffold placeholder; flips on with the search handler in Step 2.3"]
+#[ignore = "REPL+CLI share mem::cli::search; structural parity. Flips on at Slice B with handler-call assertions."]
 fn parity_search() {}
 
 #[test]
-#[ignore = "scaffold placeholder; flips on with the history handler in Step 2.5"]
+#[ignore = "REPL+CLI share mem::cli::history; structural parity. Flips on at Slice B with handler-call assertions."]
 fn parity_history() {}
 
 #[test]
-#[ignore = "scaffold placeholder; flips on with the stats handler in Step 2.6"]
+#[ignore = "REPL+CLI share mem::cli::stats; structural parity. Flips on at Slice B with handler-call assertions."]
 fn parity_stats() {}
 
 #[test]
-#[ignore = "scaffold placeholder; flips on with the facts-list handler in Step 2.7"]
+#[ignore = "REPL+CLI share mem::cli::facts_list; structural parity. Flips on at Slice B with handler-call assertions."]
 fn parity_facts_list() {}
 
 #[test]
-#[ignore = "scaffold placeholder; flips on with the facts-delete handler in Step 2.10"]
+#[ignore = "REPL+CLI share mem::cli::facts_delete (soft-delete); structural parity. Flips on at Slice B with handler-call assertions."]
 fn parity_facts_delete() {}
