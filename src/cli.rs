@@ -124,10 +124,34 @@ pub enum Command {
     },
 }
 
+// Per CC-8, every `kx mem *` subcommand's `--help` output includes
+// Examples, an Exit codes section, and a `Try:` line. Clap's derive
+// macros require each `after_help` value to be a compile-time string
+// literal, so the shared exit-codes block is inlined in every variant
+// below rather than referenced through a const (concat! and the derive
+// parser both reject non-literal args). A small `cli_help_contract`
+// test below asserts every variant carries the required sections so
+// future variants cannot drift away from the contract silently.
+
 #[cfg(feature = "memory-cli")]
 #[derive(Subcommand)]
 pub enum MemAction {
     /// Full-text search across observations and messages
+    #[command(after_help = "Examples:
+  kx mem search \"N+1 query\" --limit 5
+  kx mem search auth --type bugfix --since 30d
+  kx mem search hello --json | jq '.[].title'
+
+Exit codes:
+  0  Success
+  2  Usage error (unknown flag, malformed argument)
+  3  Not found (id, key, or required record absent)
+  4  Authorization or sandbox refusal
+  5  Runtime (DB locked, IO failure, schema mismatch)
+  7  Rate / capacity (reserved for future provider-backed commands)
+
+Try: kx mem search \"hello\" --limit 3 --json
+")]
     Search {
         /// Query string (FTS5 syntax)
         query: String,
@@ -142,24 +166,100 @@ pub enum MemAction {
         r#type: Option<String>,
     },
     /// Fetch a single observation by id
+    #[command(after_help = "Examples:
+  kx mem get 42
+  kx mem get 42 --json
+
+Exit codes:
+  0  Success
+  2  Usage error (unknown flag, malformed argument)
+  3  Not found (id, key, or required record absent)
+  4  Authorization or sandbox refusal
+  5  Runtime (DB locked, IO failure, schema mismatch)
+  7  Rate / capacity (reserved for future provider-backed commands)
+
+Try: kx mem search hello | jq '.[0].id' # find an id, then kx mem get <id>
+")]
     Get {
         /// Observation id (returned by `kx mem search`)
         id: i64,
     },
     /// Recent observations for a project, newest first
+    #[command(after_help = "Examples:
+  kx mem history
+  kx mem history --last 5
+  kx --project my-project mem history
+
+Exit codes:
+  0  Success
+  2  Usage error (unknown flag, malformed argument)
+  3  Not found (id, key, or required record absent)
+  4  Authorization or sandbox refusal
+  5  Runtime (DB locked, IO failure, schema mismatch)
+  7  Rate / capacity (reserved for future provider-backed commands)
+
+Try: kx mem history --last 5 --json | jq '.[].title'
+")]
     History {
         /// Override the default count (default 20)
         #[arg(long)]
         last: Option<usize>,
     },
     /// Counts and last-write timestamp for a project
+    #[command(after_help = "Examples:
+  kx mem stats
+  kx mem stats --json
+
+Exit codes:
+  0  Success
+  2  Usage error (unknown flag, malformed argument)
+  3  Not found (id, key, or required record absent)
+  4  Authorization or sandbox refusal
+  5  Runtime (DB locked, IO failure, schema mismatch)
+  7  Rate / capacity (reserved for future provider-backed commands)
+
+Try: kx mem stats --json | jq '.observations'
+")]
     Stats {},
     /// Read or write the project-scoped facts table
+    #[command(after_help = "Examples:
+  kx mem facts list
+  kx mem facts add auth-pattern \"OIDC + PKCE\"
+  kx mem facts get auth-pattern
+  kx mem facts delete auth-pattern
+
+Exit codes:
+  0  Success
+  2  Usage error (unknown flag, malformed argument)
+  3  Not found (id, key, or required record absent)
+  4  Authorization or sandbox refusal
+  5  Runtime (DB locked, IO failure, schema mismatch)
+  7  Rate / capacity (reserved for future provider-backed commands)
+
+Try: kx mem facts --help # see all four subcommands
+")]
     Facts {
         #[command(subcommand)]
         action: FactsAction,
     },
     /// Record a new observation with structured What / Why / Where / Learned fields
+    #[command(after_help = "Examples:
+  kx mem save --type bugfix \"Fixed N+1 in UserList\" \\
+      --what \"added eager loading\" \\
+      --why \"5k-user lists were 12s slow\" \\
+      --where src/users/list.rs
+  echo '{\"type\":\"decision\",\"title\":\"...\"}' | kx mem save --stdin
+
+Exit codes:
+  0  Success
+  2  Usage error (unknown flag, malformed argument)
+  3  Not found (id, key, or required record absent)
+  4  Authorization or sandbox refusal
+  5  Runtime (DB locked, IO failure, schema mismatch)
+  7  Rate / capacity (reserved for future provider-backed commands)
+
+Try: kx mem save --help # see all required fields
+")]
     Save(SaveArgs),
 }
 
@@ -167,13 +267,55 @@ pub enum MemAction {
 #[derive(Subcommand)]
 pub enum FactsAction {
     /// List every fact for the current project
+    #[command(after_help = "Examples:
+  kx mem facts list
+  kx mem facts list --json | jq '.[].key'
+
+Exit codes:
+  0  Success
+  2  Usage error (unknown flag, malformed argument)
+  3  Not found (id, key, or required record absent)
+  4  Authorization or sandbox refusal
+  5  Runtime (DB locked, IO failure, schema mismatch)
+  7  Rate / capacity (reserved for future provider-backed commands)
+
+Try: kx mem facts list --json | jq '.[] | {key, value}'
+")]
     List,
     /// Read a single fact by key
+    #[command(after_help = "Examples:
+  kx mem facts get auth-pattern
+  kx mem facts get auth-pattern --json
+
+Exit codes:
+  0  Success
+  2  Usage error (unknown flag, malformed argument)
+  3  Not found (id, key, or required record absent)
+  4  Authorization or sandbox refusal
+  5  Runtime (DB locked, IO failure, schema mismatch)
+  7  Rate / capacity (reserved for future provider-backed commands)
+
+Try: kx mem facts list # see known keys, then kx mem facts get <key>
+")]
     Get {
         /// Fact key
         key: String,
     },
     /// Write a fact; upserts on existing key
+    #[command(after_help = "Examples:
+  kx mem facts add auth-pattern \"OIDC + PKCE\"
+  printf \"OIDC + PKCE\" | kx mem facts add auth-pattern --stdin
+
+Exit codes:
+  0  Success
+  2  Usage error (unknown flag, malformed argument)
+  3  Not found (id, key, or required record absent)
+  4  Authorization or sandbox refusal
+  5  Runtime (DB locked, IO failure, schema mismatch)
+  7  Rate / capacity (reserved for future provider-backed commands)
+
+Try: kx mem facts add my-key \"my value\" && kx mem facts get my-key
+")]
     Add {
         /// Fact key
         key: String,
@@ -184,6 +326,19 @@ pub enum FactsAction {
         stdin: bool,
     },
     /// Soft-delete a fact (recoverable; reads exclude soft-deleted by default)
+    #[command(after_help = "Examples:
+  kx mem facts delete auth-pattern
+
+Exit codes:
+  0  Success
+  2  Usage error (unknown flag, malformed argument)
+  3  Not found (id, key, or required record absent)
+  4  Authorization or sandbox refusal
+  5  Runtime (DB locked, IO failure, schema mismatch)
+  7  Rate / capacity (reserved for future provider-backed commands)
+
+Try: kx mem facts list # confirm key exists, then kx mem facts delete <key>
+")]
     Delete {
         /// Fact key
         key: String,
@@ -645,6 +800,55 @@ mod tests {
     fn cli_has_valid_structure() {
         // Verifies the CLI definition doesn't have conflicts
         Cli::command().debug_assert();
+    }
+
+    /// CC-8 help text contract: every `kx mem *` subcommand's `--help`
+    /// output must contain an Examples section, an Exit codes block,
+    /// and a `Try:` line with a runnable example. This test walks the
+    /// clap command tree and asserts each `mem` subcommand carries the
+    /// required substrings so new variants cannot drift away from the
+    /// contract without breaking the test.
+    #[cfg(feature = "memory-cli")]
+    #[test]
+    fn cli_help_contract_cc8_mem_subcommands() {
+        fn check(subcmd: &clap::Command, full_name: &str) {
+            let help = subcmd.clone().render_long_help().to_string();
+            assert!(
+                help.contains("Examples:"),
+                "{full_name} --help missing 'Examples:' section"
+            );
+            assert!(
+                help.contains("Exit codes:"),
+                "{full_name} --help missing 'Exit codes:' section"
+            );
+            assert!(
+                help.contains("Try:"),
+                "{full_name} --help missing 'Try:' line"
+            );
+        }
+
+        let cmd = Cli::command();
+        let mem = cmd
+            .find_subcommand("mem")
+            .expect("`kx mem` subcommand must exist when memory-cli feature is on");
+
+        // Direct children of `kx mem`. `facts` is a container; its leaves
+        // get checked separately below.
+        for name in ["search", "get", "history", "stats", "facts", "save"] {
+            let sub = mem
+                .find_subcommand(name)
+                .unwrap_or_else(|| panic!("`kx mem {name}` subcommand missing"));
+            check(sub, &format!("kx mem {name}"));
+        }
+
+        // Leaves of `kx mem facts`.
+        let facts = mem.find_subcommand("facts").expect("facts subcommand");
+        for name in ["list", "get", "add", "delete"] {
+            let sub = facts
+                .find_subcommand(name)
+                .unwrap_or_else(|| panic!("`kx mem facts {name}` subcommand missing"));
+            check(sub, &format!("kx mem facts {name}"));
+        }
     }
 
     #[test]
