@@ -181,8 +181,8 @@ Exit codes:
 Try: kx mem search hello | jq '.[0].id' # find an id, then kx mem get <id>
 ")]
     Get {
-        /// Observation id (returned by `kx mem search`)
-        id: i64,
+        /// Message UUID (returned by `kx mem search`)
+        id: String,
     },
     /// Recent observations for a project, newest first
     #[command(after_help = "Examples:

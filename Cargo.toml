@@ -17,12 +17,12 @@ name = "kx"
 path = "src/main.rs"
 
 [dependencies]
-kernex-runtime = "0.6.2"
-kernex-core = "0.6.2"
-kernex-providers = "0.6.2"
-kernex-pipelines = "0.6.2"
-kernex-sandbox = "0.6.2"
-kernex-memory = "0.6.2"
+kernex-runtime = "0.7.0"
+kernex-core = "0.7.0"
+kernex-providers = "0.7.0"
+kernex-pipelines = "0.7.0"
+kernex-sandbox = "0.7.0"
+kernex-memory = "0.7.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "rt", "net", "signal"] }
 clap = { version = "4", features = ["derive", "env"] }
 colored = "2"
@@ -39,6 +39,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-trait = "0.1"
 anyhow = "1"
 thiserror = "1"
+# Used by `mem::cli` to parse `--since` strings (e.g. `30d`) and to
+# project `SystemTime` back to the SQLite TIMESTAMP shape for JSON
+# output. kernex-memory's own `chrono` dep is the same workspace pin.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 # Optional deps. Each is pulled in only when its owning feature is
 # enabled. Keeping them optional lets `--no-default-features --features

@@ -154,9 +154,30 @@ async fn dispatch_inner(
             }
             Ok(())
         }
-        MemAction::Get { .. } => Err(CliError::NotImplemented {
-            subcommand: "kx mem get",
-        }),
+        MemAction::Get { id } => {
+            // Same explicit/implicit project handling as History.
+            let data_dir = if explicit_project.is_some() {
+                resolve_project_data_dir(default_project)?
+            } else {
+                data_dir_for(default_project)
+            };
+            let store = open_store(&data_dir).await?;
+            let record = cli::get(store.as_ref(), &id).await?;
+            if json_mode {
+                let out = render::render_search_json(
+                    std::slice::from_ref(&record),
+                    flags.compact,
+                    &flags.select,
+                )?;
+                println!("{out}");
+            } else {
+                print!(
+                    "{}",
+                    render::render_search_table(std::slice::from_ref(&record))
+                );
+            }
+            Ok(())
+        }
         MemAction::Stats {} => {
             // Same explicit/implicit project handling as History
             // (S-stats-2 explicitly allows an empty project as a

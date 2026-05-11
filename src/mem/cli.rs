@@ -11,10 +11,21 @@
 
 use std::time::{Duration, SystemTime};
 
-use kernex_memory::MemoryStore;
+use chrono::{DateTime, Utc};
+use kernex_memory::{HistoryRow, MemoryStore, MessageRow};
 
 use crate::mem::errors::CliError;
 use crate::mem::types::{FactsRecord, HistoryRecord, SearchRecord, StatsRecord, OBSERVATION_TYPES};
+
+/// Project a `SystemTime` to the SQLite `TIMESTAMP` shape used by the
+/// JSON output (`"%Y-%m-%d %H:%M:%S"`, UTC). Slice B of
+/// `memory-typed-row-shape` types the trait's `timestamp` and
+/// `updated_at` columns as `SystemTime`; we project back to a string at
+/// the JSON-projection boundary so the CC-1 contract stays stable.
+fn format_timestamp(t: SystemTime) -> String {
+    let dt: DateTime<Utc> = t.into();
+    dt.format("%Y-%m-%d %H:%M:%S").to_string()
+}
 
 /// Sender identifier the CLI uses when reading from the memory store.
 /// Matches the REPL convention so `/search` and `kx mem search` operate
@@ -47,11 +58,11 @@ pub struct SearchOpts {
 ///
 /// Records are returned in best-first order. `score` is the FTS5 rank
 /// position (1 = best), so ascending score == descending match quality.
-/// `--since` and `--type` are applied client-side after the FTS5 fetch.
-/// Known v1 limitation: the limit caps the pre-filter fetch, so a query
-/// combined with `--since` may return fewer than `limit` rows even when
-/// more would qualify; pushing the filter into `MemoryStore::search_messages`
-/// is tracked as a follow-up.
+/// `--since` is pushed server-side via the `MemoryStore::search_messages`
+/// `since: Option<SystemTime>` parameter (introduced in
+/// `kernex-memory 0.7.0`), so `LIMIT` applies after the recency filter.
+/// `--type` stays client-side because the FTS5 index has no observation
+/// type column today; the typed-save schema lifts that later.
 #[tracing::instrument(
     name = "kernex.mem.search",
     skip_all,
@@ -85,8 +96,8 @@ pub async fn search(
         hint: "Use a limit that fits in i64 (max 9223372036854775807).".to_string(),
     })?;
 
-    let raw = store
-        .search_messages(&opts.query, "", CLI_SENDER_ID, limit_i64)
+    let raw: Vec<MessageRow> = store
+        .search_messages(&opts.query, "", CLI_SENDER_ID, limit_i64, cutoff)
         .await
         .map_err(|e| CliError::Runtime {
             message: format!("memory search failed: {e}"),
@@ -96,26 +107,19 @@ pub async fn search(
     let mut records: Vec<SearchRecord> = raw
         .into_iter()
         .enumerate()
-        .map(|(idx, (role, content, updated_at))| {
-            let title = preview(&content, 80);
+        .map(|(idx, row)| {
+            let title = preview(&row.content, 80);
             SearchRecord {
-                // The trait surface does not return a stable id today;
-                // synthesize one from rank+timestamp so the CLI emits
-                // something the user can copy. When the typed-save
-                // schema lands this becomes the observation row id.
-                id: format!("msg-{}-{}", idx + 1, updated_at),
-                kind: role,
+                id: row.id,
+                kind: row.role,
                 title,
-                content,
-                updated_at,
+                content: row.content,
+                updated_at: format_timestamp(row.timestamp),
                 score: idx + 1,
             }
         })
         .collect();
 
-    if let Some(cutoff) = cutoff {
-        records.retain(|r| timestamp_after(&r.updated_at, cutoff));
-    }
     if let Some(t) = &opts.kind {
         // v1: records carry no observation-type column. A known type
         // value is accepted by the parser (S-search-4 stays open until
@@ -171,7 +175,7 @@ pub async fn history(
         hint: "Use a count that fits in i64 (max 9223372036854775807).".to_string(),
     })?;
 
-    let raw = store
+    let raw: Vec<HistoryRow> = store
         .get_history(CLI_CHANNEL, CLI_SENDER_ID, limit_i64)
         .await
         .map_err(|e| CliError::Runtime {
@@ -182,12 +186,12 @@ pub async fn history(
     let records: Vec<HistoryRecord> = raw
         .into_iter()
         .enumerate()
-        .map(|(idx, (summary, updated_at))| HistoryRecord {
-            id: format!("conv-{}-{}", idx + 1, updated_at),
+        .map(|(idx, row)| HistoryRecord {
+            id: row.conversation_id,
             kind: "conversation".to_string(),
-            title: preview(&summary, 80),
-            content: summary,
-            updated_at,
+            title: preview(&row.summary, 80),
+            content: row.summary,
+            updated_at: format_timestamp(row.updated_at),
             score: idx + 1,
             project: opts.project.clone(),
         })
@@ -250,7 +254,7 @@ pub async fn stats(store: &dyn MemoryStore, opts: StatsOpts) -> Result<StatsReco
         })?
         .into_iter()
         .next()
-        .map(|(_summary, updated_at)| updated_at);
+        .map(|row| format_timestamp(row.updated_at));
 
     Ok(StatsRecord {
         project: opts.project,
@@ -260,6 +264,42 @@ pub async fn stats(store: &dyn MemoryStore, opts: StatsOpts) -> Result<StatsReco
         db_size_bytes,
         last_write_at,
     })
+}
+
+/// Fetch a single message by its UUID.
+///
+/// Backed by `MemoryStore::get_message_by_id`. Returns a `SearchRecord`
+/// so the renderer (JSON or table) can reuse the same projection the
+/// `search` handler emits. A missing id maps to `CliError::NotFound`
+/// (exit code 3) per the CC-7 taxonomy.
+#[tracing::instrument(
+    name = "kernex.mem.get",
+    skip_all,
+    fields(sender_id = %CLI_SENDER_ID, id = %id),
+)]
+pub async fn get(store: &dyn MemoryStore, id: &str) -> Result<SearchRecord, CliError> {
+    let row = store
+        .get_message_by_id(id)
+        .await
+        .map_err(|e| CliError::Runtime {
+            message: format!("memory get failed: {e}"),
+            hint: "Run `kx doctor` to verify the local memory database.".to_string(),
+        })?;
+
+    match row {
+        Some(row) => Ok(SearchRecord {
+            title: preview(&row.content, 80),
+            id: row.id,
+            kind: row.role,
+            content: row.content,
+            updated_at: format_timestamp(row.timestamp),
+            score: 1,
+        }),
+        None => Err(CliError::NotFound {
+            message: format!("no message with id {id:?}"),
+            hint: "Use `kx mem search <query>` to find an id first.".to_string(),
+        }),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -471,70 +511,6 @@ fn parse_since(s: &str) -> Result<SystemTime, CliError> {
         })
 }
 
-/// Compare a record timestamp string against a cutoff. Permissive: an
-/// unparseable timestamp is treated as "older than the cutoff" so the
-/// `--since` filter never silently surfaces a malformed row. Today the
-/// memory store writes timestamps via SQLite `CURRENT_TIMESTAMP`, which
-/// emits `YYYY-MM-DD HH:MM:SS` in UTC.
-fn timestamp_after(ts: &str, cutoff: SystemTime) -> bool {
-    let Some(parsed) = parse_sqlite_utc(ts) else {
-        return false;
-    };
-    parsed >= cutoff
-}
-
-/// Parse SQLite's `CURRENT_TIMESTAMP` shape (`YYYY-MM-DD HH:MM:SS` in
-/// UTC) and the ISO-8601 variant (`YYYY-MM-DDTHH:MM:SSZ`) into a
-/// `SystemTime`. Returns `None` on any parse failure; callers treat that
-/// as "skip this row" rather than panicking.
-fn parse_sqlite_utc(ts: &str) -> Option<SystemTime> {
-    // Hand-rolled to avoid pulling chrono into kernex-agent's direct
-    // deps. The two shapes we accept are well-defined fixed-width.
-    let bytes = ts.as_bytes();
-    if bytes.len() < 19 {
-        return None;
-    }
-    let year: i64 = ts.get(0..4)?.parse().ok()?;
-    let month: u32 = ts.get(5..7)?.parse().ok()?;
-    let day: u32 = ts.get(8..10)?.parse().ok()?;
-    let sep = bytes[10];
-    if sep != b' ' && sep != b'T' {
-        return None;
-    }
-    let hour: u32 = ts.get(11..13)?.parse().ok()?;
-    let minute: u32 = ts.get(14..16)?.parse().ok()?;
-    let second: u32 = ts.get(17..19)?.parse().ok()?;
-
-    let days_since_epoch = days_from_civil(year, month, day)?;
-    let secs = days_since_epoch
-        .checked_mul(86_400)?
-        .checked_add(i64::from(hour) * 3_600)?
-        .checked_add(i64::from(minute) * 60)?
-        .checked_add(i64::from(second))?;
-    if secs < 0 {
-        return None;
-    }
-    SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(secs as u64))
-}
-
-/// Convert a proleptic Gregorian (year, month, day) to days since the
-/// unix epoch (1970-01-01). Adapted from Howard Hinnant's `days_from_civil`
-/// algorithm. Returns `None` for inputs that fall outside the supported
-/// range (year < 0 or month/day out of range).
-fn days_from_civil(year: i64, month: u32, day: u32) -> Option<i64> {
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
-        return None;
-    }
-    let y = if month <= 2 { year - 1 } else { year };
-    let era = y.div_euclid(400);
-    let yoe = y.rem_euclid(400);
-    let m = month as i64;
-    let d = day as i64;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    Some(era * 146_097 + doe - 719_468)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -716,43 +692,59 @@ mod tests {
         assert_eq!(err.exit_code(), 2);
     }
 
-    #[test]
-    fn parse_sqlite_utc_round_trips_within_a_second() {
-        // SQLite shape.
-        let parsed = parse_sqlite_utc("2026-05-11 12:34:56").unwrap();
-        let epoch = parsed
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        // Hand-computed: 2026-05-11T12:34:56Z = 1778502896 seconds.
-        assert_eq!(epoch, 1_778_502_896);
-
-        // ISO-8601 shape with the `T` separator.
-        let parsed_t = parse_sqlite_utc("2026-05-11T12:34:56Z").unwrap();
-        assert_eq!(parsed, parsed_t);
-    }
-
-    #[test]
-    fn parse_sqlite_utc_rejects_garbage() {
-        assert!(parse_sqlite_utc("").is_none());
-        assert!(parse_sqlite_utc("not-a-timestamp").is_none());
-        assert!(parse_sqlite_utc("2026-99-01 00:00:00").is_none());
-    }
-
     #[tokio::test]
-    async fn s_search_3_since_filters_old_records() {
-        // We cannot backdate SQLite's CURRENT_TIMESTAMP from the public
-        // trait surface; instead, exercise the filter at the helper
-        // boundary. A 30-day window must include "now" and exclude a
-        // synthetic timestamp from 60 days ago.
-        let now = SystemTime::now();
-        let cutoff = now.checked_sub(Duration::from_secs(30 * 86_400)).unwrap();
+    async fn s_search_3_since_filters_at_trait_surface() {
+        // Slice B pushes `since` server-side; the agent's job here is to
+        // pass the parsed cutoff straight through to `MemoryStore::search_messages`.
+        // Recent corpus + cutoff in the past: result returned. Same
+        // corpus + cutoff in the future: result filtered.
+        let (_tmp, store) = seeded_store(&[("hello unique-marker world", "ack", "demo")]).await;
 
-        let recent = "2099-01-01 00:00:00";
-        let ancient = "2000-01-01 00:00:00";
+        let past = SystemTime::now() - Duration::from_secs(3_600);
+        let rows = search(
+            store.as_ref(),
+            SearchOpts {
+                query: "unique-marker".to_string(),
+                limit: 10,
+                since: None,
+                kind: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!rows.is_empty(), "control: query matches");
 
-        assert!(timestamp_after(recent, cutoff));
-        assert!(!timestamp_after(ancient, cutoff));
+        // Push the same query through `parse_since`-equivalent path.
+        // We pass an explicit "1h" cutoff (interpreted as "since one hour
+        // ago") which must still surface the row.
+        let rows_past = search(
+            store.as_ref(),
+            SearchOpts {
+                query: "unique-marker".to_string(),
+                limit: 10,
+                since: Some("1h".to_string()),
+                kind: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            !rows_past.is_empty(),
+            "since=1h must include just-stored row"
+        );
+
+        // A cutoff in the future filters everything out via the
+        // server-side WHERE m.timestamp >= ? clause. We construct the
+        // future cutoff directly (parse_since only accepts "since N ago"
+        // shapes, not future windows) by drilling through the trait
+        // method that the handler ultimately invokes.
+        let future = SystemTime::now() + Duration::from_secs(3_600);
+        let direct = store
+            .search_messages("unique-marker", "", CLI_SENDER_ID, 10, Some(future))
+            .await
+            .unwrap();
+        assert!(direct.is_empty(), "since=future must filter out all rows");
+        let _ = past; // suppress unused-binding if path above is restructured
     }
 
     #[test]
