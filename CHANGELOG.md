@@ -7,14 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`kx mem *` subcommand surface (Phase D-agent).** Eight atomic commits between `56bd0b7` and `841db57` add a typed CLI surface backed by `kernex_memory::MemoryStore`:
+  - `kx mem search <query>` (Step 2.3, commit `632d99b`): FTS5 search with `--limit`, `--since` (e.g. `30d`, `4h`), `--type` filter, and `--json` / `--compact` / `--select` projection flags.
+  - `kx mem history` (Step 2.5, commit `632d99b`): closed-conversation summaries with `--last`.
+  - `kx mem stats` (Step 2.6, commit `94bb6a6`): counts plus DB size plus `last_write_at`.
+  - `kx mem facts {list, get, add, delete}` (Steps 2.7–2.10, commit `60c60a9`): full CRUD; `add --stdin` for newline-bearing values; `delete` is soft-delete to preserve the CC-9 invariant.
+  - `kx mem get <id>` and `kx mem save` (Steps 2.4 and 2.11): stubbed; return `CliError::NotImplemented` (exit code 7) pending the upstream typed-row trait surface and the typed observation table respectively.
+  - CC-1..CC-8 cross-cutting contract: auto-JSON when stdout is not a TTY, `--json` to force, `--compact` projection, `--select <fields>` allowlist, empty result returns `[]` (not `null`), structured stderr on errors, exit-code taxonomy (0/2/3/4/5/7), `--help` text contract on every subcommand (Step 2.13, commit `7326d26`).
+- **REPL parity (Step 2.14, commit `841db57`).** The five memory-related slash commands (`/search`, `/history`, `/memory`, `/facts`, `/facts delete`) now delegate through the same `mem::cli::*` handler functions that the `kx mem *` subcommands dispatch to. Parity is structural: single shared codepath. Side effects: `/facts delete` is now soft-delete (was hard-delete; matches the CLI contract and CC-9); `/history` reads `CLI_CHANNEL="cli"` instead of `runtime.channel`; `/memory` surfaces `last_write_at` when present. Two pre-existing display-naming bugs in `/search` and `/history` are corrected in the same change.
+- **REPL parity harness** at `tests/mem_repl_parity.rs`. Scaffold committed in `56bd0b7`; flips from placeholder `#[ignore]` to handler-call assertions once `memory-typed-row-shape` Slice B brings typed records.
+
 ### Changed
 
-- **Bumped to `kernex-* 0.6.1`** to consume the workspace's first OIDC trusted-publishing release (no functional changes vs 0.6.0; same trait surfaces, same migration, same profiles). See [kernex-dev CHANGELOG `[0.6.1]`](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md) for the release-tooling changes. The agent stays version-locked with the workspace.
-- Added `kernex-memory = "0.6.1"` as a **direct dep** (was previously pulled transitively via `kernex-runtime`). The direct pin is the prerequisite for the upcoming `kx mem *` subcommand surface, which calls into `kernex_memory::MemoryStore` directly. No source imports yet; `cargo-machete` ignore list updated to suppress the unused-dep warning until the first subcommand commit lands.
-- Previously bumped to `kernex-* 0.6.0` to consume the workspace's M6 release (MemoryStore trait + soft-delete on facts in `kernex-memory`, `Runtime::store_handle()` returning `Arc<dyn MemoryStore>`, workspace split into `kernex-adapter-core` / `kernex-presets` / `kernex-brain`, and the new `release` / `release-fast` cargo profiles). See [kernex-dev CHANGELOG `[0.6.0]`](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md) for the full set of changes.
-- No source changes required in `kernex-agent` for the 0.6.0 → 0.6.1 bump or for adding the `kernex-memory` direct dep: the agent does not yet construct `MemoryStore` directly and does not depend on the new `kernex-adapter-core` symbols.
+- **Bumped to `kernex-* 0.6.2`** (commit `8d4185d`) to consume the workspace's `memory-typed-row-shape` Slice A: `Store::run_migrations` fast-path saves ~10 ms cold-open by replacing the per-migration round-trip loop with one `SELECT name FROM _migrations` plus an in-memory `HashSet<String>`. The bump leapfrogged `0.6.1 → 0.6.2` because Slice A's only consumer-visible change is internal to `Store::new` (no API surface change). See [kernex-dev CHANGELOG `[0.6.2]`](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md) for full release notes.
+- **`CliError` migrated to `thiserror`** (Step 2.3 audit findings, commit `632d99b`). Five-agent best-practices sweep against the `kernex-dev/.claude/skills/` rubric produced: UTF-8-safe `parse_since` (was panicking on multi-byte units like `30日`), `is_already_rendered` walks `err.chain()` (was leaf-only), `#[tracing::instrument]` on `mem::dispatch / open_store / search`, `i64::try_from` on `--limit` to guard usize→i64 wrap on 64-bit, `&dyn MemoryStore` instead of `&Arc<dyn ...>` where ownership isn't needed, plus three new regression tests.
+- **Previously bumped to `kernex-* 0.6.1`** to consume the workspace's first OIDC trusted-publishing release. Added `kernex-memory` as a direct dep (was previously pulled transitively via `kernex-runtime`). The direct pin is the prerequisite for the `kx mem *` subcommand surface above.
+- **Previously bumped to `kernex-* 0.6.0`** to consume the workspace's M6 release (MemoryStore trait + soft-delete on facts in `kernex-memory`, `Runtime::store_handle()` returning `Arc<dyn MemoryStore>`, workspace split into `kernex-adapter-core` / `kernex-presets` / `kernex-brain`, and the new `release` / `release-fast` cargo profiles).
 
-### Added
+### Added — earlier in this unreleased window
 
 - **Cargo feature graph.** `default = ["agent-claude", "memory-cli", "serve"]` plus five non-default adapter feature flags (`agent-codex`, `agent-opencode`, `agent-cursor`, `agent-cline`, `agent-windsurf`), `tui`, and five preset feature flags (declared, no implementation yet). The default `kx` binary stays under the 15 MB hard ceiling on macOS aarch64 release builds. See `openspec/archive/2026-05-cargo-feature-graph/`.
 - **Three-variant size matrix in CI.** `.github/workflows/size-gate.yml` builds the `default`, `--no-default-features --features memory-cli` minimal, and `--features agent-all,tui,serve,preset-all` full variants on every PR. Per-variant ceilings: 8 MB minimal soft-warn, 15 MB default hard-fail, 25 MB full informational. Plus a minimal-variant dep-tree leak audit guarding against `serve`-only or `tui`-only deps regressing into the minimal binary.
