@@ -107,6 +107,119 @@ pub enum Command {
         #[arg(long, default_value_t = 4)]
         workers: usize,
     },
+    /// Read, write, and search the local memory store from outside the REPL
+    #[cfg(feature = "memory-cli")]
+    Mem {
+        #[command(subcommand)]
+        action: MemAction,
+        /// Force JSON output even on a TTY
+        #[arg(long, global = true)]
+        json: bool,
+        /// Project only `id`, `type`, `title`, `updated_at`, `score`
+        #[arg(long, global = true)]
+        compact: bool,
+        /// Project arbitrary fields (comma-separated)
+        #[arg(long, global = true, value_delimiter = ',')]
+        select: Vec<String>,
+    },
+}
+
+#[cfg(feature = "memory-cli")]
+#[derive(Subcommand)]
+pub enum MemAction {
+    /// Full-text search across observations and messages
+    Search {
+        /// Query string (FTS5 syntax)
+        query: String,
+        /// Max results to return (default 10)
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+        /// Filter to records within a recency window (e.g., 30d, 12h, 90m)
+        #[arg(long)]
+        since: Option<String>,
+        /// Filter by observation type
+        #[arg(long)]
+        r#type: Option<String>,
+    },
+    /// Fetch a single observation by id
+    Get {
+        /// Observation id (returned by `kx mem search`)
+        id: i64,
+    },
+    /// Recent observations for a project, newest first
+    History {
+        /// Override the default count (default 20)
+        #[arg(long)]
+        last: Option<usize>,
+        /// Override cwd-based project detection
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Counts and last-write timestamp for a project
+    Stats {
+        /// Override cwd-based project detection
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Read or write the project-scoped facts table
+    Facts {
+        #[command(subcommand)]
+        action: FactsAction,
+    },
+    /// Record a new observation with structured What / Why / Where / Learned fields
+    Save(SaveArgs),
+}
+
+#[cfg(feature = "memory-cli")]
+#[derive(Subcommand)]
+pub enum FactsAction {
+    /// List every fact for the current project
+    List,
+    /// Read a single fact by key
+    Get {
+        /// Fact key
+        key: String,
+    },
+    /// Write a fact; upserts on existing key
+    Add {
+        /// Fact key
+        key: String,
+        /// Inline value (mutually exclusive with --stdin)
+        value: Option<String>,
+        /// Read the value from stdin
+        #[arg(long)]
+        stdin: bool,
+    },
+    /// Soft-delete a fact (recoverable; reads exclude soft-deleted by default)
+    Delete {
+        /// Fact key
+        key: String,
+    },
+}
+
+#[cfg(feature = "memory-cli")]
+#[derive(clap::Args)]
+pub struct SaveArgs {
+    /// Observation type (bugfix, decision, pattern, config, discovery, learning, architecture)
+    #[arg(long)]
+    pub r#type: Option<String>,
+    /// Title (positional, required unless --stdin)
+    pub title: Option<String>,
+    /// What changed
+    #[arg(long)]
+    pub what: Option<String>,
+    /// Why it changed
+    #[arg(long)]
+    pub why: Option<String>,
+    /// Where the change applied (file path)
+    #[arg(long)]
+    pub r#where: Option<String>,
+    /// What was learned
+    #[arg(long)]
+    pub learned: Option<String>,
+    /// Read the full SaveEntry JSON from stdin (mutually exclusive with inline fields)
+    #[arg(long)]
+    pub stdin: bool,
 }
 
 #[derive(Subcommand)]
