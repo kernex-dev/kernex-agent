@@ -150,10 +150,15 @@ specification bug; the cross-cutting rule wins.
 
 ## kx mem get
 
+> **Id shape:** message ids are UUIDs (string), not integers. The
+> samples below use short placeholders for readability; the real
+> surface accepts any string argument and pushes it straight into
+> `MemoryStore::get_message_by_id` (added in `kernex-memory 0.7.0`).
+
 ### S-get-1 Happy path returns full record
 
-- **Given** an observation with id `42`
-- **When** the operator runs `kx mem get 42 --json`
+- **Given** an observation with id `MSG-A`
+- **When** the operator runs `kx mem get MSG-A --json`
 - **Then** stdout is a single JSON object including `id`, `type`,
   `title`, all save-body fields (`what`, `why`, `where`, `learned`),
   `created_at`, `updated_at`.
@@ -161,16 +166,16 @@ specification bug; the cross-cutting rule wins.
 
 ### S-get-2 Missing id is exit 3
 
-- **When** the operator runs `kx mem get 9999`
-- **Given** id `9999` does not exist
+- **When** the operator runs `kx mem get MSG-NOPE`
+- **Given** id `MSG-NOPE` does not exist
 - **Then** exit is `3`.
 - **And** stderr (in JSON mode) contains a `Try:` hint pointing to
   `kx mem search`.
 
 ### S-get-3 Soft-deleted record returns 3
 
-- **Given** an observation with id `42` and `deleted_at` set
-- **When** the operator runs `kx mem get 42`
+- **Given** an observation with id `MSG-A` and `deleted_at` set
+- **When** the operator runs `kx mem get MSG-A`
 - **Then** exit is `3` (deleted is invisible per CC-9).
 
 ---
