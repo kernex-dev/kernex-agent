@@ -60,7 +60,7 @@ impl ProjectConfig {
         let content = std::fs::read_to_string(&path)
             .map_err(|e| anyhow::anyhow!("failed to read {}: {e}", path.display()))?;
 
-        let config: Self = toml::from_str(&content)
+        let config: Self = basic_toml::from_str(&content)
             .map_err(|e| anyhow::anyhow!("failed to parse {}: {e}", path.display()))?;
 
         if let Some(v) = config.version {
