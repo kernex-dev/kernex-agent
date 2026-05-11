@@ -39,10 +39,11 @@ pub enum CliError {
 }
 
 impl CliError {
-    /// Returned to the OS via `std::process::ExitCode` once the dispatcher
-    /// is wired to honor it. Not yet consumed in the scaffold commit; the
-    /// top-level `main` still maps every error to exit 1.
-    #[allow(dead_code)]
+    /// Returned to the OS by `main`'s top-level error handler when a
+    /// `kx mem *` subcommand returns this error. The shared `main` in
+    /// `main.rs` downcasts `anyhow::Error` to `CliError` via
+    /// `exit_code_for` and exits with the matching code; all other
+    /// errors continue to exit 1.
     pub fn exit_code(&self) -> u8 {
         match self {
             CliError::NotImplemented { .. } | CliError::Usage { .. } => 2,
