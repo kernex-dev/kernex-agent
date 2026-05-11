@@ -73,6 +73,38 @@ pub struct HistoryRecord {
     pub project: String,
 }
 
+/// `kx mem stats` output. Single object (not a list).
+///
+/// `observations` is the spec field name (per S-stats-1). Today it maps
+/// to the underlying message count because the typed-observation table
+/// does not exist yet (tracked under FU-D-AG-04). `conversations` is an
+/// extra field surfaced for v1 since the trait already exposes it; it
+/// is in the `--select` allowlist but not in `--compact`.
+///
+/// `last_write_at` is `None` for an empty project (S-stats-2). Today it
+/// is derived from the most recent closed-conversation row via
+/// `get_history(.., .., 1)`; when FU-D-AG-04 lands a typed `max(updated_at)`
+/// query on the observations table replaces the derivation.
+#[derive(Debug, Clone, Serialize)]
+pub struct StatsRecord {
+    /// Resolved project name (echoed for operator confirmation).
+    pub project: String,
+    /// Closed + active conversation rows for this sender.
+    pub conversations: i64,
+    /// Message rows for this sender. The spec calls this "observations"
+    /// since the long-term model is the typed observation table; until
+    /// FU-D-AG-04 lands, the underlying row source is messages.
+    #[serde(rename = "observations")]
+    pub observations: i64,
+    /// Active (not soft-deleted) fact rows for this sender.
+    pub facts: i64,
+    /// On-disk byte size of the SQLite database file (memory.db).
+    pub db_size_bytes: u64,
+    /// ISO-8601 timestamp of the most recent closed-conversation update,
+    /// or `None` when no rows exist (S-stats-2).
+    pub last_write_at: Option<String>,
+}
+
 /// Valid observation types per the kx-mem-cli-promotion proposal.
 ///
 /// `--type bogus` exits 2 and stderr lists this set (S-search-5,

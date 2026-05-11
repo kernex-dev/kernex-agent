@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 use kernex_memory::MemoryStore;
 
 use crate::mem::errors::CliError;
-use crate::mem::types::{HistoryRecord, SearchRecord, OBSERVATION_TYPES};
+use crate::mem::types::{HistoryRecord, SearchRecord, StatsRecord, OBSERVATION_TYPES};
 
 /// Sender identifier the CLI uses when reading from the memory store.
 /// Matches the REPL convention so `/search` and `kx mem search` operate
@@ -195,6 +195,71 @@ pub async fn history(
 
     tracing::Span::current().record("result_count", records.len());
     Ok(records)
+}
+
+/// Options accepted by `kx mem stats`. Mirror the CLI flags one-to-one.
+#[derive(Debug, Clone)]
+pub struct StatsOpts {
+    /// Resolved project name (per-subcommand `--project` override OR the
+    /// global default). Echoed back on the returned record.
+    pub project: String,
+}
+
+/// Counts plus last-write timestamp for the resolved project.
+///
+/// Pulls three trait surfaces:
+/// - `MemoryStore::get_memory_stats(sender_id)` → `(conversations, messages, facts)`
+/// - `MemoryStore::db_size()` → byte count of the SQLite file
+/// - `MemoryStore::get_history(channel, sender_id, 1)` → most-recent
+///   `updated_at` to derive `last_write_at` (None when no rows; S-stats-2)
+///
+/// Returns a single record (not a list); CC-5's empty-array contract
+/// does not apply here per spec phrasing "empty project returns zero counts".
+#[tracing::instrument(
+    name = "kernex.mem.stats",
+    skip_all,
+    fields(
+        sender_id = %CLI_SENDER_ID,
+        channel = %CLI_CHANNEL,
+        project = %opts.project,
+    ),
+)]
+pub async fn stats(store: &dyn MemoryStore, opts: StatsOpts) -> Result<StatsRecord, CliError> {
+    let (conversations, observations, facts) = store
+        .get_memory_stats(CLI_SENDER_ID)
+        .await
+        .map_err(|e| CliError::Runtime {
+            message: format!("memory stats fetch failed: {e}"),
+            hint: "Run `kx doctor` to verify the local memory database.".to_string(),
+        })?;
+
+    let db_size_bytes = store.db_size().await.map_err(|e| CliError::Runtime {
+        message: format!("memory db size fetch failed: {e}"),
+        hint: "Run `kx doctor` to verify the local memory database.".to_string(),
+    })?;
+
+    // Derive last_write_at from the most recent closed-conversation row.
+    // When the project is empty, get_history returns an empty Vec and
+    // last_write_at is None (S-stats-2).
+    let last_write_at = store
+        .get_history(CLI_CHANNEL, CLI_SENDER_ID, 1)
+        .await
+        .map_err(|e| CliError::Runtime {
+            message: format!("memory history fetch failed: {e}"),
+            hint: "Run `kx doctor` to verify the local memory database.".to_string(),
+        })?
+        .into_iter()
+        .next()
+        .map(|(_summary, updated_at)| updated_at);
+
+    Ok(StatsRecord {
+        project: opts.project,
+        conversations,
+        observations,
+        facts,
+        db_size_bytes,
+        last_write_at,
+    })
 }
 
 fn preview(s: &str, max_chars: usize) -> String {
@@ -654,5 +719,53 @@ mod tests {
             .unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].project, "echo-override");
+    }
+
+    fn stats_opts(project: &str) -> StatsOpts {
+        StatsOpts {
+            project: project.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn s_stats_1_returns_counts_and_last_write() {
+        // Seed two closed conversations (each writes one user + one
+        // assistant message) plus one fact. Expect: conversations=2,
+        // observations=4, facts=1, last_write_at=Some(...).
+        let (_tmp, store) = seeded_store_with_closed_conversations(&[
+            ("first message", "first reply", "demo-a"),
+            ("second message", "second reply", "demo-b"),
+        ])
+        .await;
+        store
+            .store_fact(CLI_SENDER_ID, "auth-pattern", "OIDC + PKCE")
+            .await
+            .unwrap();
+
+        let record = stats(store.as_ref(), stats_opts("demo-stats"))
+            .await
+            .unwrap();
+        assert_eq!(record.project, "demo-stats");
+        assert_eq!(record.conversations, 2);
+        assert_eq!(record.observations, 4);
+        assert_eq!(record.facts, 1);
+        assert!(record.last_write_at.is_some());
+        assert!(record.db_size_bytes > 0);
+    }
+
+    #[tokio::test]
+    async fn s_stats_2_empty_project_zero_counts_null_last_write() {
+        // Empty project: no conversations, no facts. last_write_at must
+        // be None so the JSON renderer emits `null` (spec S-stats-2).
+        let (_tmp, store) = seeded_store_with_closed_conversations(&[]).await;
+        let record = stats(store.as_ref(), stats_opts("empty")).await.unwrap();
+        assert_eq!(record.project, "empty");
+        assert_eq!(record.conversations, 0);
+        assert_eq!(record.observations, 0);
+        assert_eq!(record.facts, 0);
+        assert!(
+            record.last_write_at.is_none(),
+            "empty project must have null last_write_at"
+        );
     }
 }
