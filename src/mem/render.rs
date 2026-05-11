@@ -14,7 +14,7 @@ use std::io::IsTerminal;
 use serde_json::{Map, Value};
 
 use crate::mem::errors::CliError;
-use crate::mem::types::{HistoryRecord, SearchRecord, StatsRecord};
+use crate::mem::types::{FactsRecord, HistoryRecord, SearchRecord, StatsRecord};
 
 /// Fields that survive `--compact` projection. Defined by spec CC-3.
 pub const COMPACT_FIELDS: &[&str] = &["id", "type", "title", "updated_at", "score"];
@@ -46,6 +46,10 @@ pub const STATS_FIELDS: &[&str] = &[
     "db_size_bytes",
     "last_write_at",
 ];
+
+/// Fields valid on a `FactsRecord` for `--select`. `--compact` is a
+/// no-op on facts records (CC-3 "where applicable").
+pub const FACTS_FIELDS: &[&str] = &["key", "value"];
 
 /// True when stdout is a real terminal (CLI is being read by a human),
 /// false when piped or redirected (output will be consumed by another
@@ -190,6 +194,79 @@ pub fn render_stats_table(record: &StatsRecord) -> String {
         record.db_size_bytes,
         last,
     )
+}
+
+/// Project a slice of fact records into a JSON array, honoring
+/// `--select`. `--compact` is a no-op for fact records per CC-3
+/// "where applicable" (no high-gravity field names apply).
+pub fn render_facts_list_json(
+    records: &[FactsRecord],
+    _compact: bool,
+    select: &[String],
+) -> Result<String, CliError> {
+    let validated = validate_select(select, FACTS_FIELDS)?;
+    let arr: Vec<Value> = records
+        .iter()
+        .map(|r| {
+            let v = facts_record_to_value(r);
+            if validated.is_empty() {
+                Value::Object(v)
+            } else {
+                let keep: Vec<&str> = validated.iter().map(String::as_str).collect();
+                Value::Object(filter_keys(v, &keep))
+            }
+        })
+        .collect();
+    serde_json::to_string(&arr).map_err(|e| CliError::Runtime {
+        message: format!("failed to serialize facts: {e}"),
+        hint: "If this reproduces, please open an issue.".to_string(),
+    })
+}
+
+/// Render a slice of fact records as a human-readable list on a TTY.
+pub fn render_facts_list_table(records: &[FactsRecord]) -> String {
+    if records.is_empty() {
+        return "  No facts recorded for this project.\n".to_string();
+    }
+    let mut out = String::new();
+    for r in records {
+        out.push_str(&format!("  {}: {}\n", r.key, r.value));
+    }
+    out
+}
+
+/// Project a single fact record into a JSON object. Used by
+/// `kx mem facts get` (S-facts-get-1) and as the success payload for
+/// `kx mem facts add` (S-facts-add-1).
+pub fn render_facts_record_json(
+    record: &FactsRecord,
+    _compact: bool,
+    select: &[String],
+) -> Result<String, CliError> {
+    let validated = validate_select(select, FACTS_FIELDS)?;
+    let v = facts_record_to_value(record);
+    let projected = if validated.is_empty() {
+        Value::Object(v)
+    } else {
+        let keep: Vec<&str> = validated.iter().map(String::as_str).collect();
+        Value::Object(filter_keys(v, &keep))
+    };
+    serde_json::to_string(&projected).map_err(|e| CliError::Runtime {
+        message: format!("failed to serialize fact: {e}"),
+        hint: "If this reproduces, please open an issue.".to_string(),
+    })
+}
+
+/// Render a single fact record as a human-readable line on a TTY.
+pub fn render_facts_record_table(record: &FactsRecord) -> String {
+    format!("  {}: {}\n", record.key, record.value)
+}
+
+fn facts_record_to_value(r: &FactsRecord) -> Map<String, Value> {
+    let mut m = Map::new();
+    m.insert("key".to_string(), Value::String(r.key.clone()));
+    m.insert("value".to_string(), Value::String(r.value.clone()));
+    m
 }
 
 fn stats_record_to_value(r: &StatsRecord) -> Map<String, Value> {
