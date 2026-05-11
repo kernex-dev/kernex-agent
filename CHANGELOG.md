@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Bumped to `kernex-* 0.6.0`** to consume the workspace's M6 release (MemoryStore trait + soft-delete on facts in `kernex-memory`, `Runtime::store_handle()` returning `Arc<dyn MemoryStore>`, workspace split into `kernex-adapter-core` / `kernex-presets` / `kernex-brain`, and the new `release` / `release-fast` cargo profiles). See [kernex-dev CHANGELOG `[0.6.0]`](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md) for the full set of changes. The agent stays version-locked with the workspace.
-- No source changes required in `kernex-agent`: the agent does not construct `Store` directly and does not depend on the new `kernex-adapter-core` symbols, so the workspace split is invisible at this layer.
+- **Bumped to `kernex-* 0.6.1`** to consume the workspace's first OIDC trusted-publishing release (no functional changes vs 0.6.0; same trait surfaces, same migration, same profiles). See [kernex-dev CHANGELOG `[0.6.1]`](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md) for the release-tooling changes. The agent stays version-locked with the workspace.
+- Added `kernex-memory = "0.6.1"` as a **direct dep** (was previously pulled transitively via `kernex-runtime`). The direct pin is the prerequisite for the upcoming `kx mem *` subcommand surface, which calls into `kernex_memory::MemoryStore` directly. No source imports yet; `cargo-machete` ignore list updated to suppress the unused-dep warning until the first subcommand commit lands.
+- Previously bumped to `kernex-* 0.6.0` to consume the workspace's M6 release (MemoryStore trait + soft-delete on facts in `kernex-memory`, `Runtime::store_handle()` returning `Arc<dyn MemoryStore>`, workspace split into `kernex-adapter-core` / `kernex-presets` / `kernex-brain`, and the new `release` / `release-fast` cargo profiles). See [kernex-dev CHANGELOG `[0.6.0]`](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md) for the full set of changes.
+- No source changes required in `kernex-agent` for the 0.6.0 → 0.6.1 bump or for adding the `kernex-memory` direct dep: the agent does not yet construct `MemoryStore` directly and does not depend on the new `kernex-adapter-core` symbols.
 
 ### Added
 

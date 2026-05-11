@@ -17,11 +17,12 @@ name = "kx"
 path = "src/main.rs"
 
 [dependencies]
-kernex-runtime = "0.6.0"
-kernex-core = "0.6.0"
-kernex-providers = "0.6.0"
-kernex-pipelines = "0.6.0"
-kernex-sandbox = "0.6.0"
+kernex-runtime = "0.6.1"
+kernex-core = "0.6.1"
+kernex-providers = "0.6.1"
+kernex-pipelines = "0.6.1"
+kernex-sandbox = "0.6.1"
+kernex-memory = "0.6.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "rt", "net", "signal"] }
 clap = { version = "4", features = ["derive", "env"] }
 colored = "2"
@@ -104,8 +105,10 @@ bedrock = ["kernex-providers/bedrock"]
 # implementations are still pending. `kernex-sandbox` is a direct dep
 # but currently has no `use kernex_sandbox` reference in src/; it is
 # pinned for upcoming sandbox-based agent execution surfaces.
+# `kernex-memory` is pinned for the upcoming `kx mem *` subcommand
+# surface; the trait import lands with the first subcommand commit.
 [package.metadata.cargo-machete]
-ignored = ["ratatui", "crossterm", "toml_edit", "kernex-sandbox"]
+ignored = ["ratatui", "crossterm", "toml_edit", "kernex-sandbox", "kernex-memory"]
 
 [dev-dependencies]
 # Filesystem tests use TempDir so each test gets a unique random path with
