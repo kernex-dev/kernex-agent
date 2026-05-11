@@ -506,11 +506,11 @@ fn parse_sqlite_utc(ts: &str) -> Option<SystemTime> {
     let second: u32 = ts.get(17..19)?.parse().ok()?;
 
     let days_since_epoch = days_from_civil(year, month, day)?;
-    let secs = (days_since_epoch as i64)
+    let secs = days_since_epoch
         .checked_mul(86_400)?
-        .checked_add(hour as i64 * 3_600)?
-        .checked_add(minute as i64 * 60)?
-        .checked_add(second as i64)?;
+        .checked_add(i64::from(hour) * 3_600)?
+        .checked_add(i64::from(minute) * 60)?
+        .checked_add(i64::from(second))?;
     if secs < 0 {
         return None;
     }

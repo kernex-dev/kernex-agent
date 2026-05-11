@@ -34,7 +34,7 @@ pub fn load_workflow(name: &str, data_dir: &Path) -> Result<Workflow, String> {
     let content =
         std::fs::read_to_string(&path).map_err(|_| format!("workflow not found: {name}"))?;
     let workflow: Workflow =
-        toml::from_str(&content).map_err(|e| format!("invalid workflow {name}: {e}"))?;
+        basic_toml::from_str(&content).map_err(|e| format!("invalid workflow {name}: {e}"))?;
     validate_workflow(&workflow)?;
     tracing::debug!(name = %workflow.name, description = %workflow.description, "workflow loaded");
     Ok(workflow)

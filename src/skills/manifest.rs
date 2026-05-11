@@ -56,7 +56,8 @@ impl SkillsManifest {
             Err(e) => return Err(format!("failed to read {}: {e}", path.display())),
         };
 
-        toml::from_str(&content).map_err(|e| format!("failed to parse {}: {e}", path.display()))
+        basic_toml::from_str(&content)
+            .map_err(|e| format!("failed to parse {}: {e}", path.display()))
     }
 
     pub fn save(&self, data_dir: &Path) -> Result<(), std::io::Error> {
@@ -64,7 +65,10 @@ impl SkillsManifest {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let content = toml::to_string_pretty(self)
+        // basic_toml emits compact TOML (no per-table padding); the
+        // skills.toml integrity file is machine-edited, so the difference
+        // from toml::to_string_pretty is cosmetic.
+        let content = basic_toml::to_string(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         std::fs::write(&path, content)?;
         // skills.toml is the integrity root for installed skills (each entry
