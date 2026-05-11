@@ -7,6 +7,8 @@ mod cli;
 mod commands;
 mod config;
 mod loader;
+#[cfg(feature = "memory-cli")]
+mod mem;
 mod prompts;
 mod scheduler;
 #[cfg(feature = "serve")]
@@ -105,6 +107,13 @@ async fn run() -> anyhow::Result<()> {
             auth_token,
             workers,
         }) => cmd_serve(host, port, auth_token, workers, &provider_flags).await,
+        #[cfg(feature = "memory-cli")]
+        Some(Command::Mem {
+            action,
+            json: _,
+            compact: _,
+            select: _,
+        }) => mem::dispatch(action).await,
         None => cmd_dev(cli.message, &provider_flags).await,
     }
 }
