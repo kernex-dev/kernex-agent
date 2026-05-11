@@ -18,6 +18,7 @@ use kernex_core::message::Request as KxRequest;
 use kernex_runtime::RuntimeBuilder;
 use tokio::sync::mpsc;
 use tokio::sync::Semaphore;
+use tower_http::trace::TraceLayer;
 
 use crate::config::ProjectConfig;
 use crate::{build_provider, context_needs, data_dir_for, CliHookRunner, ProviderFlags};
@@ -159,6 +160,13 @@ pub(crate) fn build_app(state: AppState, max_body_bytes: usize) -> Router {
     Router::new()
         .route("/health", get(routes::handle_health))
         .merge(protected)
+        // TraceLayer emits a structured `tower_http::trace` span per
+        // request and a corresponding response event. Combined with the
+        // tracing-subscriber initialized in `main`, every HTTP request
+        // produces a per-request span operators (and downstream agents
+        // piping kx serve traffic through a log collector) can correlate
+        // with the job dispatched via `routes::handle_run`.
+        .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .with_state(state)
 }

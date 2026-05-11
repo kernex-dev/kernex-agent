@@ -48,6 +48,11 @@ uuid = { version = "1", features = ["v4"], optional = true }
 hmac = { version = "0.12", optional = true }
 subtle = { version = "2", optional = true }
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+# Re-introduced 2026-05-11 (closes FU-B-04). The serve module now uses
+# `tower_http::trace::TraceLayer` to emit a structured span per HTTP
+# request; the dep stays optional under the `serve` feature so it never
+# reaches the minimal variant.
+tower-http = { version = "0.5", features = ["trace"], optional = true }
 
 # Placeholder optional deps. Reserved for the corresponding feature
 # flag's eventual implementation; currently no source under default
@@ -64,7 +69,7 @@ default = ["agent-claude", "memory-cli", "serve"]
 
 # Core features.
 memory-cli = []                                                                # reserves cfg surface for `kx mem *` subcommands
-serve = ["dep:axum", "dep:hmac", "dep:subtle", "dep:uuid", "dep:rusqlite"]     # `kx serve` headless HTTP daemon
+serve = ["dep:axum", "dep:hmac", "dep:subtle", "dep:uuid", "dep:rusqlite", "dep:tower-http"]  # `kx serve` headless HTTP daemon
 tui = ["dep:ratatui", "dep:crossterm"]                                         # placeholder; no source yet
 
 # Configurator adapters. Each is opt-in. Claude logic remains
