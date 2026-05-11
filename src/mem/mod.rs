@@ -33,7 +33,7 @@ use kernex_memory::{into_handle, MemoryStore, Store};
 
 use crate::cli::MemAction;
 use crate::data_dir_for;
-use crate::mem::cli::{HistoryOpts, SearchOpts};
+use crate::mem::cli::{HistoryOpts, SearchOpts, StatsOpts};
 use crate::mem::errors::CliError;
 
 /// Render flags forwarded from the top-level `Command::Mem` variant.
@@ -157,9 +157,32 @@ async fn dispatch_inner(
         MemAction::Get { .. } => Err(CliError::NotImplemented {
             subcommand: "kx mem get",
         }),
-        MemAction::Stats { .. } => Err(CliError::NotImplemented {
-            subcommand: "kx mem stats",
-        }),
+        MemAction::Stats {} => {
+            // Same explicit/implicit project handling as History
+            // (S-stats-2 explicitly allows an empty project as a
+            // VALID project; the existence check only fires when
+            // `--project` was named on the CLI).
+            let data_dir = if explicit_project.is_some() {
+                resolve_project_data_dir(default_project)?
+            } else {
+                data_dir_for(default_project)
+            };
+            let store = open_store(&data_dir).await?;
+            let record = cli::stats(
+                store.as_ref(),
+                StatsOpts {
+                    project: default_project.to_string(),
+                },
+            )
+            .await?;
+            if json_mode {
+                let out = render::render_stats_json(&record, flags.compact, &flags.select)?;
+                println!("{out}");
+            } else {
+                print!("{}", render::render_stats_table(&record));
+            }
+            Ok(())
+        }
         MemAction::Facts { .. } => Err(CliError::NotImplemented {
             subcommand: "kx mem facts",
         }),

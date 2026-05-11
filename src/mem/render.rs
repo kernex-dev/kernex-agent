@@ -14,7 +14,7 @@ use std::io::IsTerminal;
 use serde_json::{Map, Value};
 
 use crate::mem::errors::CliError;
-use crate::mem::types::{HistoryRecord, SearchRecord};
+use crate::mem::types::{HistoryRecord, SearchRecord, StatsRecord};
 
 /// Fields that survive `--compact` projection. Defined by spec CC-3.
 pub const COMPACT_FIELDS: &[&str] = &["id", "type", "title", "updated_at", "score"];
@@ -33,6 +33,18 @@ pub const HISTORY_FIELDS: &[&str] = &[
     "updated_at",
     "score",
     "project",
+];
+
+/// Fields valid on a `StatsRecord` for `--select`. `--compact` is a
+/// no-op on stats (none of the high-gravity field names apply to a
+/// stats object, per spec CC-3 "where applicable").
+pub const STATS_FIELDS: &[&str] = &[
+    "project",
+    "conversations",
+    "observations",
+    "facts",
+    "db_size_bytes",
+    "last_write_at",
 ];
 
 /// True when stdout is a real terminal (CLI is being read by a human),
@@ -136,6 +148,76 @@ fn history_record_to_value(r: &HistoryRecord) -> Map<String, Value> {
         Value::Number(serde_json::Number::from(r.score)),
     );
     m.insert("project".to_string(), Value::String(r.project.clone()));
+    m
+}
+
+/// Project a stats record into a JSON object, honoring `--select`.
+/// `--compact` is a no-op for stats (CC-3 "where applicable"): none of
+/// the compact field names (`id`, `type`, `title`, `updated_at`, `score`)
+/// exist on a stats object.
+pub fn render_stats_json(
+    record: &StatsRecord,
+    _compact: bool,
+    select: &[String],
+) -> Result<String, CliError> {
+    let validated = validate_select(select, STATS_FIELDS)?;
+    let projected = if validated.is_empty() {
+        Value::Object(stats_record_to_value(record))
+    } else {
+        let keep: Vec<&str> = validated.iter().map(String::as_str).collect();
+        Value::Object(filter_keys(stats_record_to_value(record), &keep))
+    };
+    serde_json::to_string(&projected).map_err(|e| CliError::Runtime {
+        message: format!("failed to serialize stats: {e}"),
+        hint: "If this reproduces, please open an issue.".to_string(),
+    })
+}
+
+/// Render a stats record as a human-readable summary on a TTY.
+pub fn render_stats_table(record: &StatsRecord) -> String {
+    let mb = record.db_size_bytes as f64 / (1024.0 * 1024.0);
+    let last = record
+        .last_write_at
+        .as_deref()
+        .unwrap_or("(no activity yet)");
+    format!(
+        "  Project:        {}\n  Conversations:  {}\n  Observations:   {}\n  Facts:          {}\n  DB size:        {:.2} MB ({} bytes)\n  Last write:     {}\n",
+        record.project,
+        record.conversations,
+        record.observations,
+        record.facts,
+        mb,
+        record.db_size_bytes,
+        last,
+    )
+}
+
+fn stats_record_to_value(r: &StatsRecord) -> Map<String, Value> {
+    let mut m = Map::new();
+    m.insert("project".to_string(), Value::String(r.project.clone()));
+    m.insert(
+        "conversations".to_string(),
+        Value::Number(serde_json::Number::from(r.conversations)),
+    );
+    m.insert(
+        "observations".to_string(),
+        Value::Number(serde_json::Number::from(r.observations)),
+    );
+    m.insert(
+        "facts".to_string(),
+        Value::Number(serde_json::Number::from(r.facts)),
+    );
+    m.insert(
+        "db_size_bytes".to_string(),
+        Value::Number(serde_json::Number::from(r.db_size_bytes)),
+    );
+    m.insert(
+        "last_write_at".to_string(),
+        match &r.last_write_at {
+            Some(s) => Value::String(s.clone()),
+            None => Value::Null,
+        },
+    );
     m
 }
 
