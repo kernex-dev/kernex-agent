@@ -6,9 +6,20 @@
 # The companion `binary-size-comment.yml` workflow consumes the artifact
 # and posts a sticky `## Binary Sizes` comment on the PR.
 #
-# Hard-fail discipline is preserved: the `default` variant still hard-fails
-# on the 15 MB ceiling via `scripts/check-size.sh`. The `minimal` variant
-# soft-warns at 8 MB. The `full` variant is informational.
+# Hard-fail discipline is preserved: the `default` variant hard-fails on
+# the Linux ceiling via `scripts/check-size.sh`. The `minimal` variant
+# soft-warns at 8 MiB. The `full` variant is informational.
+#
+# Ceiling policy (2026-05-11):
+#   The product commitment is "15 MiB on macOS aarch64 release builds"
+#   (see kernex-dev/kernex-studio orchestration `V2-EXECUTION-PLAN.md`
+#   decision 1.3). Linux release builds run ~2-3 MiB heavier for the same
+#   code due to ELF / glibc / x86_64 codegen overhead vs Mach-O / aarch64.
+#   The CI gate runs on Linux and uses 18 MiB as the Linux-side ceiling
+#   so the gate stays a useful proxy without becoming stricter than the
+#   product commitment. macOS measurements are tracked via local builds;
+#   a future macOS CI runner would tighten this back to 15 MiB on
+#   `macos-latest`.
 #
 # Runs as a read-only-token workflow on `pull_request`. The PR-comment
 # write-token operation lives in the separate `binary-size-comment.yml`
@@ -46,7 +57,10 @@ jobs:
           - name: default
             flags: ""
             mode: hard
-            limit: 15728640
+            # 18 MiB Linux ceiling = 15 MiB macOS aarch64 product commitment
+            # plus headroom for the platform delta. See the file-level
+            # comment block for the full policy.
+            limit: 18874368
           - name: full
             flags: "--features agent-all,tui,serve,preset-all"
             mode: info
