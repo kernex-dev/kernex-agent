@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 use kernex_memory::MemoryStore;
 
 use crate::mem::errors::CliError;
-use crate::mem::types::{HistoryRecord, SearchRecord, StatsRecord, OBSERVATION_TYPES};
+use crate::mem::types::{FactsRecord, HistoryRecord, SearchRecord, StatsRecord, OBSERVATION_TYPES};
 
 /// Sender identifier the CLI uses when reading from the memory store.
 /// Matches the REPL convention so `/search` and `kx mem search` operate
@@ -260,6 +260,142 @@ pub async fn stats(store: &dyn MemoryStore, opts: StatsOpts) -> Result<StatsReco
         db_size_bytes,
         last_write_at,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Facts CRUD (Step 2.7..2.10)
+// ---------------------------------------------------------------------------
+//
+// The four facts handlers are pure async functions over `MemoryStore`'s
+// fact surface (`get_facts`, `get_fact`, `store_fact`, `soft_delete_fact`).
+// `--stdin` for `facts add` is read at the dispatcher boundary so the
+// handler stays I/O-free.
+
+/// List every active (not soft-deleted) fact for the resolved project.
+///
+/// Backed by `MemoryStore::get_facts`. Returns the trait's `(key, value)`
+/// shape today; `updated_at` lands with FU-D-AG-04. Empty result is
+/// `[]` per CC-5; exit code is 0 even for a project with zero facts
+/// (mirrors S-stats-2's "empty is still valid" rule).
+#[tracing::instrument(
+    name = "kernex.mem.facts.list",
+    skip_all,
+    fields(
+        sender_id = %CLI_SENDER_ID,
+        result_count = tracing::field::Empty,
+    ),
+)]
+pub async fn facts_list(store: &dyn MemoryStore) -> Result<Vec<FactsRecord>, CliError> {
+    let rows = store
+        .get_facts(CLI_SENDER_ID)
+        .await
+        .map_err(|e| CliError::Runtime {
+            message: format!("memory facts list failed: {e}"),
+            hint: "Run `kx doctor` to verify the local memory database.".to_string(),
+        })?;
+    let records: Vec<FactsRecord> = rows
+        .into_iter()
+        .map(|(key, value)| FactsRecord { key, value })
+        .collect();
+    tracing::Span::current().record("result_count", records.len());
+    Ok(records)
+}
+
+/// Fetch a single active fact by key (S-facts-get-1).
+///
+/// Returns `CliError::NotFound` (exit 3) when the key is absent or
+/// soft-deleted (CC-9, S-facts-get-2). The hint steers operators to
+/// `kx mem facts list` to discover known keys.
+#[tracing::instrument(
+    name = "kernex.mem.facts.get",
+    skip_all,
+    fields(sender_id = %CLI_SENDER_ID, key = %key),
+)]
+pub async fn facts_get(store: &dyn MemoryStore, key: &str) -> Result<FactsRecord, CliError> {
+    let value = store
+        .get_fact(CLI_SENDER_ID, key)
+        .await
+        .map_err(|e| CliError::Runtime {
+            message: format!("memory facts get failed: {e}"),
+            hint: "Run `kx doctor` to verify the local memory database.".to_string(),
+        })?;
+    match value {
+        Some(value) => Ok(FactsRecord {
+            key: key.to_string(),
+            value,
+        }),
+        None => Err(CliError::NotFound {
+            message: format!("fact '{key}' not found"),
+            hint: "Run `kx mem facts list` to see known keys.".to_string(),
+        }),
+    }
+}
+
+/// Upsert a fact value for the given key (S-facts-add-1, S-facts-add-3).
+///
+/// Empty `value` is rejected as a usage error per S-facts-add-4. The
+/// underlying `store_fact` clears `deleted_at` on re-add, so a key that
+/// was previously soft-deleted becomes visible again to default reads.
+#[tracing::instrument(
+    name = "kernex.mem.facts.add",
+    skip_all,
+    fields(
+        sender_id = %CLI_SENDER_ID,
+        key = %key,
+        value_len = value.len(),
+    ),
+)]
+pub async fn facts_add(
+    store: &dyn MemoryStore,
+    key: &str,
+    value: &str,
+) -> Result<FactsRecord, CliError> {
+    if value.is_empty() {
+        return Err(CliError::Usage {
+            message: "fact value cannot be empty".to_string(),
+            hint: "Use `kx mem facts delete <key>` to remove a fact.".to_string(),
+        });
+    }
+    store
+        .store_fact(CLI_SENDER_ID, key, value)
+        .await
+        .map_err(|e| CliError::Runtime {
+            message: format!("memory facts add failed: {e}"),
+            hint: "Run `kx doctor` to verify the local memory database.".to_string(),
+        })?;
+    Ok(FactsRecord {
+        key: key.to_string(),
+        value: value.to_string(),
+    })
+}
+
+/// Soft-delete a fact by key (S-facts-delete-1).
+///
+/// Returns `CliError::NotFound` when the key is absent or already
+/// soft-deleted (S-facts-delete-2, S-facts-delete-3; idempotent absence
+/// surfaces as exit 3 per spec). The trait's `soft_delete_fact` returns
+/// `true` only on the active→deleted transition.
+#[tracing::instrument(
+    name = "kernex.mem.facts.delete",
+    skip_all,
+    fields(sender_id = %CLI_SENDER_ID, key = %key),
+)]
+pub async fn facts_delete(store: &dyn MemoryStore, key: &str) -> Result<(), CliError> {
+    let transitioned = store
+        .soft_delete_fact(CLI_SENDER_ID, key)
+        .await
+        .map_err(|e| CliError::Runtime {
+            message: format!("memory facts delete failed: {e}"),
+            hint: "Run `kx doctor` to verify the local memory database.".to_string(),
+        })?;
+    if transitioned {
+        Ok(())
+    } else {
+        Err(CliError::NotFound {
+            message: format!("fact '{key}' not found"),
+            hint: "Run `kx mem facts list` to see known keys.".to_string(),
+        })
+    }
 }
 
 fn preview(s: &str, max_chars: usize) -> String {
@@ -767,5 +903,150 @@ mod tests {
             record.last_write_at.is_none(),
             "empty project must have null last_write_at"
         );
+    }
+
+    // ---- Facts CRUD (Step 2.7..2.10) ----
+
+    #[tokio::test]
+    async fn s_facts_list_1_returns_active_facts() {
+        let (_tmp, store) = seeded_store(&[]).await;
+        store
+            .store_fact(CLI_SENDER_ID, "auth-pattern", "OIDC + PKCE")
+            .await
+            .unwrap();
+        store
+            .store_fact(CLI_SENDER_ID, "db-driver", "rusqlite")
+            .await
+            .unwrap();
+        let out = facts_list(store.as_ref()).await.unwrap();
+        assert_eq!(out.len(), 2);
+        // Returned in insertion-ish order; assert by set membership to
+        // stay robust against future ordering changes upstream.
+        let keys: Vec<&str> = out.iter().map(|r| r.key.as_str()).collect();
+        assert!(keys.contains(&"auth-pattern"));
+        assert!(keys.contains(&"db-driver"));
+    }
+
+    #[tokio::test]
+    async fn s_facts_list_2_empty_returns_empty_vec() {
+        let (_tmp, store) = seeded_store(&[]).await;
+        let out = facts_list(store.as_ref()).await.unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[tokio::test]
+    async fn s_facts_get_1_returns_single_record() {
+        let (_tmp, store) = seeded_store(&[]).await;
+        store
+            .store_fact(CLI_SENDER_ID, "auth-pattern", "OIDC + PKCE")
+            .await
+            .unwrap();
+        let r = facts_get(store.as_ref(), "auth-pattern").await.unwrap();
+        assert_eq!(r.key, "auth-pattern");
+        assert_eq!(r.value, "OIDC + PKCE");
+    }
+
+    #[tokio::test]
+    async fn s_facts_get_2_missing_key_is_exit_3() {
+        let (_tmp, store) = seeded_store(&[]).await;
+        let err = facts_get(store.as_ref(), "bogus").await.unwrap_err();
+        assert_eq!(err.exit_code(), 3);
+        let msg = format!("{err}");
+        assert!(msg.contains("'bogus' not found"));
+    }
+
+    #[tokio::test]
+    async fn s_facts_add_1_inline_value_writes_new_fact() {
+        let (_tmp, store) = seeded_store(&[]).await;
+        let r = facts_add(store.as_ref(), "auth-pattern", "OIDC + PKCE")
+            .await
+            .unwrap();
+        assert_eq!(r.key, "auth-pattern");
+        assert_eq!(r.value, "OIDC + PKCE");
+        // Confirm the round-trip via the get path.
+        let g = facts_get(store.as_ref(), "auth-pattern").await.unwrap();
+        assert_eq!(g.value, "OIDC + PKCE");
+    }
+
+    #[tokio::test]
+    async fn s_facts_add_3_existing_key_upserts() {
+        let (_tmp, store) = seeded_store(&[]).await;
+        facts_add(store.as_ref(), "auth-pattern", "basic")
+            .await
+            .unwrap();
+        let r = facts_add(store.as_ref(), "auth-pattern", "OIDC + PKCE")
+            .await
+            .unwrap();
+        assert_eq!(r.value, "OIDC + PKCE");
+        // Underlying store still has exactly one row for this key
+        // (upsert, not insert).
+        let list = facts_list(store.as_ref()).await.unwrap();
+        let matches: Vec<_> = list.iter().filter(|r| r.key == "auth-pattern").collect();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].value, "OIDC + PKCE");
+    }
+
+    #[tokio::test]
+    async fn s_facts_add_4_empty_value_is_exit_2() {
+        let (_tmp, store) = seeded_store(&[]).await;
+        let err = facts_add(store.as_ref(), "auth-pattern", "")
+            .await
+            .unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        let msg = format!("{err}");
+        assert!(msg.contains("cannot be empty"));
+    }
+
+    #[tokio::test]
+    async fn s_facts_delete_1_soft_deletes_by_default() {
+        let (_tmp, store) = seeded_store(&[]).await;
+        facts_add(store.as_ref(), "auth-pattern", "OIDC + PKCE")
+            .await
+            .unwrap();
+        facts_delete(store.as_ref(), "auth-pattern").await.unwrap();
+        // Soft-deleted rows are invisible to default reads (CC-9).
+        let list = facts_list(store.as_ref()).await.unwrap();
+        assert!(list.iter().all(|r| r.key != "auth-pattern"));
+        let err = facts_get(store.as_ref(), "auth-pattern").await.unwrap_err();
+        assert_eq!(err.exit_code(), 3);
+    }
+
+    #[tokio::test]
+    async fn s_facts_delete_2_missing_key_is_exit_3() {
+        let (_tmp, store) = seeded_store(&[]).await;
+        let err = facts_delete(store.as_ref(), "bogus").await.unwrap_err();
+        assert_eq!(err.exit_code(), 3);
+    }
+
+    #[tokio::test]
+    async fn s_facts_delete_3_already_deleted_is_exit_3() {
+        // Idempotent absence per spec: deleting an already-deleted key
+        // exits 3, not 0, so scripts get a clear signal.
+        let (_tmp, store) = seeded_store(&[]).await;
+        facts_add(store.as_ref(), "auth-pattern", "OIDC + PKCE")
+            .await
+            .unwrap();
+        facts_delete(store.as_ref(), "auth-pattern").await.unwrap();
+        let err = facts_delete(store.as_ref(), "auth-pattern")
+            .await
+            .unwrap_err();
+        assert_eq!(err.exit_code(), 3);
+    }
+
+    #[tokio::test]
+    async fn facts_re_add_after_delete_clears_soft_delete() {
+        // The trait doc on `store_fact` promises that a previously
+        // soft-deleted row becomes visible again on re-add. Lock that
+        // in here so a future schema change doesn't silently regress.
+        let (_tmp, store) = seeded_store(&[]).await;
+        facts_add(store.as_ref(), "auth-pattern", "old")
+            .await
+            .unwrap();
+        facts_delete(store.as_ref(), "auth-pattern").await.unwrap();
+        facts_add(store.as_ref(), "auth-pattern", "new")
+            .await
+            .unwrap();
+        let r = facts_get(store.as_ref(), "auth-pattern").await.unwrap();
+        assert_eq!(r.value, "new");
     }
 }

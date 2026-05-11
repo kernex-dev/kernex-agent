@@ -31,7 +31,7 @@ use std::sync::Arc;
 use kernex_core::config::MemoryConfig;
 use kernex_memory::{into_handle, MemoryStore, Store};
 
-use crate::cli::MemAction;
+use crate::cli::{FactsAction, MemAction};
 use crate::data_dir_for;
 use crate::mem::cli::{HistoryOpts, SearchOpts, StatsOpts};
 use crate::mem::errors::CliError;
@@ -183,13 +183,109 @@ async fn dispatch_inner(
             }
             Ok(())
         }
-        MemAction::Facts { .. } => Err(CliError::NotImplemented {
-            subcommand: "kx mem facts",
-        }),
+        MemAction::Facts { action } => {
+            // Same explicit/implicit project gating as History/Stats.
+            let data_dir = if explicit_project.is_some() {
+                resolve_project_data_dir(default_project)?
+            } else {
+                data_dir_for(default_project)
+            };
+            let store = open_store(&data_dir).await?;
+            dispatch_facts(store.as_ref(), action, flags, json_mode).await
+        }
         MemAction::Save(_) => Err(CliError::NotImplemented {
             subcommand: "kx mem save",
         }),
     }
+}
+
+/// Dispatch the four `kx mem facts *` subcommands. Pulled out of
+/// `dispatch_inner` so `--stdin` handling for `facts add` stays close
+/// to its single use site without bloating the outer match.
+async fn dispatch_facts(
+    store: &dyn MemoryStore,
+    action: FactsAction,
+    flags: &RenderFlags,
+    json_mode: bool,
+) -> Result<(), CliError> {
+    match action {
+        FactsAction::List => {
+            let records = cli::facts_list(store).await?;
+            if json_mode {
+                let out = render::render_facts_list_json(&records, flags.compact, &flags.select)?;
+                println!("{out}");
+            } else {
+                print!("{}", render::render_facts_list_table(&records));
+            }
+            Ok(())
+        }
+        FactsAction::Get { key } => {
+            let record = cli::facts_get(store, &key).await?;
+            if json_mode {
+                let out = render::render_facts_record_json(&record, flags.compact, &flags.select)?;
+                println!("{out}");
+            } else {
+                print!("{}", render::render_facts_record_table(&record));
+            }
+            Ok(())
+        }
+        FactsAction::Add { key, value, stdin } => {
+            // `--stdin` and an inline positional value are mutually
+            // exclusive: the spec wants exactly one value source.
+            let resolved_value = match (value, stdin) {
+                (Some(_), true) => {
+                    return Err(CliError::Usage {
+                        message: "cannot combine inline value with --stdin".to_string(),
+                        hint:
+                            "Pass the value as a positional argument OR pipe via --stdin, not both."
+                                .to_string(),
+                    });
+                }
+                (None, false) => {
+                    return Err(CliError::Usage {
+                        message: "fact value is required".to_string(),
+                        hint: "Provide the value as a positional argument or pipe via --stdin."
+                            .to_string(),
+                    });
+                }
+                (Some(v), false) => v,
+                (None, true) => read_stdin_value()?,
+            };
+            let record = cli::facts_add(store, &key, &resolved_value).await?;
+            if json_mode {
+                let out = render::render_facts_record_json(&record, flags.compact, &flags.select)?;
+                println!("{out}");
+            } else {
+                print!("{}", render::render_facts_record_table(&record));
+            }
+            Ok(())
+        }
+        FactsAction::Delete { key } => {
+            cli::facts_delete(store, &key).await?;
+            // Successful delete renders nothing on stdout in either mode;
+            // exit 0 is the operator-visible signal. JSON consumers can
+            // probe `kx mem facts get <key>` to confirm the soft-delete.
+            Ok(())
+        }
+    }
+}
+
+/// Read the `facts add --stdin` value from the process's standard input.
+/// Reads to EOF, trims trailing newlines (a single trailing `\n` from
+/// `echo` or a heredoc is operator-friendly to strip; multi-line values
+/// are preserved otherwise).
+fn read_stdin_value() -> Result<String, CliError> {
+    use std::io::Read;
+    let mut buf = String::new();
+    std::io::stdin()
+        .read_to_string(&mut buf)
+        .map_err(|e| CliError::Runtime {
+            message: format!("reading --stdin failed: {e}"),
+            hint: "Pipe the value into stdin (e.g. `echo foo | kx mem facts add k --stdin`)."
+                .to_string(),
+        })?;
+    let trimmed = buf.trim_end_matches('\n').to_string();
+    Ok(trimmed)
 }
 
 /// Resolve a project name to its `~/.kx/projects/<name>/` data dir,

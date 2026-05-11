@@ -105,6 +105,22 @@ pub struct StatsRecord {
     pub last_write_at: Option<String>,
 }
 
+/// One row of `kx mem facts list` / `kx mem facts get` output, plus the
+/// single-record response from `kx mem facts add`.
+///
+/// `MemoryStore::get_facts` returns `(key, value)` tuples today; the
+/// schema has an `updated_at` column but the trait does not surface it.
+/// FU-D-AG-04 (the typed-row data-model bump) adds `updated_at` to the
+/// trait response; this struct gains the field at that point without
+/// changing the JSON key names.
+#[derive(Debug, Clone, Serialize)]
+pub struct FactsRecord {
+    /// The fact key (unique per `(sender_id, key)`).
+    pub key: String,
+    /// The fact value.
+    pub value: String,
+}
+
 /// Valid observation types per the kx-mem-cli-promotion proposal.
 ///
 /// `--type bogus` exits 2 and stderr lists this set (S-search-5,
