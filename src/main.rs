@@ -56,9 +56,34 @@ use crate::serve::cmd_serve;
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        eprintln!("{} {e}", "error:".red().bold());
+        // `kx mem *` subcommands render their own structured stderr line
+        // (CC-6: a single JSON object on stderr when JSON mode is active,
+        // `error: ...\n  Try: ...` on a TTY). Reprinting `e` here would
+        // duplicate that. Every other error path keeps the colorized
+        // top-level shape.
+        if !is_already_rendered(&e) {
+            eprintln!("{} {e}", "error:".red().bold());
+        }
         std::process::exit(exit_code_for(&e).into());
     }
+}
+
+fn is_already_rendered(err: &anyhow::Error) -> bool {
+    // Walk the whole anyhow chain, not just the leaf. A future `kx mem *`
+    // handler that does `?` on a `kernex_memory::MemoryError` without an
+    // explicit `.map_err(|e| CliError::Runtime { ... })` would otherwise
+    // bypass this guard and double-print (one structured line from
+    // `mem::dispatch`, one colorized `error: ...` line from main).
+    #[cfg(feature = "memory-cli")]
+    {
+        for cause in err.chain() {
+            if cause.is::<mem::errors::CliError>() {
+                return true;
+            }
+        }
+    }
+    let _ = err;
+    false
 }
 
 /// Map an error chain to the OS exit code the operator should see.
@@ -71,8 +96,12 @@ async fn main() {
 fn exit_code_for(err: &anyhow::Error) -> u8 {
     #[cfg(feature = "memory-cli")]
     {
-        if let Some(cli) = err.downcast_ref::<mem::errors::CliError>() {
-            return cli.exit_code();
+        // Walk the chain so a wrapped CliError still yields the correct
+        // ADR-005 exit code. Matches the chain walk in `is_already_rendered`.
+        for cause in err.chain() {
+            if let Some(cli) = cause.downcast_ref::<mem::errors::CliError>() {
+                return cli.exit_code();
+            }
         }
     }
     let _ = err;
@@ -128,10 +157,28 @@ async fn run() -> anyhow::Result<()> {
         #[cfg(feature = "memory-cli")]
         Some(Command::Mem {
             action,
-            json: _,
-            compact: _,
-            select: _,
-        }) => mem::dispatch(action).await,
+            json,
+            compact,
+            select,
+        }) => {
+            let cwd = std::env::current_dir()?;
+            // `--project` is the global flag (shared with `kx dev`, `kx
+            // serve`, etc). When the operator passes it, treat the
+            // project as explicit (per-subcommand existence checks fire
+            // per S-history-4). When omitted, derive from cwd and
+            // auto-create the data dir on first use (matches
+            // `kx mem search` and `kx dev`).
+            let project_override = cli.project.clone();
+            let default_project = project_override
+                .clone()
+                .unwrap_or_else(|| stack::project_name(&cwd));
+            let flags = mem::RenderFlags {
+                json,
+                compact,
+                select,
+            };
+            mem::dispatch(action, &default_project, project_override.as_deref(), flags).await
+        }
         None => cmd_dev(cli.message, &provider_flags).await,
     }
 }

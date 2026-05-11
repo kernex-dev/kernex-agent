@@ -151,16 +151,9 @@ pub enum MemAction {
         /// Override the default count (default 20)
         #[arg(long)]
         last: Option<usize>,
-        /// Override cwd-based project detection
-        #[arg(long)]
-        project: Option<String>,
     },
     /// Counts and last-write timestamp for a project
-    Stats {
-        /// Override cwd-based project detection
-        #[arg(long)]
-        project: Option<String>,
-    },
+    Stats {},
     /// Read or write the project-scoped facts table
     Facts {
         #[command(subcommand)]
