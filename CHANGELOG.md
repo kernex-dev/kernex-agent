@@ -9,12 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`kx mem get <id>` wired (Step 2.4).** The placeholder `CliError::NotImplemented` returned by `kx mem get` is now replaced with a real handler that calls `MemoryStore::get_message_by_id` and renders the matched row through the same auto-JSON / table path as `kx mem search`. Missing ids return `CliError::NotFound` (exit code 3) with the same hint shape as the rest of the surface. The `id` argument is now typed as `String` (was `i64`); message ids in `kernex-memory` are UUIDs, not integers, and the old type was a latent bug that would have rejected every real id.
+
+### Changed
+
+- **Bumped to `kernex-* 0.7.0`** to consume the workspace's `memory-typed-row-shape` Slice B. The trait now returns typed `MessageRow` and `HistoryRow` structs instead of `(String, String, String)` / `(String, String)` tuples, and `search_messages` accepts `since: Option<SystemTime>` so the `--since` cutoff filters at the SQL layer instead of in the agent's post-fetch loop. See [kernex-dev CHANGELOG `[0.7.0]`](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md) for the full upstream notes.
+- **`mem::cli::search` pushes `--since` server-side.** The agent no longer parses each row's SQLite timestamp string after the fetch; it parses `--since` once into a `SystemTime` cutoff and hands it to `store.search_messages(..., Some(cutoff))`. Net effect at the CLI is identical (S-search-3); net effect at the trait boundary is one fewer round of string parsing per row and one fewer source of timestamp-format drift between caller and store.
+- **Deleted `parse_sqlite_utc`, `timestamp_after`, `days_from_civil`** (~60 LOC of hand-rolled timestamp math + their tests). The new typed surface returns `SystemTime` directly, so the agent compares `SystemTime` against `SystemTime` and formats once via `chrono::DateTime<Utc>` for display. `chrono` is now a direct dep (was previously transitive through `kernex-memory`).
+- **REPL parity harness comment refreshed.** `tests/mem_repl_parity.rs` no longer references "Slice B" as a blocker; the typed records now exist, so the remaining work is the `src/lib.rs` extraction that lets integration tests reach `mem::cli::*` handlers directly (tracked as FU-D-AG-06).
+
+### Notes on `[Unreleased]` ordering
+
+The entries below this line predate the 0.7.0 paired migration. Read them in their original order; they describe the work that landed against `kernex-* 0.6.2` and earlier.
+
+---
+
 - **`kx mem *` subcommand surface (Phase D-agent).** Eight atomic commits between `56bd0b7` and `841db57` add a typed CLI surface backed by `kernex_memory::MemoryStore`:
   - `kx mem search <query>` (Step 2.3, commit `632d99b`): FTS5 search with `--limit`, `--since` (e.g. `30d`, `4h`), `--type` filter, and `--json` / `--compact` / `--select` projection flags.
   - `kx mem history` (Step 2.5, commit `632d99b`): closed-conversation summaries with `--last`.
   - `kx mem stats` (Step 2.6, commit `94bb6a6`): counts plus DB size plus `last_write_at`.
   - `kx mem facts {list, get, add, delete}` (Steps 2.7–2.10, commit `60c60a9`): full CRUD; `add --stdin` for newline-bearing values; `delete` is soft-delete to preserve the CC-9 invariant.
-  - `kx mem get <id>` and `kx mem save` (Steps 2.4 and 2.11): stubbed; return `CliError::NotImplemented` (exit code 7) pending the upstream typed-row trait surface and the typed observation table respectively.
+  - `kx mem get <id>` (Step 2.4): originally stubbed pending the upstream typed-row trait surface; wired in the 0.7.0 paired migration above.
+  - `kx mem save` (Step 2.11): still stubbed; returns `CliError::NotImplemented` (exit code 7) pending the typed observation table.
   - CC-1..CC-8 cross-cutting contract: auto-JSON when stdout is not a TTY, `--json` to force, `--compact` projection, `--select <fields>` allowlist, empty result returns `[]` (not `null`), structured stderr on errors, exit-code taxonomy (0/2/3/4/5/7), `--help` text contract on every subcommand (Step 2.13, commit `7326d26`).
 - **REPL parity (Step 2.14, commit `841db57`).** The five memory-related slash commands (`/search`, `/history`, `/memory`, `/facts`, `/facts delete`) now delegate through the same `mem::cli::*` handler functions that the `kx mem *` subcommands dispatch to. Parity is structural: single shared codepath. Side effects: `/facts delete` is now soft-delete (was hard-delete; matches the CLI contract and CC-9); `/history` reads `CLI_CHANNEL="cli"` instead of `runtime.channel`; `/memory` surfaces `last_write_at` when present. Two pre-existing display-naming bugs in `/search` and `/history` are corrected in the same change.
 - **REPL parity harness** at `tests/mem_repl_parity.rs`. Scaffold committed in `56bd0b7`; flips from placeholder `#[ignore]` to handler-call assertions once `memory-typed-row-shape` Slice B brings typed records.

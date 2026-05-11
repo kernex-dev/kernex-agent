@@ -7,9 +7,14 @@
 ## Coordination rules
 
 1. The runtime trait surface (`MemoryStore`, `SaveEntry`, soft-delete
-   on facts) is already shipped in `kernex-memory 0.6.1` on crates.io.
-   The direct dep is already pinned in `Cargo.toml`. This change is
-   the agent-side surface work, no paired runtime PR.
+   on facts) is shipped in `kernex-memory 0.6.1` on crates.io. The
+   typed-row surface (`MessageRow`, `HistoryRow`, `get_message_by_id`,
+   server-side `since: Option<SystemTime>`) that Step 2.4 depends on
+   lands in `kernex-memory 0.7.0` (`memory-typed-row-shape` Slice B).
+   The direct dep is pinned in `Cargo.toml`. Step 2.4 ships in a
+   paired migration commit that bumps `kernex-* 0.6.2 -> 0.7.0` at
+   the same time the handler wires through; every other handler in
+   this change is pure agent-side work.
 2. Pre-commit gate must pass before any commit:
    `cargo build && cargo clippy --all-targets -- -D warnings &&
     cargo test && cargo fmt --check`.
@@ -100,8 +105,12 @@ divergence.
 
 ### 2.4 Implement `kx mem get`
 
-- Wire to the get-by-id surface in `kernex_memory`. Exit `3` on
-  `None`. Soft-deleted is invisible (CC-9, S-get-3).
+- Wire to `MemoryStore::get_message_by_id` (added in
+  `kernex-memory 0.7.0`). Exit `3` on `None`. Soft-deleted is
+  invisible (CC-9, S-get-3). Argument is `String` (UUID), not `i64`.
+- Ships in the same paired-migration commit that bumps
+  `kernex-* 0.6.2 -> 0.7.0`; pre-merge gate must pass against the
+  newly published 0.7.0 crates on crates.io.
 
 ### 2.5 Implement `kx mem history`
 
