@@ -38,6 +38,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-trait = "0.1"
 anyhow = "1"
+thiserror = "1"
 
 # Optional deps. Each is pulled in only when its owning feature is
 # enabled. Keeping them optional lets `--no-default-features --features

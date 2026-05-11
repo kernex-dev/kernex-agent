@@ -16,34 +16,44 @@
 //! {"error":{"code":3,"message":"...","hint":"..."}}
 //! ```
 
-use std::fmt;
-
-#[derive(Debug)]
+/// Structured CLI errors emitted by `kx mem *` subcommands.
+///
+/// The `Display` impl renders only the message; the renderer in
+/// [`super::render`] reassembles the hint into the structured stderr
+/// shape (CC-6). Variant naming maps directly to ADR-005 exit codes via
+/// [`CliError::exit_code`]; the variant identifier itself is also surfaced
+/// as the `kernex.error_kind` tracing field by [`CliError::kind_name`].
+#[derive(Debug, thiserror::Error)]
 pub enum CliError {
-    /// Subcommand is recognized by the parser but not yet wired to a handler.
-    /// Returned by every handler in the scaffold commit until follow-up
-    /// commits land the trait calls.
+    /// Subcommand is recognized by the parser but not yet wired to a
+    /// handler. Returned by every stub handler until follow-up commits
+    /// land the trait calls.
+    #[error("{subcommand} is not yet implemented")]
     NotImplemented { subcommand: &'static str },
-    /// Reserved for future use.
-    #[allow(dead_code)]
+    /// Operator-facing usage error: unknown flag value, malformed
+    /// argument, conflicting flag combination.
+    #[error("{message}")]
     Usage { message: String, hint: String },
-    /// Reserved for future use.
+    /// Lookup miss: requested id / key absent from the store. Soft-deleted
+    /// rows surface here per CC-9. Wired by Step 2.4 (`kx mem get`).
     #[allow(dead_code)]
+    #[error("{message}")]
     NotFound { message: String, hint: String },
-    /// Reserved for future use.
+    /// Sandbox / authorization refusal. Reserved for `kx mem save` (Step
+    /// 2.8) and any future write surface that crosses a policy boundary.
     #[allow(dead_code)]
+    #[error("{message}")]
     Sandbox { message: String, hint: String },
-    /// Reserved for future use.
-    #[allow(dead_code)]
+    /// Runtime fault: DB locked, IO failure, schema mismatch, or any
+    /// underlying error surfaced from `kernex_memory::MemoryError`.
+    #[error("{message}")]
     Runtime { message: String, hint: String },
 }
 
 impl CliError {
-    /// Returned to the OS by `main`'s top-level error handler when a
-    /// `kx mem *` subcommand returns this error. The shared `main` in
-    /// `main.rs` downcasts `anyhow::Error` to `CliError` via
-    /// `exit_code_for` and exits with the matching code; all other
-    /// errors continue to exit 1.
+    /// OS exit code returned by `main` when a `kx mem *` subcommand exits
+    /// with this error. `main`'s top-level handler downcasts via
+    /// [`crate::exit_code_for`]; every other error path defaults to 1.
     pub fn exit_code(&self) -> u8 {
         match self {
             CliError::NotImplemented { .. } | CliError::Usage { .. } => 2,
@@ -52,21 +62,30 @@ impl CliError {
             CliError::Runtime { .. } => 5,
         }
     }
-}
 
-impl fmt::Display for CliError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    /// Stable, lowercase variant identifier suitable for the
+    /// `kernex.error_kind` tracing field. Never contains operator-supplied
+    /// content; safe to emit alongside the structured stderr line.
+    pub fn kind_name(&self) -> &'static str {
         match self {
-            CliError::NotImplemented { subcommand } => write!(
-                f,
-                "{subcommand} is not yet implemented; follow-up commits land the handler"
-            ),
-            CliError::Usage { message, .. }
-            | CliError::NotFound { message, .. }
-            | CliError::Sandbox { message, .. }
-            | CliError::Runtime { message, .. } => write!(f, "{message}"),
+            CliError::NotImplemented { .. } => "not_implemented",
+            CliError::Usage { .. } => "usage",
+            CliError::NotFound { .. } => "not_found",
+            CliError::Sandbox { .. } => "sandbox",
+            CliError::Runtime { .. } => "runtime",
+        }
+    }
+
+    /// Hint string suitable for the `Try:` line on a TTY or the `hint`
+    /// field in JSON mode. `NotImplemented` carries an inline default;
+    /// every other variant returns the explicit field.
+    pub fn hint(&self) -> &str {
+        match self {
+            CliError::NotImplemented { .. } => "follow-up commits land the handler",
+            CliError::Usage { hint, .. }
+            | CliError::NotFound { hint, .. }
+            | CliError::Sandbox { hint, .. }
+            | CliError::Runtime { hint, .. } => hint.as_str(),
         }
     }
 }
-
-impl std::error::Error for CliError {}
