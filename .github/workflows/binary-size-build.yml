@@ -15,11 +15,11 @@
 #   (see kernex-dev/kernex-studio orchestration `V2-EXECUTION-PLAN.md`
 #   decision 1.3). Linux release builds run ~2-3 MiB heavier for the same
 #   code due to ELF / glibc / x86_64 codegen overhead vs Mach-O / aarch64.
-#   The CI gate runs on Linux and uses 18 MiB as the Linux-side ceiling
-#   so the gate stays a useful proxy without becoming stricter than the
-#   product commitment. macOS measurements are tracked via local builds;
-#   a future macOS CI runner would tighten this back to 15 MiB on
-#   `macos-latest`.
+#   The Linux jobs use 18 MiB as the regression proxy so the gate stays
+#   useful without being stricter than the product commitment. The
+#   separate `macos-default-ceiling` job runs on `macos-latest` (Apple
+#   silicon since GitHub's macos-14+ runners) and enforces the 15 MiB
+#   product commitment directly on every PR.
 #
 # Runs as a read-only-token workflow on `pull_request`. The PR-comment
 # write-token operation lives in the separate `binary-size-comment.yml`
@@ -196,3 +196,30 @@ jobs:
             size_report.md
             pr_number.txt
           retention-days: 7
+
+  macos-default-ceiling:
+    # Enforces the 15 MiB macOS aarch64 product commitment per
+    # V2-EXECUTION-PLAN decision 1.3. Independent of the Linux matrix
+    # jobs: those use 18 MiB as the regression proxy; this job uses the
+    # actual product commitment on actual macOS aarch64.
+    #
+    # Runs only on `pull_request` (the workflow trigger) so macOS minutes
+    # are billed only when a PR is open. GitHub macOS runners cost ~10x
+    # Linux minutes; only the default variant is built (the variant that
+    # carries the kernex.dev "Under 15 MB" public commitment).
+    name: macOS aarch64 default-variant ceiling
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Build default kx for macOS aarch64
+        run: cargo build --release --bin kx --locked
+
+      - name: Hard ceiling check (15 MiB product commitment)
+        # scripts/check-size.sh handles both Linux (`stat -c%s`) and
+        # macOS (`stat -f%z`) so the same script works here.
+        run: bash scripts/check-size.sh default 15728640 target/release/kx
