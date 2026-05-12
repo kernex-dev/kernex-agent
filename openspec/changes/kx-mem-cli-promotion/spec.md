@@ -64,8 +64,8 @@ specification bug; the cross-cutting rule wins.
 | 2 | Usage error (unknown flag, malformed argument) |
 | 3 | Not found (id, key, or required record absent) |
 | 4 | Authorization or sandbox refusal |
-| 5 | Runtime (DB locked, IO failure, schema mismatch) |
-| 7 | Rate / capacity (reserved for future provider-backed commands) |
+| 5 | Runtime (IO failure, schema mismatch, JSON serialization) |
+| 7 | Transient / retryable (SQLite `database is locked` / `SQLITE_BUSY`, sqlx pool timeout, or future provider rate-limit / capacity exhaustion). Scripts may retry. |
 
 ### CC-8 Help text contract
 

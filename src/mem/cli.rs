@@ -12,10 +12,59 @@
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Utc};
-use kernex_memory::{HistoryRow, MemoryStore, MessageRow};
+use kernex_memory::{HistoryRow, MemoryError, MemoryStore, MessageRow};
 
 use crate::mem::errors::CliError;
 use crate::mem::types::{FactsRecord, HistoryRecord, SearchRecord, StatsRecord, OBSERVATION_TYPES};
+
+/// Classify a `kernex_memory::MemoryError` into a `CliError` so the
+/// dispatch site emits the right exit code. SQLite contention (`database
+/// is locked` / `SQLITE_BUSY`) and sqlx pool timeouts surface as
+/// [`CliError::Transient`] (exit 7) so scripts and a future `--retry`
+/// flag can branch without parsing the message string. Every other
+/// `MemoryError` flavor maps to [`CliError::Runtime`] (exit 5).
+///
+/// `op` describes the failing operation in human terms (e.g.
+/// `"memory search"`, `"history fetch"`). It is folded into the
+/// message so the operator sees both what failed and why.
+pub fn classify_memory_error(err: MemoryError, op: &str) -> CliError {
+    if memory_error_is_transient(&err) {
+        return CliError::Transient {
+            message: format!("{op} hit transient contention: {err}"),
+            hint: "Retry in a moment. If this reproduces under load, \
+                   reduce concurrent writers or open an issue."
+                .to_string(),
+            retry_after: None,
+        };
+    }
+    CliError::Runtime {
+        message: format!("{op} failed: {err}"),
+        hint: "Run `kx doctor` to verify the local memory database.".to_string(),
+    }
+}
+
+/// True when the `MemoryError` represents a retryable contention class
+/// (SQLite busy / database locked / sqlx pool timeout). Detection runs
+/// on the `Display` output of the inner `sqlx::Error` carried by
+/// `MemoryError::Sqlite { source, .. }`. `MemoryError::Io / Serde /
+/// Logic` are never transient.
+///
+/// String detection is intentional: `sqlx` is not a direct dependency
+/// of kernex-agent and the canonical SQLite text `database is locked`
+/// plus sqlx's Display strings `pool timed out` / `closed pool` are
+/// stable across sqlx 0.x releases. If a future kernex-memory release
+/// exposes a typed `is_transient()` helper on `MemoryError`, this
+/// function can switch to it without changing the signature here.
+fn memory_error_is_transient(err: &MemoryError) -> bool {
+    let MemoryError::Sqlite { source, .. } = err else {
+        return false;
+    };
+    let msg = format!("{source}").to_ascii_lowercase();
+    msg.contains("database is locked")
+        || msg.contains("pool timed out")
+        || msg.contains("sqlite_busy")
+        || msg.contains("closed pool")
+}
 
 /// Project a `SystemTime` to the SQLite `TIMESTAMP` shape used by the
 /// JSON output (`"%Y-%m-%d %H:%M:%S"`, UTC). Slice B of
@@ -99,10 +148,7 @@ pub async fn search(
     let raw: Vec<MessageRow> = store
         .search_messages(&opts.query, "", CLI_SENDER_ID, limit_i64, cutoff)
         .await
-        .map_err(|e| CliError::Runtime {
-            message: format!("memory search failed: {e}"),
-            hint: "Run `kx doctor` to verify the local memory database.".to_string(),
-        })?;
+        .map_err(|e| classify_memory_error(e, "memory search"))?;
 
     let mut records: Vec<SearchRecord> = raw
         .into_iter()
@@ -1023,6 +1069,44 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err.exit_code(), 3);
+    }
+
+    #[test]
+    fn classify_pool_timeout_is_transient() {
+        let err = MemoryError::sqlite("acquire conn", sqlx::Error::PoolTimedOut);
+        let cli = classify_memory_error(err, "memory search");
+        assert_eq!(cli.exit_code(), 7);
+        assert_eq!(cli.kind_name(), "transient");
+        let msg = format!("{cli}");
+        assert!(
+            msg.contains("transient contention"),
+            "message should signal transient, got {msg:?}"
+        );
+    }
+
+    #[test]
+    fn classify_pool_closed_is_transient() {
+        let err = MemoryError::sqlite("acquire conn", sqlx::Error::PoolClosed);
+        let cli = classify_memory_error(err, "memory search");
+        assert_eq!(cli.exit_code(), 7);
+    }
+
+    #[test]
+    fn classify_logic_is_runtime_not_transient() {
+        let err = MemoryError::logic("malformed migration row");
+        let cli = classify_memory_error(err, "memory search");
+        assert_eq!(cli.exit_code(), 5);
+        assert_eq!(cli.kind_name(), "runtime");
+    }
+
+    #[test]
+    fn classify_io_is_runtime_not_transient() {
+        let err = MemoryError::io(
+            "open audit log",
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        );
+        let cli = classify_memory_error(err, "memory search");
+        assert_eq!(cli.exit_code(), 5);
     }
 
     #[tokio::test]

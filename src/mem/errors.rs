@@ -8,6 +8,7 @@
 //! | 3    | `NotFound` |
 //! | 4    | `Sandbox` |
 //! | 5    | `Runtime` |
+//! | 7    | `Transient` (SQLite busy / pool timeout / future rate limit) |
 //!
 //! In JSON mode (auto-JSON when stdout is not a TTY, or `--json` forced),
 //! the error is emitted as a one-line JSON object on stderr:
@@ -44,10 +45,25 @@ pub enum CliError {
     #[allow(dead_code)]
     #[error("{message}")]
     Sandbox { message: String, hint: String },
-    /// Runtime fault: DB locked, IO failure, schema mismatch, or any
-    /// underlying error surfaced from `kernex_memory::MemoryError`.
+    /// Runtime fault: IO failure, schema mismatch, JSON serialization
+    /// failure, or any non-retryable error surfaced from
+    /// `kernex_memory::MemoryError`. Retryable failures (SQLite busy,
+    /// pool timeout) surface as `Transient` instead.
     #[error("{message}")]
     Runtime { message: String, hint: String },
+    /// Transient / retryable fault: SQLite `database is locked`,
+    /// `SQLITE_BUSY`, sqlx pool timeout, or (in future provider-backed
+    /// commands) rate-limit / capacity exhaustion. Distinct exit code
+    /// lets scripts and a future `--retry` flag branch without parsing
+    /// the message string. `retry_after` is optional and carries an
+    /// indicative wait when the source surfaces one; absent for SQLite
+    /// contention where no canonical hint exists.
+    #[error("{message}")]
+    Transient {
+        message: String,
+        hint: String,
+        retry_after: Option<std::time::Duration>,
+    },
 }
 
 impl CliError {
@@ -60,6 +76,7 @@ impl CliError {
             CliError::NotFound { .. } => 3,
             CliError::Sandbox { .. } => 4,
             CliError::Runtime { .. } => 5,
+            CliError::Transient { .. } => 7,
         }
     }
 
@@ -73,6 +90,7 @@ impl CliError {
             CliError::NotFound { .. } => "not_found",
             CliError::Sandbox { .. } => "sandbox",
             CliError::Runtime { .. } => "runtime",
+            CliError::Transient { .. } => "transient",
         }
     }
 
@@ -85,7 +103,8 @@ impl CliError {
             CliError::Usage { hint, .. }
             | CliError::NotFound { hint, .. }
             | CliError::Sandbox { hint, .. }
-            | CliError::Runtime { hint, .. } => hint.as_str(),
+            | CliError::Runtime { hint, .. }
+            | CliError::Transient { hint, .. } => hint.as_str(),
         }
     }
 }

@@ -213,22 +213,41 @@ type. Tests cover both modes via golden output.
 | 2 | Usage error (unknown flag, malformed arg) |
 | 3 | Not found (id, key, project absent) |
 | 4 | Authorization or sandbox refusal |
-| 5 | Runtime (DB locked, IO failure, schema mismatch) |
-| 7 | Rate / capacity (reserved for future provider-backed commands) |
+| 5 | Runtime (IO failure, schema mismatch, JSON serialization) |
+| 7 | Transient / retryable (SQLite `database is locked` / `SQLITE_BUSY`, sqlx pool timeout, or future provider rate-limit / capacity exhaustion) |
 
 Codes are returned via `std::process::ExitCode` from `main`. Errors
-are mapped to codes inside `mem::errors`.
+are mapped to codes inside `mem::errors`. Code 7 lands here because
+SQLite contention and provider rate-limits share a common semantic
+(retryable resource contention) and a common script-side response
+(wait and retry). The variant name in `CliError` is `Transient`.
+
+Classification lives in `mem::cli::classify_memory_error`, which
+inspects the inner `sqlx::Error` chain inside
+`MemoryError::Sqlite { source, .. }`. Pool timeouts and SQLite
+primary error code 5 (`SQLITE_BUSY`, plus extended codes 261 and
+517) surface as `Transient`; everything else falls through to
+`Runtime`.
 
 ### Rationale
 
 - Agents self-correct without parsing error text.
 - Same taxonomy carries forward to `/memory/*` HTTP status mapping in
-  any future HTTP surface change.
+  any future HTTP surface change (HTTP 503 / 429 are the natural
+  hosts for code 7).
+- Distinguishing transient from runtime is what lets a future
+  `kx mem search --retry` flag exist without re-parsing message
+  strings.
 
 ### Consequence
 
-Adding a new exit code in a later change is breaking. Code 6 is
-deliberately reserved for "conflict" (future insight surfaces).
+Adding a new exit code in a later change is breaking. Code 6 stays
+deliberately reserved for "conflict" (future insight surfaces) and
+is NOT used here despite earlier follow-up notes (`FU-D-AG-05`
+proposed code 6 before the reservation was rediscovered). Code 7
+was previously reserved as a forward slot for "rate / capacity";
+this change broadens it to the active "transient / retryable" class
+so SQLite contention and provider rate-limits share one slot.
 
 ---
 

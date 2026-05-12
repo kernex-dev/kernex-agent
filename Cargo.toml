@@ -130,3 +130,9 @@ tempfile = "3"
 # fail-closed paths without spinning up a real listener or provider.
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+# Used only by `mem::cli::tests::classify_*` to construct synthetic
+# `sqlx::Error::PoolTimedOut` / `PoolClosed` instances feeding the
+# transient classifier. Version pin matches kernex-memory's workspace
+# sqlx pin (0.8) so the test artifact never drifts off the upstream
+# error shape. Dev-only; production binary does not link sqlx directly.
+sqlx = { version = "0.8", default-features = false }
