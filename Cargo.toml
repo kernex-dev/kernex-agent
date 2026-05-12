@@ -120,6 +120,18 @@ bedrock = ["kernex-providers/bedrock"]
 [package.metadata.cargo-machete]
 ignored = ["ratatui", "crossterm", "toml_edit", "kernex-sandbox", "kernex-memory"]
 
+# Release profile mirrors the kernex-dev workspace's `lto = "fat"`
+# discipline so the bin -> lib split introduced by FU-D-AG-06 does not
+# regress the macOS aarch64 product commitment of 15 MiB per
+# V2-EXECUTION-PLAN decision 1.3. Without `lto = "fat"`, cross-crate
+# inlining between the `kx` binary and the `kernex-agent` library does
+# not happen, and the binary grows by ~650 KiB (measured 2026-05-12
+# during FU-D-AG-06 close-out). With `lto = "fat"` the binary returns
+# to and improves on the pre-split baseline.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
 [dev-dependencies]
 # Filesystem tests use TempDir so each test gets a unique random path with
 # RAII cleanup. Avoids races when tests run in parallel and the prior
