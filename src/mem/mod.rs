@@ -515,10 +515,10 @@ fn resolve_project_data_dir(project: &str) -> Result<PathBuf, CliError> {
 /// Open the project-scoped memory store rooted at `data_dir/memory.db`.
 ///
 /// `Store::new` runs the kernex-memory migration sweep on every call.
-/// On a current DB this is a `CREATE TABLE IF NOT EXISTS _migrations`
-/// followed by one row-existence probe per known migration. The cost is
-/// sub-10 ms on SSD but scales linearly with migration count; pushing a
-/// fast-path check upstream is tracked separately (FU-D-AG-04).
+/// As of `kernex-memory 0.6.2` the sweep uses a fast-path registry: one
+/// `SELECT name FROM _migrations` plus an in-memory `HashSet<String>`
+/// for membership checks, so cold-open is sub-10 ms on SSD even as the
+/// migration count grows.
 #[tracing::instrument(name = "kernex.mem.open_store", skip_all, err)]
 async fn open_store(data_dir: &Path) -> Result<Arc<dyn MemoryStore>, CliError> {
     let db_path = data_dir.join("memory.db");

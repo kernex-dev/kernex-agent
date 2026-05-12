@@ -1,8 +1,9 @@
 //! Runtime glue shared between the binary entry point (`src/main.rs`)
 //! and library modules (notably `serve`) that need to build a provider
-//! or compose a `Runtime`. Moved out of `main.rs` as part of FU-D-AG-06
-//! so the items here are reachable from `crate::` paths inside the
-//! library and from `kernex_agent::runtime_glue::*` outside it.
+//! or compose a `Runtime`. Moved out of `main.rs` when `src/lib.rs` was
+//! extracted, so the items here are reachable from `crate::` paths
+//! inside the library and from `kernex_agent::runtime_glue::*` outside
+//! it.
 //!
 //! Public items:
 //! - [`CliHookRunner`] — simple verbose-aware `HookRunner` impl used by

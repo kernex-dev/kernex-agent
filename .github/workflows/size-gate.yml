@@ -75,7 +75,7 @@ jobs:
           # workspace bump landed direct to main (commit edc1a83) and added
           # net binary weight that the previous 2026-05-10 baseline did not
           # account for. The 2026-05-10 file is retained alongside as the
-          # historical Phase B record.
+          # historical baseline record.
           BASELINE=docs/agent-bloat-baseline-2026-05-11-crates.txt
           if [ ! -f "$BASELINE" ]; then
             echo "baseline not found at $BASELINE; skipping diff"

@@ -22,9 +22,9 @@
 //! share code, so byte-equivalence on the record set is a property of
 //! the single shared handler.
 //!
-//! What this harness covers post-FU-D-AG-06 (`src/lib.rs` extraction):
-//! seed a `kernex_memory::Store`, call each `mem::cli::*` handler
-//! through the library crate's public surface, assert the returned
+//! What this harness covers: seed a `kernex_memory::Store`, call each
+//! `mem::cli::*` handler through the library crate's public surface
+//! (reachable since `src/lib.rs` was extracted), and assert the returned
 //! record fields are observable and stable across two consecutive calls
 //! (no row drift on idempotent reads).
 

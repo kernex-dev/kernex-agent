@@ -41,11 +41,11 @@ pub struct SearchRecord {
 
 /// One row of `kx mem history` output.
 ///
-/// Backed today by `MemoryStore::get_history`, which returns closed
-/// conversation summaries newest-first. When the typed observation
-/// schema lands (FU-D-AG-04), this struct picks up the full observation
-/// row shape (`id`, `type`, `title`, save-body fields); the `summary`
-/// field becomes `title` and a new `id` field replaces the synthetic
+/// Backed by `MemoryStore::get_history`, which returns closed
+/// conversation summaries newest-first. A future tightening can swap
+/// this shape for the typed-observation row shape (operator-supplied
+/// `id`, `type`, `title`, structured fields); the `summary` field then
+/// becomes `title` and a new `id` field replaces the synthetic
 /// `msg-<rank>-<ts>` placeholder.
 #[derive(Debug, Clone, Serialize)]
 pub struct HistoryRecord {
@@ -53,11 +53,13 @@ pub struct HistoryRecord {
     pub id: String,
     /// Observation type. Today: hardcoded to `"conversation"` because
     /// the underlying row is a conversation summary, not a typed
-    /// observation. Becomes the operator-supplied type post-FU-D-AG-04.
+    /// observation. Becomes the operator-supplied type once the history
+    /// path swaps to the typed-observation row shape.
     #[serde(rename = "type")]
     pub kind: String,
     /// Display title. Today: the conversation summary text (truncated
-    /// to 80 chars). Becomes the operator-provided title post-FU-D-AG-04.
+    /// to 80 chars). Becomes the operator-provided title once the
+    /// history path swaps to the typed-observation row shape.
     pub title: String,
     /// Full body text. Today: the full conversation summary.
     pub content: String,
@@ -75,11 +77,11 @@ pub struct HistoryRecord {
 
 /// `kx mem stats` output. Single object (not a list).
 ///
-/// `observations` is the spec field name (per S-stats-1). Today it maps
-/// to the underlying message count because the typed-observation table
-/// `conversations` is an extra field surfaced for v1 since the trait
-/// already exposes it; it is in the `--select` allowlist but not in
-/// `--compact`.
+/// `observations` is the spec field name (per S-stats-1) and now maps
+/// directly to the typed observation count from
+/// `MemoryStore::get_memory_stats`. `conversations` is an extra field
+/// surfaced for v1 since the trait already exposes it; it is in the
+/// `--select` allowlist but not in `--compact`.
 ///
 /// `last_write_at` is `None` for an empty project (S-stats-2). Today it
 /// is derived from the most recent closed-conversation row via
@@ -109,9 +111,9 @@ pub struct StatsRecord {
 ///
 /// `MemoryStore::get_facts` returns `(key, value)` tuples today; the
 /// schema has an `updated_at` column but the trait does not surface it.
-/// FU-D-AG-04 (the typed-row data-model bump) adds `updated_at` to the
-/// trait response; this struct gains the field at that point without
-/// changing the JSON key names.
+/// A future trait tightening can add `updated_at` to the response; this
+/// struct gains the field at that point without changing the JSON key
+/// names.
 #[derive(Debug, Clone, Serialize)]
 pub struct FactsRecord {
     /// The fact key (unique per `(sender_id, key)`).
