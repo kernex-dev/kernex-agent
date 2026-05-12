@@ -11,9 +11,8 @@
 # soft-warns at 8 MiB. The `full` variant is informational.
 #
 # Ceiling policy (2026-05-11):
-#   The product commitment is "15 MiB on macOS aarch64 release builds"
-#   (see kernex-dev/kernex-studio orchestration `V2-EXECUTION-PLAN.md`
-#   decision 1.3). Linux release builds run ~2-3 MiB heavier for the same
+#   The product commitment is "15 MiB on macOS aarch64 release builds".
+#   Linux release builds run ~2-3 MiB heavier for the same
 #   code due to ELF / glibc / x86_64 codegen overhead vs Mach-O / aarch64.
 #   The Linux jobs use 18 MiB as the regression proxy so the gate stays
 #   useful without being stricter than the product commitment. The
@@ -198,10 +197,9 @@ jobs:
           retention-days: 7
 
   macos-default-ceiling:
-    # Enforces the 15 MiB macOS aarch64 product commitment per
-    # V2-EXECUTION-PLAN decision 1.3. Independent of the Linux matrix
-    # jobs: those use 18 MiB as the regression proxy; this job uses the
-    # actual product commitment on actual macOS aarch64.
+    # Enforces the 15 MiB macOS aarch64 product commitment. Independent
+    # of the Linux matrix jobs: those use 18 MiB as the regression proxy;
+    # this job uses the actual product commitment on actual macOS aarch64.
     #
     # Runs only on `pull_request` (the workflow trigger) so macOS minutes
     # are billed only when a PR is open. GitHub macOS runners cost ~10x

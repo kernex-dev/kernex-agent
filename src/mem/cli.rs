@@ -69,10 +69,10 @@ fn memory_error_is_transient(err: &MemoryError) -> bool {
 }
 
 /// Project a `SystemTime` to the SQLite `TIMESTAMP` shape used by the
-/// JSON output (`"%Y-%m-%d %H:%M:%S"`, UTC). Slice B of
-/// `memory-typed-row-shape` types the trait's `timestamp` and
-/// `updated_at` columns as `SystemTime`; we project back to a string at
-/// the JSON-projection boundary so the CC-1 contract stays stable.
+/// JSON output (`"%Y-%m-%d %H:%M:%S"`, UTC). The trait's `timestamp`
+/// and `updated_at` columns are typed as `SystemTime`; we project back
+/// to a string at the JSON-projection boundary so the CC-1 contract
+/// stays stable.
 fn format_timestamp(t: SystemTime) -> String {
     let dt: DateTime<Utc> = t.into();
     dt.format("%Y-%m-%d %H:%M:%S").to_string()
@@ -200,9 +200,9 @@ pub struct HistoryOpts {
 ///
 /// Backed by `MemoryStore::get_history`, which today returns
 /// `(summary, updated_at)` tuples for `status = 'closed'` conversations
-/// scoped to `(channel, sender_id)`. The richer observation row shape
-/// arrives with FU-D-AG-04; this handler upgrades transparently when
-/// the trait signature lifts.
+/// scoped to `(channel, sender_id)`. A future trait tightening can lift
+/// this to the typed-observation row shape; the handler upgrades
+/// transparently when the trait signature lifts.
 #[tracing::instrument(
     name = "kernex.mem.history",
     skip_all,
@@ -362,9 +362,9 @@ pub async fn get(store: &dyn MemoryStore, id: &str) -> Result<SearchRecord, CliE
 /// List every active (not soft-deleted) fact for the resolved project.
 ///
 /// Backed by `MemoryStore::get_facts`. Returns the trait's `(key, value)`
-/// shape today; `updated_at` lands with FU-D-AG-04. Empty result is
-/// `[]` per CC-5; exit code is 0 even for a project with zero facts
-/// (mirrors S-stats-2's "empty is still valid" rule).
+/// shape today; a future trait tightening can add `updated_at`. Empty
+/// result is `[]` per CC-5; exit code is 0 even for a project with zero
+/// facts (mirrors S-stats-2's "empty is still valid" rule).
 #[tracing::instrument(
     name = "kernex.mem.facts.list",
     skip_all,
@@ -801,10 +801,11 @@ mod tests {
 
     #[tokio::test]
     async fn s_search_3_since_filters_at_trait_surface() {
-        // Slice B pushes `since` server-side; the agent's job here is to
-        // pass the parsed cutoff straight through to `MemoryStore::search_messages`.
-        // Recent corpus + cutoff in the past: result returned. Same
-        // corpus + cutoff in the future: result filtered.
+        // The trait pushes `since` server-side; the agent's job here is
+        // to pass the parsed cutoff straight through to
+        // `MemoryStore::search_messages`. Recent corpus + cutoff in the
+        // past: result returned. Same corpus + cutoff in the future:
+        // result filtered.
         let (_tmp, store) = seeded_store(&[("hello unique-marker world", "ack", "demo")]).await;
 
         let past = SystemTime::now() - Duration::from_secs(3_600);
