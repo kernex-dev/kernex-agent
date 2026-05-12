@@ -90,9 +90,9 @@ fn is_already_rendered(err: &anyhow::Error) -> bool {
 ///
 /// `kx mem *` subcommands surface a structured `CliError` whose
 /// `exit_code()` follows ADR-005 of the kx-mem-cli-promotion change
-/// (2 = usage, 3 = not found, 4 = sandbox refusal, 5 = runtime). Every
-/// other error path defaults to 1 so existing subcommands keep their
-/// pre-existing behavior.
+/// (2 = usage, 3 = not found, 4 = sandbox refusal, 5 = runtime,
+/// 7 = transient / retryable). Every other error path defaults to 1
+/// so existing subcommands keep their pre-existing behavior.
 fn exit_code_for(err: &anyhow::Error) -> u8 {
     #[cfg(feature = "memory-cli")]
     {
