@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Verify that the provider list stays in sync across:
-#   - the PROVIDERS const in src/main.rs (source of truth at runtime)
+#   - the PROVIDERS const in src/runtime_glue.rs (source of truth at runtime)
 #   - the provider table in README.md (what users read on crates.io)
 #   - the --provider help text in src/cli.rs (what users see in `kx --help`)
 #
@@ -14,23 +14,37 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Extract provider names from the PROVIDERS const block in src/main.rs.
+# Extract provider names from the PROVIDERS const block. The const lives
+# in src/runtime_glue.rs after the lib extraction; this script tries that
+# file first and falls back to src/main.rs for older worktrees.
+provider_source=""
+for candidate in src/runtime_glue.rs src/main.rs; do
+    if [ -f "$candidate" ] && grep -q '^pub const PROVIDERS: &\[ProviderSpec\] = &\[\|^const PROVIDERS: &\[ProviderSpec\] = &\[' "$candidate"; then
+        provider_source="$candidate"
+        break
+    fi
+done
+if [ -z "$provider_source" ]; then
+    echo "FAIL: could not locate the PROVIDERS const in src/runtime_glue.rs or src/main.rs" >&2
+    exit 1
+fi
+
 # Uses a tmpfile so we stay compatible with bash 3.2 (no mapfile, no <(...) array reads).
 const_names_file=$(mktemp)
 trap 'rm -f "$const_names_file"' EXIT
 awk '
-    /^const PROVIDERS: &\[ProviderSpec\] = &\[/ { in_const = 1; next }
+    /^pub const PROVIDERS: &\[ProviderSpec\] = &\[|^const PROVIDERS: &\[ProviderSpec\] = &\[/ { in_const = 1; next }
     in_const && /^\];/                          { exit }
     in_const && /name:[[:space:]]*"[^"]+"/ {
         match($0, /"[^"]+"/)
         print substr($0, RSTART+1, RLENGTH-2)
     }
-' src/main.rs > "$const_names_file"
+' "$provider_source" > "$const_names_file"
 
 const_count=$(wc -l < "$const_names_file" | tr -d ' ')
 
 if [ "$const_count" -eq 0 ]; then
-    echo "FAIL: could not parse any provider names from src/main.rs PROVIDERS const" >&2
+    echo "FAIL: could not parse any provider names from $provider_source PROVIDERS const" >&2
     exit 1
 fi
 
@@ -39,8 +53,8 @@ readme_count=$(grep -c '^| `--provider ' README.md || true)
 
 if [ "$const_count" -ne "$readme_count" ]; then
     echo "FAIL: drift detected" >&2
-    echo "  PROVIDERS const in src/main.rs: $const_count entries" >&2
-    echo "  Provider rows in README.md:     $readme_count rows" >&2
+    echo "  PROVIDERS const in $provider_source: $const_count entries" >&2
+    echo "  Provider rows in README.md:          $readme_count rows" >&2
     echo "  Names in const:" >&2
     sed 's/^/    /' "$const_names_file" >&2
     exit 1
