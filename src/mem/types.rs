@@ -77,24 +77,23 @@ pub struct HistoryRecord {
 ///
 /// `observations` is the spec field name (per S-stats-1). Today it maps
 /// to the underlying message count because the typed-observation table
-/// does not exist yet (tracked under FU-D-AG-04). `conversations` is an
-/// extra field surfaced for v1 since the trait already exposes it; it
-/// is in the `--select` allowlist but not in `--compact`.
+/// `conversations` is an extra field surfaced for v1 since the trait
+/// already exposes it; it is in the `--select` allowlist but not in
+/// `--compact`.
 ///
 /// `last_write_at` is `None` for an empty project (S-stats-2). Today it
 /// is derived from the most recent closed-conversation row via
-/// `get_history(.., .., 1)`; when FU-D-AG-04 lands a typed `max(updated_at)`
-/// query on the observations table replaces the derivation.
+/// `get_history(.., .., 1)`; a typed `max(updated_at)` query on the
+/// observations table is a future tightening.
 #[derive(Debug, Clone, Serialize)]
 pub struct StatsRecord {
     /// Resolved project name (echoed for operator confirmation).
     pub project: String,
     /// Closed + active conversation rows for this sender.
     pub conversations: i64,
-    /// Message rows for this sender. The spec calls this "observations"
-    /// since the long-term model is the typed observation table; until
-    /// FU-D-AG-04 lands, the underlying row source is messages.
-    #[serde(rename = "observations")]
+    /// Active observation rows for this sender (from the typed observation
+    /// table, as of `kernex-memory 0.8.0`). Soft-deleted observations are
+    /// excluded.
     pub observations: i64,
     /// Active (not soft-deleted) fact rows for this sender.
     pub facts: i64,
@@ -124,9 +123,8 @@ pub struct FactsRecord {
 /// Valid observation types per the kx-mem-cli-promotion proposal.
 ///
 /// `--type bogus` exits 2 and stderr lists this set (S-search-5,
-/// S-save-5). Until the typed-save schema lands, supplying a known type
-/// from this list returns zero results (records have no type column to
-/// match against yet); supplying an unknown type still errors out.
+/// S-save-5). The seven strings match `kernex_memory::ObservationType`'s
+/// `snake_case` / `lowercase` serialization exactly.
 pub const OBSERVATION_TYPES: &[&str] = &[
     "bugfix",
     "decision",
@@ -136,3 +134,32 @@ pub const OBSERVATION_TYPES: &[&str] = &[
     "learning",
     "architecture",
 ];
+
+/// One row of `kx mem save` output: the persisted observation echoed
+/// back to the operator. The seven structured fields mirror
+/// `kernex_memory::Observation`; `id` is the freshly-assigned UUIDv4 and
+/// `created_at` is the ISO-8601 timestamp at write time.
+///
+/// Optional fields (`what`, `why`, `where`, `learned`) render as JSON
+/// `null` when absent so consumers can rely on a stable key set.
+#[derive(Debug, Clone, Serialize)]
+pub struct SaveRecord {
+    /// Stable UUIDv4 assigned by `MemoryStore::save_observation`.
+    pub id: String,
+    /// Observation type, one of [`OBSERVATION_TYPES`].
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Operator-provided title (non-empty).
+    pub title: String,
+    /// What changed (optional).
+    pub what: Option<String>,
+    /// Why it changed (optional).
+    pub why: Option<String>,
+    /// Where the change applied (optional file path or scope).
+    #[serde(rename = "where")]
+    pub where_field: Option<String>,
+    /// What was learned (optional).
+    pub learned: Option<String>,
+    /// ISO-8601 timestamp at write time.
+    pub created_at: String,
+}
