@@ -14,7 +14,7 @@ use std::io::IsTerminal;
 use serde_json::{Map, Value};
 
 use crate::mem::errors::CliError;
-use crate::mem::types::{FactsRecord, HistoryRecord, SearchRecord, StatsRecord};
+use crate::mem::types::{FactsRecord, HistoryRecord, SaveRecord, SearchRecord, StatsRecord};
 
 /// Fields that survive `--compact` projection. Defined by spec CC-3.
 pub const COMPACT_FIELDS: &[&str] = &["id", "type", "title", "updated_at", "score"];
@@ -50,6 +50,21 @@ pub const STATS_FIELDS: &[&str] = &[
 /// Fields valid on a `FactsRecord` for `--select`. `--compact` is a
 /// no-op on facts records (CC-3 "where applicable").
 pub const FACTS_FIELDS: &[&str] = &["key", "value"];
+
+/// Fields valid on a `SaveRecord` for `--select`. `--compact` projects
+/// the SaveRecord to the standard high-gravity set (`id`, `type`,
+/// `title`, plus `created_at` aliased into `updated_at` for parity with
+/// the SearchRecord compact view).
+pub const SAVE_FIELDS: &[&str] = &[
+    "id",
+    "type",
+    "title",
+    "what",
+    "why",
+    "where",
+    "learned",
+    "created_at",
+];
 
 /// True when stdout is a real terminal (CLI is being read by a human),
 /// false when piped or redirected (output will be consumed by another
@@ -260,6 +275,97 @@ pub fn render_facts_record_json(
 /// Render a single fact record as a human-readable line on a TTY.
 pub fn render_facts_record_table(record: &FactsRecord) -> String {
     format!("  {}: {}\n", record.key, record.value)
+}
+
+/// Render a saved observation as JSON. The `where` and other optional
+/// fields render as JSON `null` when absent so consumers can rely on a
+/// stable key set. `--compact` keeps the standard high-gravity set; the
+/// SaveRecord's `created_at` is aliased into the `updated_at` slot of
+/// `COMPACT_FIELDS` so the compact projection stays consistent with
+/// SearchRecord output.
+pub fn render_save_json(
+    record: &SaveRecord,
+    compact: bool,
+    select: &[String],
+) -> Result<String, CliError> {
+    let validated = validate_select(select, SAVE_FIELDS)?;
+    let v = save_record_to_value(record);
+    let projected = if !validated.is_empty() {
+        let keep: Vec<&str> = validated.iter().map(String::as_str).collect();
+        Value::Object(filter_keys(v, &keep))
+    } else if compact {
+        Value::Object(filter_keys(v, COMPACT_FIELDS))
+    } else {
+        Value::Object(v)
+    };
+    serde_json::to_string(&projected).map_err(|e| CliError::Runtime {
+        message: format!("failed to serialize observation: {e}"),
+        hint: "If this reproduces, please open an issue.".to_string(),
+    })
+}
+
+/// Render a saved observation as a human-readable block on a TTY.
+pub fn render_save_table(record: &SaveRecord) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("  [{}] {}\n", record.kind, record.title));
+    out.push_str(&format!("      id: {}\n", record.id));
+    if let Some(v) = &record.what {
+        out.push_str(&format!("      what: {v}\n"));
+    }
+    if let Some(v) = &record.why {
+        out.push_str(&format!("      why: {v}\n"));
+    }
+    if let Some(v) = &record.where_field {
+        out.push_str(&format!("      where: {v}\n"));
+    }
+    if let Some(v) = &record.learned {
+        out.push_str(&format!("      learned: {v}\n"));
+    }
+    out.push_str(&format!("      created_at: {}\n", record.created_at));
+    out
+}
+
+fn save_record_to_value(r: &SaveRecord) -> Map<String, Value> {
+    let mut m = Map::new();
+    m.insert("id".to_string(), Value::String(r.id.clone()));
+    m.insert("type".to_string(), Value::String(r.kind.clone()));
+    m.insert("title".to_string(), Value::String(r.title.clone()));
+    m.insert(
+        "what".to_string(),
+        r.what
+            .as_ref()
+            .map_or(Value::Null, |s| Value::String(s.clone())),
+    );
+    m.insert(
+        "why".to_string(),
+        r.why
+            .as_ref()
+            .map_or(Value::Null, |s| Value::String(s.clone())),
+    );
+    m.insert(
+        "where".to_string(),
+        r.where_field
+            .as_ref()
+            .map_or(Value::Null, |s| Value::String(s.clone())),
+    );
+    m.insert(
+        "learned".to_string(),
+        r.learned
+            .as_ref()
+            .map_or(Value::Null, |s| Value::String(s.clone())),
+    );
+    m.insert(
+        "created_at".to_string(),
+        Value::String(r.created_at.clone()),
+    );
+    // `updated_at` alias so the COMPACT_FIELDS slot (`updated_at`)
+    // resolves to the SaveRecord's timestamp without diverging the
+    // compact projection from SearchRecord output.
+    m.insert(
+        "updated_at".to_string(),
+        Value::String(r.created_at.clone()),
+    );
+    m
 }
 
 fn facts_record_to_value(r: &FactsRecord) -> Map<String, Value> {

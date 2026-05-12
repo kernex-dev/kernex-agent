@@ -12,10 +12,12 @@
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Utc};
-use kernex_memory::{HistoryRow, MemoryError, MemoryStore, MessageRow};
+use kernex_memory::{HistoryRow, MemoryError, MemoryStore, MessageRow, ObservationType, SaveEntry};
 
 use crate::mem::errors::CliError;
-use crate::mem::types::{FactsRecord, HistoryRecord, SearchRecord, StatsRecord, OBSERVATION_TYPES};
+use crate::mem::types::{
+    FactsRecord, HistoryRecord, SaveRecord, SearchRecord, StatsRecord, OBSERVATION_TYPES,
+};
 
 /// Classify a `kernex_memory::MemoryError` into a `CliError` so the
 /// dispatch site emits the right exit code. SQLite contention (`database
@@ -275,7 +277,7 @@ pub struct StatsOpts {
     ),
 )]
 pub async fn stats(store: &dyn MemoryStore, opts: StatsOpts) -> Result<StatsRecord, CliError> {
-    let (conversations, observations, facts) = store
+    let (conversations, _messages, observations, facts) = store
         .get_memory_stats(CLI_SENDER_ID)
         .await
         .map_err(|e| CliError::Runtime {
@@ -482,6 +484,65 @@ pub async fn facts_delete(store: &dyn MemoryStore, key: &str) -> Result<(), CliE
             hint: "Run `kx mem facts list` to see known keys.".to_string(),
         })
     }
+}
+
+/// Persist a typed observation (`kx mem save`).
+///
+/// The dispatcher normalizes operator input (inline flags vs `--stdin`
+/// JSON) into a `SaveEntry` before reaching this handler, so the handler
+/// only owns the persistence step plus the `SaveRecord` projection. The
+/// `sender_id` is fixed to [`CLI_SENDER_ID`]; project scoping comes from
+/// the on-disk DB location the dispatcher opens.
+///
+/// Errors from `MemoryStore::save_observation` (including the DB-layer
+/// CHECK constraints for empty title and unknown type) route through
+/// [`classify_memory_error`] so SQLite contention surfaces as
+/// [`CliError::Transient`] (exit 7) and everything else lands as
+/// [`CliError::Runtime`] (exit 5).
+#[tracing::instrument(
+    name = "kernex.mem.save",
+    skip_all,
+    fields(
+        sender_id = %CLI_SENDER_ID,
+        kind = %entry.kind.as_db_str(),
+        title_len = entry.title.len(),
+    ),
+)]
+pub async fn save(store: &dyn MemoryStore, entry: SaveEntry) -> Result<SaveRecord, CliError> {
+    let saved = store
+        .save_observation(entry)
+        .await
+        .map_err(|e| classify_memory_error(e, "memory save"))?;
+    Ok(SaveRecord {
+        id: saved.id,
+        kind: saved.kind.as_db_str().to_string(),
+        title: saved.title,
+        what: saved.what,
+        why: saved.why,
+        where_field: saved.where_field,
+        learned: saved.learned,
+        created_at: format_timestamp(saved.created_at),
+    })
+}
+
+/// Resolve an operator-supplied type string into an [`ObservationType`].
+/// Returns [`CliError::Usage`] (exit 2) listing the valid set when the
+/// input is unknown (S-save-5). Empty input is also a usage error so the
+/// operator sees a helpful hint instead of a parse error.
+pub fn parse_observation_type(s: &str) -> Result<ObservationType, CliError> {
+    if s.is_empty() {
+        return Err(CliError::Usage {
+            message: "observation type is required".to_string(),
+            hint: format!(
+                "Pass --type=<kind>. Valid types: {}",
+                OBSERVATION_TYPES.join(", ")
+            ),
+        });
+    }
+    ObservationType::from_db_str(s).ok_or_else(|| CliError::Usage {
+        message: format!("unknown observation type: {s}"),
+        hint: format!("Valid types: {}", OBSERVATION_TYPES.join(", ")),
+    })
 }
 
 fn preview(s: &str, max_chars: usize) -> String {
@@ -903,9 +964,11 @@ mod tests {
 
     #[tokio::test]
     async fn s_stats_1_returns_counts_and_last_write() {
-        // Seed two closed conversations (each writes one user + one
-        // assistant message) plus one fact. Expect: conversations=2,
-        // observations=4, facts=1, last_write_at=Some(...).
+        // Seed two closed conversations plus one fact. With kernex-memory
+        // 0.8.0 the observations column counts the typed observation table
+        // independently from messages, so no observations are recorded
+        // here. Expect: conversations=2, observations=0, facts=1,
+        // last_write_at=Some(...).
         let (_tmp, store) = seeded_store_with_closed_conversations(&[
             ("first message", "first reply", "demo-a"),
             ("second message", "second reply", "demo-b"),
@@ -921,7 +984,7 @@ mod tests {
             .unwrap();
         assert_eq!(record.project, "demo-stats");
         assert_eq!(record.conversations, 2);
-        assert_eq!(record.observations, 4);
+        assert_eq!(record.observations, 0);
         assert_eq!(record.facts, 1);
         assert!(record.last_write_at.is_some());
         assert!(record.db_size_bytes > 0);
@@ -1124,5 +1187,80 @@ mod tests {
             .unwrap();
         let r = facts_get(store.as_ref(), "auth-pattern").await.unwrap();
         assert_eq!(r.value, "new");
+    }
+
+    fn full_save_entry() -> SaveEntry {
+        let mut e = SaveEntry::new(CLI_SENDER_ID, ObservationType::Bugfix, "Fixed N+1 query");
+        e.what = Some("added eager loading in UserList".to_string());
+        e.why = Some("lists were 12s slow on 5k users".to_string());
+        e.where_field = Some("src/users/list.rs".to_string());
+        e.learned =
+            Some("FTS5 query rewriter cannot fix N+1; only the ORM call site can".to_string());
+        e
+    }
+
+    #[tokio::test]
+    async fn s_save_1_inline_structured_fields_round_trip() {
+        // S-save-1: all seven fields populated, save_observation
+        // round-trips through SaveRecord with stable shape.
+        let (_tmp, store) = seeded_store(&[]).await;
+        let rec = save(store.as_ref(), full_save_entry()).await.unwrap();
+        assert_eq!(rec.kind, "bugfix");
+        assert_eq!(rec.title, "Fixed N+1 query");
+        assert_eq!(rec.what.as_deref(), Some("added eager loading in UserList"));
+        assert_eq!(rec.where_field.as_deref(), Some("src/users/list.rs"));
+        // ISO 8601 space-separated form (project convention), so a colon
+        // (in the time component) is the minimal stable structural
+        // assertion that survives daylight-savings / time-zone changes.
+        assert!(rec.created_at.contains(':'));
+        // UUIDv4 hyphenated form, 36 chars including 4 hyphens.
+        assert_eq!(rec.id.len(), 36);
+        assert_eq!(rec.id.matches('-').count(), 4);
+    }
+
+    #[tokio::test]
+    async fn s_save_1_none_optionals_persist_as_null() {
+        // Optional fields stay None when the operator omits them; the
+        // SaveRecord echoes them back as None so the JSON renderer can
+        // emit `null` for stable consumer parsing.
+        let (_tmp, store) = seeded_store(&[]).await;
+        let entry = SaveEntry::new(CLI_SENDER_ID, ObservationType::Decision, "no extras");
+        let rec = save(store.as_ref(), entry).await.unwrap();
+        assert_eq!(rec.kind, "decision");
+        assert!(rec.what.is_none());
+        assert!(rec.why.is_none());
+        assert!(rec.where_field.is_none());
+        assert!(rec.learned.is_none());
+    }
+
+    #[tokio::test]
+    async fn s_save_5_unknown_type_is_exit_2() {
+        // S-save-5: an unknown type string never reaches the store. The
+        // parser refuses it with a usage error (exit 2) that lists the
+        // valid set.
+        let err = parse_observation_type("bogus").unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        let hint = err.hint();
+        assert!(hint.contains("bugfix"));
+        assert!(hint.contains("architecture"));
+    }
+
+    #[tokio::test]
+    async fn s_save_5_known_type_resolves() {
+        // Every spec type maps cleanly to an ObservationType. Lock the
+        // mapping in here so a future enum reshuffle is caught.
+        for t in OBSERVATION_TYPES {
+            let kind = parse_observation_type(t).unwrap();
+            assert_eq!(&kind.as_db_str(), t);
+        }
+    }
+
+    #[tokio::test]
+    async fn s_save_empty_type_is_exit_2() {
+        // The parser rejects an empty string explicitly so the operator
+        // sees the type-required hint instead of the unknown-type hint.
+        let err = parse_observation_type("").unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        assert!(format!("{err}").contains("required"));
     }
 }
