@@ -1,12 +1,14 @@
 # Proposal: kx mem CLI promotion
 
 > **Change ID:** `kx-mem-cli-promotion`
-> **Status:** Draft v0.2 (ready for execution)
+> **Status:** LANDED — all 14 mem subcommands shipped across 13 atomic commits between 2026-05-11 and 2026-05-12 on `kernex-dev/kernex-agent@main`. Step 2.11 (`kx mem save`) was the final outstanding subcommand; it landed at `11bdf54` (PR #24 squash) after `kernex-memory 0.8.0` published the typed observation surface.
 > **Repo:** `kernex-dev/kernex-agent` (this repo).
 > The runtime trait surface this change depends on (`MemoryStore` in
 > `kernex-memory`) shipped at v0.6.x via
-> [`kernex-dev/kernex` `openspec/archive/2026-05-memory-store-trait-introduction/`](https://github.com/kernex-dev/kernex/tree/main/openspec/archive/2026-05-memory-store-trait-introduction).
-> `kernex-memory = "0.6.1"` is now a direct dep in `Cargo.toml`.
+> [`kernex-dev/kernex` `openspec/archive/2026-05-memory-store-trait-introduction/`](https://github.com/kernex-dev/kernex/tree/main/openspec/archive/2026-05-memory-store-trait-introduction)
+> and was extended at v0.8.0 via
+> [`kernex-dev/kernex` `openspec/archive/2026-05-typed-observation-table/`](https://github.com/kernex-dev/kernex/tree/main/openspec/archive/2026-05-typed-observation-table).
+> `kernex-memory = "0.8.0"` is the current pinned version in `Cargo.toml`.
 
 ## Pre-implementation findings
 
