@@ -43,7 +43,7 @@ async fn happy_path_writes_files_and_exits_zero() {
     assert_eq!(code, 0);
     let claude = tmp.path().join(".claude");
     assert!(claude.join("CLAUDE.md").exists());
-    assert!(claude.join("mcp.json").exists());
+    assert!(claude.join("mcp-servers.json").exists());
     assert!(claude.join("output-style.md").exists());
     // Audit log is present.
     let audit_dir = tmp.path().join(".kx").join("audit");

@@ -32,7 +32,7 @@ fn plan_for(home: &std::path::Path) -> InstallPlan {
         components: vec!["claude-md".into(), "mcp-json".into(), "output-style".into()],
         target_paths: vec![
             ("claude-md".into(), claude.join("CLAUDE.md")),
-            ("mcp-json".into(), claude.join("mcp.json")),
+            ("mcp-json".into(), claude.join("mcp-servers.json")),
             ("output-style".into(), claude.join("output-style.md")),
         ],
     }
@@ -247,4 +247,150 @@ fn receipt_serializes_with_typed_action() {
     };
     let json = serde_json::to_string(&r).unwrap();
     assert!(json.contains("\"action\":\"overwrote\""));
+}
+
+// ---------------------------------------------------------------------------
+// mcp-json merge semantics (FU-E-02). The mcp-json component must merge
+// the rendered kernex entry into Claude Code's existing mcpServers block
+// rather than overwriting the file. These tests cover the four real
+// scenarios: target missing, target empty, target has unrelated entries,
+// target has a stale kernex entry (idempotency).
+// ---------------------------------------------------------------------------
+
+async fn run_install_for_merge_test(
+    tmp: &TempDir,
+) -> (kernex_agent::install::audit::AuditWriter, Vec<Receipt>) {
+    let audit = AuditWriter::new(tmp.path()).unwrap();
+    let opts = options(tmp.path().to_path_buf());
+    let plan = plan_for(tmp.path());
+    let backup = run_backup(&opts, &plan, &audit).await;
+    let receipts = stage_apply::run(&opts, &plan, &backup, &audit)
+        .await
+        .unwrap();
+    (audit, receipts)
+}
+
+fn mcp_path(tmp: &TempDir) -> std::path::PathBuf {
+    tmp.path().join(".claude").join("mcp-servers.json")
+}
+
+#[tokio::test]
+async fn mcp_merge_creates_file_when_target_missing() {
+    let tmp = TempDir::new().unwrap();
+    // No .claude/ dir, no mcp-servers.json. APPLY must create both and
+    // write the rendered kernex entry verbatim.
+    let (_audit, _receipts) = run_install_for_merge_test(&tmp).await;
+    let written = fs::read_to_string(mcp_path(&tmp)).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&written).unwrap();
+    assert!(parsed["mcpServers"]["kernex"].is_object());
+    assert_eq!(parsed["mcpServers"]["kernex"]["command"], "kx");
+}
+
+#[tokio::test]
+async fn mcp_merge_preserves_unrelated_entries() {
+    let tmp = TempDir::new().unwrap();
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    // Pre-seed a registry with two unrelated MCP entries.
+    fs::write(
+        claude_dir.join("mcp-servers.json"),
+        r#"{
+  "mcpServers": {
+    "figma": { "command": "/opt/homebrew/bin/figma-developer-mcp", "args": [], "env": {} },
+    "freepik": { "command": "/usr/local/bin/freepik-mcp", "args": [], "env": {} }
+  }
+}
+"#,
+    )
+    .unwrap();
+
+    let (_audit, _receipts) = run_install_for_merge_test(&tmp).await;
+
+    let merged_text = fs::read_to_string(mcp_path(&tmp)).unwrap();
+    let merged: serde_json::Value = serde_json::from_str(&merged_text).unwrap();
+    let servers = merged["mcpServers"].as_object().unwrap();
+    // All three entries present: figma + freepik preserved, kernex added.
+    assert!(servers.contains_key("figma"), "figma should be preserved");
+    assert!(
+        servers.contains_key("freepik"),
+        "freepik should be preserved"
+    );
+    assert!(servers.contains_key("kernex"), "kernex should be added");
+    assert_eq!(servers["kernex"]["command"], "kx");
+    // Original entries kept their structure.
+    assert_eq!(
+        servers["figma"]["command"],
+        "/opt/homebrew/bin/figma-developer-mcp"
+    );
+}
+
+#[tokio::test]
+async fn mcp_merge_idempotent_on_rerun() {
+    let tmp = TempDir::new().unwrap();
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    // Pre-seed a STALE kernex entry from a prior install. The merge must
+    // overwrite it cleanly so a second `kx install` produces the same
+    // registry shape as the first.
+    fs::write(
+        claude_dir.join("mcp-servers.json"),
+        r#"{
+  "mcpServers": {
+    "kernex": { "command": "old-kx-path", "args": ["legacy"], "env": {} },
+    "figma": { "command": "/opt/homebrew/bin/figma-developer-mcp", "args": [], "env": {} }
+  }
+}
+"#,
+    )
+    .unwrap();
+
+    let (_audit, _receipts) = run_install_for_merge_test(&tmp).await;
+
+    let merged_text = fs::read_to_string(mcp_path(&tmp)).unwrap();
+    let merged: serde_json::Value = serde_json::from_str(&merged_text).unwrap();
+    let servers = merged["mcpServers"].as_object().unwrap();
+    assert!(servers.contains_key("figma"));
+    // kernex entry must be the new shape, not the legacy one.
+    assert_eq!(servers["kernex"]["command"], "kx");
+    assert_ne!(
+        servers["kernex"]["command"], "old-kx-path",
+        "stale kernex entry should be overwritten by merge"
+    );
+}
+
+#[tokio::test]
+async fn mcp_merge_handles_empty_existing_file() {
+    let tmp = TempDir::new().unwrap();
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    // Zero-byte existing file: merge falls back to rendered-as-is.
+    fs::write(claude_dir.join("mcp-servers.json"), "").unwrap();
+
+    let (_audit, _receipts) = run_install_for_merge_test(&tmp).await;
+
+    let written = fs::read_to_string(mcp_path(&tmp)).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&written).unwrap();
+    assert!(parsed["mcpServers"]["kernex"].is_object());
+}
+
+#[tokio::test]
+async fn mcp_merge_errors_on_invalid_existing_json() {
+    let tmp = TempDir::new().unwrap();
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    // Garbage JSON should make merge refuse rather than corrupt the user's file.
+    fs::write(claude_dir.join("mcp-servers.json"), "{ not json").unwrap();
+
+    let audit = AuditWriter::new(tmp.path()).unwrap();
+    let opts = options(tmp.path().to_path_buf());
+    let plan = plan_for(tmp.path());
+    let backup = run_backup(&opts, &plan, &audit).await;
+    let result = stage_apply::run(&opts, &plan, &backup, &audit).await;
+    assert!(
+        result.is_err(),
+        "APPLY should fail when the existing mcp-servers.json is not valid JSON"
+    );
+    // The garbage file must be left untouched (no silent overwrite).
+    let still_there = fs::read_to_string(mcp_path(&tmp)).unwrap();
+    assert_eq!(still_there, "{ not json");
 }

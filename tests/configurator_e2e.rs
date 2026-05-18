@@ -4,7 +4,7 @@
 //! -> BACKUP -> APPLY -> VERIFY -> REPORT) against a TempDir HOME and
 //! asserts every exit-signal clause from proposal.md §"What done looks
 //! like":
-//!   1. Files written: CLAUDE.md, mcp.json, output-style.md.
+//!   1. Files written: CLAUDE.md, mcp-servers.json, output-style.md.
 //!   2. Audit log present at <home>/.kx/audit/install-*.jsonl.
 //!   3. Per-stage trace events all present (no stage skipped).
 //!   4. install.summary event emitted with status='success'.
@@ -37,9 +37,11 @@ async fn happy_path_writes_all_components_with_full_audit_trail() {
         .await
         .expect("install ok");
 
-    // Clause 1: every component file exists and is non-empty.
+    // Clause 1: every component file exists and is non-empty. The
+    // mcp-json component lands at .claude/mcp-servers.json (the
+    // dedicated Claude Code MCP registry), not .claude/mcp.json.
     let claude_dir = tmp.path().join(".claude");
-    for component in ["CLAUDE.md", "mcp.json", "output-style.md"] {
+    for component in ["CLAUDE.md", "mcp-servers.json", "output-style.md"] {
         let path = claude_dir.join(component);
         assert!(path.exists(), "{component} not written at {path:?}");
         assert!(

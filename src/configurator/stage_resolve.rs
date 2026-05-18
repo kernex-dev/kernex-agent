@@ -84,7 +84,15 @@ fn component_path(home: &std::path::Path, component: &str) -> Result<PathBuf, In
     let claude_dir = home.join(".claude");
     match component {
         "claude-md" => Ok(claude_dir.join("CLAUDE.md")),
-        "mcp-json" => Ok(claude_dir.join("mcp.json")),
+        // Claude Code reads global MCP server registrations from
+        // <home>/.claude/mcp-servers.json (the dedicated MCP registry)
+        // and from <home>/.claude.json (the User MCPs block). We target
+        // the dedicated registry because it has a smaller blast radius
+        // on errors and matches where the user's existing personal MCPs
+        // (figma, affine, freepik) already live. stage_apply MERGES the
+        // rendered kernex entry into the existing mcpServers block; it
+        // does NOT overwrite the file.
+        "mcp-json" => Ok(claude_dir.join("mcp-servers.json")),
         "output-style" => Ok(claude_dir.join("output-style.md")),
         other => Err(InstallError::Permanent(format!(
             "unknown component '{other}' in preset"
