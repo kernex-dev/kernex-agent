@@ -1318,6 +1318,7 @@ dependencies = [
  "hmac",
  "http-body-util",
  "indicatif",
+ "kernex-adapter-core",
  "kernex-core",
  "kernex-memory",
  "kernex-pipelines",

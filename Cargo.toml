@@ -17,6 +17,7 @@ name = "kx"
 path = "src/main.rs"
 
 [dependencies]
+kernex-adapter-core = "0.8.0"
 kernex-runtime = "0.8.0"
 kernex-core = "0.8.0"
 kernex-providers = "0.8.0"
