@@ -1,25 +1,74 @@
 //! Stage 1 DETECT — probe the target agent without writing any file.
 //!
-//! Behavior lands in §5 (E-detect-1..6). The scaffold here defines the
-//! typed `Detection` output that RESOLVE consumes.
+//! Behavior per E-detect-1..6.
 
-use std::path::PathBuf;
+use chrono::Utc;
+use kernex_adapter_core::Detection;
+use serde_json::json;
 
-use serde::{Deserialize, Serialize};
+use crate::adapters::default_registry;
+use crate::install::audit::{AuditEvent, AuditWriter, EventError, EventStatus, Stage};
 
 use super::{InstallError, InstallOptions};
 
-/// Output of DETECT consumed by RESOLVE.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Detection {
-    /// True iff the agent CLI (`claude`, `cursor`, etc.) is on `$PATH`.
-    pub installed: bool,
-    /// `$HOME/.claude/` for the Claude adapter; analogous for others.
-    pub config_root: Option<PathBuf>,
-    /// Parsed from `claude --version` when `installed`.
-    pub version: Option<String>,
-}
+pub async fn run(opts: &InstallOptions, audit: &AuditWriter) -> Result<Detection, InstallError> {
+    let started = Utc::now();
+    audit
+        .emit(AuditEvent {
+            event: "stage.detect.start".to_string(),
+            stage: Stage::Detect,
+            status: EventStatus::Success,
+            started_at: started,
+            ended_at: None,
+            duration_ms: None,
+            payload: json!({"agent": &opts.agent}),
+            errors: vec![],
+        })
+        .map_err(|e| InstallError::Permanent(format!("audit emit failed: {e}")))?;
 
-pub async fn run(_opts: &InstallOptions) -> Result<Detection, InstallError> {
-    unimplemented!("stage_detect::run — lands in §5 of the SDD")
+    let adapter = default_registry()
+        .lookup(&opts.agent)
+        .ok_or_else(|| InstallError::UnknownAgent(opts.agent.clone()))?;
+
+    let result = adapter.detect().await;
+    let ended = Utc::now();
+    let duration_ms = (ended - started).num_milliseconds().max(0) as u64;
+
+    match result {
+        Ok(detection) => {
+            audit
+                .emit(AuditEvent {
+                    event: "stage.detect.end".to_string(),
+                    stage: Stage::Detect,
+                    status: EventStatus::Success,
+                    started_at: started,
+                    ended_at: Some(ended),
+                    duration_ms: Some(duration_ms),
+                    payload: serde_json::to_value(&detection).unwrap_or(serde_json::Value::Null),
+                    errors: vec![],
+                })
+                .map_err(|e| InstallError::Permanent(format!("audit emit failed: {e}")))?;
+            Ok(detection)
+        }
+        Err(err) => {
+            let message = err.to_string();
+            audit
+                .emit(AuditEvent {
+                    event: "stage.detect.error".to_string(),
+                    stage: Stage::Detect,
+                    status: EventStatus::Failure,
+                    started_at: started,
+                    ended_at: Some(ended),
+                    duration_ms: Some(duration_ms),
+                    payload: serde_json::Value::Null,
+                    errors: vec![EventError {
+                        code: "adapter_detect_failed".to_string(),
+                        message: message.clone(),
+                        transient: false,
+                    }],
+                })
+                .map_err(|e| InstallError::Permanent(format!("audit emit failed: {e}")))?;
+            Err(InstallError::Permanent(format!("detect failed: {message}")))
+        }
+    }
 }

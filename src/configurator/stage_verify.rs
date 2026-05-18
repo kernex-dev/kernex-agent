@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::install::audit::AuditWriter;
+
 use super::stage_apply::Receipt;
 use super::stage_resolve::InstallPlan;
 use super::{InstallError, InstallOptions};
@@ -26,6 +28,7 @@ pub async fn run(
     _opts: &InstallOptions,
     _plan: &InstallPlan,
     _receipts: &[Receipt],
+    _audit: &AuditWriter,
 ) -> Result<VerifyReport, InstallError> {
     unimplemented!("stage_verify::run — lands in §10 of the SDD")
 }

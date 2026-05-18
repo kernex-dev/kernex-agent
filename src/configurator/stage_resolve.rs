@@ -5,9 +5,11 @@
 
 use std::path::PathBuf;
 
+use kernex_adapter_core::Detection;
 use serde::{Deserialize, Serialize};
 
-use super::stage_detect::Detection;
+use crate::install::audit::AuditWriter;
+
 use super::{InstallError, InstallOptions};
 
 /// Output of RESOLVE consumed by BACKUP and APPLY.
@@ -25,6 +27,7 @@ pub struct InstallPlan {
 pub async fn run(
     _opts: &InstallOptions,
     _detection: &Detection,
+    _audit: &AuditWriter,
 ) -> Result<InstallPlan, InstallError> {
     unimplemented!("stage_resolve::run — lands in §6 of the SDD")
 }

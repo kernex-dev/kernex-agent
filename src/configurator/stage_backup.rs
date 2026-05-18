@@ -7,6 +7,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::install::audit::AuditWriter;
+
 use super::stage_resolve::InstallPlan;
 use super::{InstallError, InstallOptions};
 
@@ -25,6 +27,7 @@ pub struct BackupReceipt {
 pub async fn run(
     _opts: &InstallOptions,
     _plan: &InstallPlan,
+    _audit: &AuditWriter,
 ) -> Result<BackupReceipt, InstallError> {
     unimplemented!("stage_backup::run — lands in §8 of the SDD")
 }

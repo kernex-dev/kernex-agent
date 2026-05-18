@@ -4,6 +4,8 @@
 //! exit path (E-install-2): when `opts.dry_run` is set, the orchestrator
 //! skips BACKUP onward and calls `run_dry_run` instead.
 
+use crate::install::audit::AuditWriter;
+
 use super::stage_apply::Receipt;
 use super::stage_resolve::InstallPlan;
 use super::stage_verify::VerifyReport;
@@ -14,6 +16,7 @@ pub async fn run(
     _plan: &InstallPlan,
     _apply: &[Receipt],
     _verify: &VerifyReport,
+    _audit: &AuditWriter,
 ) -> Result<InstallReport, InstallError> {
     unimplemented!("stage_report::run — lands in §11 of the SDD")
 }
@@ -21,6 +24,7 @@ pub async fn run(
 pub async fn run_dry_run(
     _opts: &InstallOptions,
     _plan: &InstallPlan,
+    _audit: &AuditWriter,
 ) -> Result<InstallReport, InstallError> {
     unimplemented!("stage_report::run_dry_run — lands in §11 of the SDD")
 }

@@ -13,6 +13,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::install::audit::AuditWriter;
+
 pub mod stage_apply;
 pub mod stage_backup;
 pub mod stage_detect;
@@ -93,22 +95,33 @@ pub enum InstallError {
 ///
 /// Each stage takes the prior stage's typed output and returns its own.
 /// APPLY failure short-circuits to rollback; the caller observes a typed
-/// `InstallReport` either way.
+/// `InstallReport` either way. The `AuditWriter` lives for the duration
+/// of a single install run; one fresh log file under `~/.kx/audit/`.
 pub async fn run(opts: InstallOptions) -> Result<InstallReport, InstallError> {
-    let detection = stage_detect::run(&opts).await?;
-    let plan = stage_resolve::run(&opts, &detection).await?;
-    stage_review::run(&opts, &plan).await?;
+    let audit = AuditWriter::new(&opts.home)
+        .map_err(|e| InstallError::Permanent(format!("open audit log: {e}")))?;
+    run_with_audit(opts, &audit).await
+}
+
+/// Same as `run` but with an injected audit writer (tests, advanced callers).
+pub async fn run_with_audit(
+    opts: InstallOptions,
+    audit: &AuditWriter,
+) -> Result<InstallReport, InstallError> {
+    let detection = stage_detect::run(&opts, audit).await?;
+    let plan = stage_resolve::run(&opts, &detection, audit).await?;
+    stage_review::run(&opts, &plan, audit).await?;
     if opts.dry_run {
-        return stage_report::run_dry_run(&opts, &plan).await;
+        return stage_report::run_dry_run(&opts, &plan, audit).await;
     }
-    let backup = stage_backup::run(&opts, &plan).await?;
-    let apply = match stage_apply::run(&opts, &plan, &backup).await {
+    let backup = stage_backup::run(&opts, &plan, audit).await?;
+    let apply = match stage_apply::run(&opts, &plan, &backup, audit).await {
         Ok(receipts) => receipts,
         Err(err) => {
-            let _ = stage_apply::rollback(&backup, &[], &err).await;
+            let _ = stage_apply::rollback(&backup, &[], &err, audit).await;
             return Err(err);
         }
     };
-    let verify = stage_verify::run(&opts, &plan, &apply).await?;
-    stage_report::run(&opts, &plan, &apply, &verify).await
+    let verify = stage_verify::run(&opts, &plan, &apply, audit).await?;
+    stage_report::run(&opts, &plan, &apply, &verify, audit).await
 }

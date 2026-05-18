@@ -7,6 +7,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::install::audit::AuditWriter;
+
 use super::stage_backup::BackupReceipt;
 use super::stage_resolve::InstallPlan;
 use super::{InstallError, InstallOptions};
@@ -36,6 +38,7 @@ pub async fn run(
     _opts: &InstallOptions,
     _plan: &InstallPlan,
     _backup: &BackupReceipt,
+    _audit: &AuditWriter,
 ) -> Result<Vec<Receipt>, InstallError> {
     unimplemented!("stage_apply::run — lands in §9 of the SDD")
 }
@@ -44,6 +47,7 @@ pub async fn rollback(
     _backup: &BackupReceipt,
     _receipts: &[Receipt],
     _err: &InstallError,
+    _audit: &AuditWriter,
 ) -> Result<(), InstallError> {
     unimplemented!("stage_apply::rollback — lands in §9 of the SDD")
 }
