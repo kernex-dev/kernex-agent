@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 kernex-runtime = "0.8.0"
-kernex-core = "0.8.0"
+kernex-core = "0.8.1"
 kernex-providers = "0.8.0"
 kernex-pipelines = "0.8.0"
 kernex-sandbox = "0.8.0"
