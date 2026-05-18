@@ -5,3 +5,4 @@
 //! support surfaces (audit log, preset table, CLI flags).
 
 pub mod audit;
+pub mod preset;
