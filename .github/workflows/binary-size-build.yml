@@ -221,3 +221,73 @@ jobs:
         # scripts/check-size.sh handles both Linux (`stat -c%s`) and
         # macOS (`stat -f%z`) so the same script works here.
         run: bash scripts/check-size.sh default 15728640 target/release/kx
+
+  delta-agent-claude:
+    # Per-adapter size discipline: agent-claude must contribute <= 800 KiB
+    # to the default-build, measured on macOS aarch64 (Apple silicon on
+    # GitHub's macos-14+ runners). The 800 KiB target is the product
+    # commitment from the Phase E SDD E-LOCK-08 / ADR-009; it tracks the
+    # same 15 MiB macOS / 18 MiB Linux platform discipline used by the
+    # existing `macos-default-ceiling` and Linux matrix jobs. Linux
+    # release builds amplify the per-adapter delta by ~5x due to
+    # ELF/glibc codegen vs Mach-O/aarch64, so a Linux-side delta gate
+    # would either pass everything or block on platform overhead rather
+    # than real adapter weight.
+    #
+    # Builds twice in the same job, subtracts, hard-fails if the macOS
+    # aarch64 delta exceeds 819,200 bytes (800 KiB).
+    name: agent-claude delta <= 800 KiB (macOS aarch64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      # Hold every default feature constant EXCEPT agent-claude so the
+      # subtraction isolates the adapter's contribution. Without this,
+      # the delta would also pick up serve's axum/hmac/etc. weight and
+      # report a spuriously large agent-claude number.
+      - name: Build size_without (memory-cli + serve, no agent-claude)
+        run: cargo build --release --bin kx --no-default-features --features memory-cli,serve --locked
+
+      - name: Capture size_without
+        id: without
+        run: |
+          set -euo pipefail
+          # macOS uses `stat -f%z`; Linux uses `stat -c%s`. This job
+          # runs on macos-latest so the BSD form applies.
+          SIZE=$(stat -f%z target/release/kx)
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Build size_with (memory-cli + serve + agent-claude)
+        run: cargo build --release --bin kx --no-default-features --features memory-cli,serve,agent-claude --locked
+
+      - name: Capture size_with
+        id: with
+        run: |
+          set -euo pipefail
+          SIZE=$(stat -f%z target/release/kx)
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Compute delta_agent_claude and fail if > 800 KiB
+        run: |
+          set -euo pipefail
+          SIZE_WITH=${{ steps.with.outputs.size }}
+          SIZE_WITHOUT=${{ steps.without.outputs.size }}
+          DELTA=$((SIZE_WITH - SIZE_WITHOUT))
+          LIMIT=819200
+          echo "size_without=${SIZE_WITHOUT} bytes"
+          echo "size_with=${SIZE_WITH} bytes"
+          echo "delta_agent_claude=${DELTA} bytes"
+          echo "limit=${LIMIT} bytes (800 KiB)"
+          if [ "$DELTA" -gt "$LIMIT" ]; then
+            echo ""
+            echo "FAIL: agent-claude contributes ${DELTA} bytes on macOS aarch64,"
+            echo "exceeding the 800 KiB product-commitment budget."
+            echo "Either move agent-claude to opt-in (default features change) or"
+            echo "land a size-reduction commit before merging."
+            exit 1
+          fi
+          echo "PASS: agent-claude delta within budget on macOS aarch64."

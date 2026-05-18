@@ -19,6 +19,10 @@ pub mod builtins;
 pub mod cli;
 pub mod commands;
 pub mod config;
+#[cfg(feature = "agent-claude")]
+pub mod configurator;
+#[cfg(feature = "agent-claude")]
+pub mod install;
 pub mod loader;
 #[cfg(feature = "memory-cli")]
 pub mod mem;

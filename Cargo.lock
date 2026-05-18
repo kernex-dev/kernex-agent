@@ -703,6 +703,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "filetime"
+version = "0.2.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
+dependencies = [
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1292,9 +1302,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-adapter-core"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0adc5b4ae1214f06ab08813d7cf03fabaeaa614c6c22d1ff43ba4fc3d22c7ae6"
+checksum = "7286f83dbb5b712a2815b6edf876c3d6b58f48e0192ac89e51b6456b380c270e"
 dependencies = [
  "async-trait",
  "serde",
@@ -1315,9 +1325,11 @@ dependencies = [
  "colored",
  "crossterm",
  "dirs",
+ "flate2",
  "hmac",
  "http-body-util",
  "indicatif",
+ "kernex-adapter-core",
  "kernex-core",
  "kernex-memory",
  "kernex-pipelines",
@@ -1332,6 +1344,7 @@ dependencies = [
  "sha2",
  "sqlx",
  "subtle",
+ "tar",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -2785,6 +2798,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tar"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22692a6476a21fa75fdfc11d452fda482af402c008cdbaf3476414e122040973"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3772,6 +3796,16 @@ name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
+
+[[package]]
+name = "xattr"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
+dependencies = [
+ "libc",
+ "rustix 1.1.4",
+]
 
 [[package]]
 name = "yoke"

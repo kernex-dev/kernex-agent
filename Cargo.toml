@@ -17,8 +17,14 @@ name = "kx"
 path = "src/main.rs"
 
 [dependencies]
+kernex-adapter-core = "0.8.1"
 kernex-runtime = "0.8.0"
 kernex-core = "0.8.1"
+# Backup tarball + gzip for the install BACKUP stage. Behind the
+# agent-claude feature flag transitively because the only call sites
+# live in src/configurator/stage_backup.rs which is feature-gated.
+tar = "0.4"
+flate2 = "1.0"
 kernex-providers = "0.8.0"
 kernex-pipelines = "0.8.0"
 kernex-sandbox = "0.8.1"
