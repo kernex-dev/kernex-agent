@@ -224,12 +224,20 @@ jobs:
 
   delta-agent-claude:
     # Per-adapter size discipline: agent-claude must contribute <= 800 KiB
-    # to the default-build vs a build with only --features memory-cli.
-    # Builds twice in the same job, subtracts, and hard-fails if the
-    # delta exceeds 819,200 bytes (800 KiB). Linux runner is sufficient
-    # for the relative delta; the platform delta from ELF/glibc cancels.
-    name: agent-claude delta <= 800 KiB
-    runs-on: ubuntu-latest
+    # to the default-build, measured on macOS aarch64 (Apple silicon on
+    # GitHub's macos-14+ runners). The 800 KiB target is the product
+    # commitment from the Phase E SDD E-LOCK-08 / ADR-009; it tracks the
+    # same 15 MiB macOS / 18 MiB Linux platform discipline used by the
+    # existing `macos-default-ceiling` and Linux matrix jobs. Linux
+    # release builds amplify the per-adapter delta by ~5x due to
+    # ELF/glibc codegen vs Mach-O/aarch64, so a Linux-side delta gate
+    # would either pass everything or block on platform overhead rather
+    # than real adapter weight.
+    #
+    # Builds twice in the same job, subtracts, hard-fails if the macOS
+    # aarch64 delta exceeds 819,200 bytes (800 KiB).
+    name: agent-claude delta <= 800 KiB (macOS aarch64)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -244,7 +252,9 @@ jobs:
         id: without
         run: |
           set -euo pipefail
-          SIZE=$(stat -c%s target/release/kx)
+          # macOS uses `stat -f%z`; Linux uses `stat -c%s`. This job
+          # runs on macos-latest so the BSD form applies.
+          SIZE=$(stat -f%z target/release/kx)
           echo "size=$SIZE" >> "$GITHUB_OUTPUT"
 
       - name: Build size_with (default = includes agent-claude)
@@ -254,7 +264,7 @@ jobs:
         id: with
         run: |
           set -euo pipefail
-          SIZE=$(stat -c%s target/release/kx)
+          SIZE=$(stat -f%z target/release/kx)
           echo "size=$SIZE" >> "$GITHUB_OUTPUT"
 
       - name: Compute delta_agent_claude and fail if > 800 KiB
@@ -270,9 +280,10 @@ jobs:
           echo "limit=${LIMIT} bytes (800 KiB)"
           if [ "$DELTA" -gt "$LIMIT" ]; then
             echo ""
-            echo "FAIL: agent-claude contributes ${DELTA} bytes, exceeding the 800 KiB budget."
-            echo "Either move agent-claude to opt-in (default features change) or land a"
-            echo "size-reduction commit before merging."
+            echo "FAIL: agent-claude contributes ${DELTA} bytes on macOS aarch64,"
+            echo "exceeding the 800 KiB product-commitment budget."
+            echo "Either move agent-claude to opt-in (default features change) or"
+            echo "land a size-reduction commit before merging."
             exit 1
           fi
-          echo "PASS: agent-claude delta within budget."
+          echo "PASS: agent-claude delta within budget on macOS aarch64."
