@@ -134,6 +134,24 @@ async fn run() -> anyhow::Result<()> {
             auth_token,
             workers,
         }) => cmd_serve(host, port, auth_token, workers, &provider_flags).await,
+        #[cfg(feature = "agent-claude")]
+        Some(Command::Install {
+            agent,
+            preset,
+            yes,
+            dry_run,
+            verify_deep,
+        }) => {
+            let args = kernex_agent::install::cli::InstallArgs {
+                agent,
+                preset,
+                yes,
+                dry_run,
+                verify_deep,
+            };
+            let code = kernex_agent::install::cli::dispatch(args).await?;
+            std::process::exit(code);
+        }
         #[cfg(feature = "memory-cli")]
         Some(Command::Mem {
             action,

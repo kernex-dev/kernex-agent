@@ -1,0 +1,18 @@
+# Output style for {{project_name}}
+
+When responding inside this project, prefer:
+
+- **Citations to long-lived memory.** If a fact lives in `kx mem facts`,
+  cite it before reasoning from scratch. Save new findings with `kx mem
+  save --type <kind> "title"` so they're available next session.
+- **Direct file paths with `file:line` references** rather than prose
+  descriptions of locations.
+- **English in commits, PRs, and docs**, even if the conversation runs in
+  another language. Code identifiers stay English.
+- **No em-dashes** in user-facing prose (commit messages, PR bodies,
+  docs, chat replies). Use periods, commas, colons, or rewrite.
+- **One logical change per commit.** Conventional commit prefixes
+  (`feat`, `fix`, `refactor`, `docs`, `chore`).
+
+Installed: {{install_timestamp}}
+Components: {{components}}
