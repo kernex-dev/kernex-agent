@@ -221,3 +221,58 @@ jobs:
         # scripts/check-size.sh handles both Linux (`stat -c%s`) and
         # macOS (`stat -f%z`) so the same script works here.
         run: bash scripts/check-size.sh default 15728640 target/release/kx
+
+  delta-agent-claude:
+    # Per-adapter size discipline: agent-claude must contribute <= 800 KiB
+    # to the default-build vs a build with only --features memory-cli.
+    # Builds twice in the same job, subtracts, and hard-fails if the
+    # delta exceeds 819,200 bytes (800 KiB). Linux runner is sufficient
+    # for the relative delta; the platform delta from ELF/glibc cancels.
+    name: agent-claude delta <= 800 KiB
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Build size_without (memory-cli only, no agent-claude)
+        run: cargo build --release --bin kx --no-default-features --features memory-cli --locked
+
+      - name: Capture size_without
+        id: without
+        run: |
+          set -euo pipefail
+          SIZE=$(stat -c%s target/release/kx)
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Build size_with (default = includes agent-claude)
+        run: cargo build --release --bin kx --locked
+
+      - name: Capture size_with
+        id: with
+        run: |
+          set -euo pipefail
+          SIZE=$(stat -c%s target/release/kx)
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Compute delta_agent_claude and fail if > 800 KiB
+        run: |
+          set -euo pipefail
+          SIZE_WITH=${{ steps.with.outputs.size }}
+          SIZE_WITHOUT=${{ steps.without.outputs.size }}
+          DELTA=$((SIZE_WITH - SIZE_WITHOUT))
+          LIMIT=819200
+          echo "size_without=${SIZE_WITHOUT} bytes"
+          echo "size_with=${SIZE_WITH} bytes"
+          echo "delta_agent_claude=${DELTA} bytes"
+          echo "limit=${LIMIT} bytes (800 KiB)"
+          if [ "$DELTA" -gt "$LIMIT" ]; then
+            echo ""
+            echo "FAIL: agent-claude contributes ${DELTA} bytes, exceeding the 800 KiB budget."
+            echo "Either move agent-claude to opt-in (default features change) or land a"
+            echo "size-reduction commit before merging."
+            exit 1
+          fi
+          echo "PASS: agent-claude delta within budget."
