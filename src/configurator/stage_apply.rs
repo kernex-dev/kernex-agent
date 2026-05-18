@@ -182,16 +182,27 @@ fn render_and_write(
     let tmpl = template_for(component)
         .ok_or_else(|| InstallError::Permanent(format!("unknown component '{component}'")))?;
     let rendered = render(tmpl, vars);
-    let bytes = rendered.as_bytes();
 
+    // The mcp-json component is special: it ships a JSON document with a
+    // `mcpServers` block intended to be merged INTO the existing Claude
+    // Code MCP registry rather than overwriting it. Other Claude Code
+    // tools (figma, affine, codegraph, etc.) live in the same file; a
+    // blind overwrite would clobber them. For every other component the
+    // rendered template is written verbatim.
     let prior_exists = path.exists();
+    let final_bytes: Vec<u8> = if component == "mcp-json" {
+        merge_mcp_servers(path, &rendered)?.into_bytes()
+    } else {
+        rendered.into_bytes()
+    };
+
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, bytes)?;
+    fs::write(path, &final_bytes)?;
 
     let mut hasher = Sha256::new();
-    hasher.update(bytes);
+    hasher.update(&final_bytes);
     let sha256: [u8; 32] = hasher.finalize().into();
 
     Ok(Receipt {
@@ -202,9 +213,91 @@ fn render_and_write(
         } else {
             ReceiptAction::Created
         },
-        bytes_written: bytes.len() as u64,
+        bytes_written: final_bytes.len() as u64,
         sha256,
     })
+}
+
+/// Merge the rendered `mcp-json` template into an existing MCP registry
+/// file, preserving every other `mcpServers` entry already present.
+///
+/// Behavior:
+/// - If the target file does not exist, returns the rendered template
+///   verbatim (so the first install creates a valid one-entry file).
+/// - If the target file is empty or non-existent JSON, returns the
+///   rendered template verbatim.
+/// - If the target file is valid JSON with an `mcpServers` object, each
+///   key from the rendered template's `mcpServers` is merged in. Keys
+///   that already exist (e.g., a prior `kernex` entry from a re-run) are
+///   overwritten with the new value, matching install-idempotency: the
+///   second `kx install` produces the same registry as the first.
+/// - If the target file exists but is invalid JSON, returns an error so
+///   the install fails clean rather than corrupting the user's config.
+///
+/// Returns the serialized JSON to write back to disk, formatted with
+/// two-space indentation and a trailing newline so diffs against the
+/// original stay readable.
+fn merge_mcp_servers(path: &Path, rendered: &str) -> Result<String, InstallError> {
+    let rendered_value: serde_json::Value = serde_json::from_str(rendered).map_err(|e| {
+        InstallError::Permanent(format!(
+            "mcp-json template did not render to valid JSON: {e}"
+        ))
+    })?;
+
+    if !path.exists() {
+        return Ok(format_with_trailing_newline(&rendered_value));
+    }
+
+    let existing_text = fs::read_to_string(path)?;
+    if existing_text.trim().is_empty() {
+        return Ok(format_with_trailing_newline(&rendered_value));
+    }
+
+    let mut existing: serde_json::Value = serde_json::from_str(&existing_text).map_err(|e| {
+        InstallError::Permanent(format!(
+            "existing MCP registry at {} is not valid JSON: {e}; refusing to overwrite",
+            path.display()
+        ))
+    })?;
+
+    let rendered_servers = rendered_value
+        .get("mcpServers")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| {
+            InstallError::Permanent(
+                "mcp-json template is missing a top-level mcpServers object".to_string(),
+            )
+        })?;
+
+    let existing_obj = existing.as_object_mut().ok_or_else(|| {
+        InstallError::Permanent(format!(
+            "existing MCP registry at {} is not a JSON object",
+            path.display()
+        ))
+    })?;
+
+    let target_servers = existing_obj
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+
+    let target_map = target_servers.as_object_mut().ok_or_else(|| {
+        InstallError::Permanent(format!(
+            "existing mcpServers at {} is not a JSON object",
+            path.display()
+        ))
+    })?;
+
+    for (name, server_value) in rendered_servers {
+        target_map.insert(name.clone(), server_value.clone());
+    }
+
+    Ok(format_with_trailing_newline(&existing))
+}
+
+fn format_with_trailing_newline(value: &serde_json::Value) -> String {
+    let mut out = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
+    out.push('\n');
+    out
 }
 
 fn template_for(component: &str) -> Option<&'static str> {
