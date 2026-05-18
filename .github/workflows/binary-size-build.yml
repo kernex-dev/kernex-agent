@@ -245,8 +245,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Build size_without (memory-cli only, no agent-claude)
-        run: cargo build --release --bin kx --no-default-features --features memory-cli --locked
+      # Hold every default feature constant EXCEPT agent-claude so the
+      # subtraction isolates the adapter's contribution. Without this,
+      # the delta would also pick up serve's axum/hmac/etc. weight and
+      # report a spuriously large agent-claude number.
+      - name: Build size_without (memory-cli + serve, no agent-claude)
+        run: cargo build --release --bin kx --no-default-features --features memory-cli,serve --locked
 
       - name: Capture size_without
         id: without
@@ -257,8 +261,8 @@ jobs:
           SIZE=$(stat -f%z target/release/kx)
           echo "size=$SIZE" >> "$GITHUB_OUTPUT"
 
-      - name: Build size_with (default = includes agent-claude)
-        run: cargo build --release --bin kx --locked
+      - name: Build size_with (memory-cli + serve + agent-claude)
+        run: cargo build --release --bin kx --no-default-features --features memory-cli,serve,agent-claude --locked
 
       - name: Capture size_with
         id: with
