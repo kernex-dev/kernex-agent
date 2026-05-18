@@ -1436,9 +1436,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-sandbox"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc7ecab7766c253a2e7dad9bb8e26d83f9b5f2cb5f580c87d35fbe7cb503c0b5"
+checksum = "8326221c53799d0cb201b176e72106add6600e1d5813362ba2c1365f55dd8dc0"
 dependencies = [
  "anyhow",
  "landlock",
