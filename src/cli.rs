@@ -107,6 +107,25 @@ pub enum Command {
         #[arg(long, default_value_t = 4)]
         workers: usize,
     },
+    /// Install kernex bindings into a supported agent host (Claude Code, etc.)
+    #[cfg(feature = "agent-claude")]
+    Install {
+        /// Target agent identifier (e.g. "claude-code").
+        #[arg(long)]
+        agent: String,
+        /// Preset name (e.g. "solo-dev").
+        #[arg(long)]
+        preset: String,
+        /// Skip the REVIEW prompt.
+        #[arg(long)]
+        yes: bool,
+        /// Stop after REVIEW; do not write any file.
+        #[arg(long)]
+        dry_run: bool,
+        /// Run the deep verify stub (probes `claude --version`).
+        #[arg(long)]
+        verify_deep: bool,
+    },
     /// Read, write, and search the local memory store from outside the REPL
     #[cfg(feature = "memory-cli")]
     Mem {
