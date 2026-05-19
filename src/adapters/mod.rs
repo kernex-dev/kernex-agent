@@ -15,6 +15,14 @@ pub mod claude;
 #[cfg(feature = "agent-codex")]
 pub mod codex;
 
+// Cross-adapter helpers (e.g. marker-block merge). Gated on the same
+// `any(agent-*)` set as the registry so dead-code analysis stays quiet
+// when no Tier 1 adapter is enabled. Codex is the first consumer; the
+// Tier 1 OpenCode, Cursor, and Cline sprints will extend this cfg as
+// they land.
+#[cfg(feature = "agent-codex")]
+pub mod shared;
+
 #[cfg(any(feature = "agent-claude", feature = "agent-codex"))]
 use std::sync::Arc;
 
