@@ -24,12 +24,7 @@ fn options(home: PathBuf) -> InstallOptions {
 }
 
 fn detection_stub() -> Detection {
-    serde_json::from_value(serde_json::json!({
-        "installed": false,
-        "config_root": null,
-        "version": null,
-    }))
-    .unwrap()
+    Detection::new(false, None, None)
 }
 
 fn read_events(writer: &AuditWriter) -> Vec<serde_json::Value> {

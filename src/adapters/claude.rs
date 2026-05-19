@@ -5,12 +5,6 @@
 //! so air-gapped installs work (E-CC-7). The hand-rolled `{{key}}`
 //! substituter avoids a template-engine dependency that would breach the
 //! 800 KiB delta budget (E-LOCK-08 / E-CC-5).
-//!
-//! Known upstream limitation: `kernex_adapter_core::Detection` is
-//! `#[non_exhaustive]` and has no constructor in 0.8.x, so `detect()`
-//! routes through `serde_json::from_value` to build the return value. The
-//! cleaner fix is a constructor or builder on the upstream type; tracked
-//! as FU-E-01 (open an upstream patch release).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -57,15 +51,7 @@ impl Adapter for ClaudeAdapter {
             None
         };
         let config_root = home_dir().map(|h| h.join(".claude"));
-        // `Detection` is `#[non_exhaustive]` upstream (kernex-adapter-core
-        // 0.8.x) and has no constructor, so we route through serde.
-        // FU-E-01 tracks the upstream patch.
-        let value = serde_json::json!({
-            "installed": installed,
-            "config_root": config_root,
-            "version": version,
-        });
-        Ok(serde_json::from_value(value)?)
+        Ok(Detection::new(installed, config_root, version))
     }
 
     async fn install_command(&self) -> Result<String, AdapterError> {
