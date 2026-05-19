@@ -4,12 +4,11 @@
 //! `AdapterId::CodexCli`. Templates are compiled in via `include_str!`
 //! so air-gapped installs work (carried over from Phase E E-CC-7).
 //!
-//! Sprint F-1 scope (this commit, tasks F-1.1 through F-1.5): module
-//! shell, factory wiring in `mod.rs`, stub templates that pin the
-//! include paths, `detect()` with best-effort PATH lookup and version
-//! probe, `install_command()` returning the canonical OpenAI install
-//! one-liner. Out of scope for this commit and landing in subsequent
-//! Sprint F-1 commits: `merge_codex_config_toml` helper (F-1.6), the
+//! Sprint F-1 scope so far: module shell, factory wiring, stub
+//! templates, `detect()` populating `Detection::with_project_root`,
+//! `install_command()` returning the canonical OpenAI install
+//! one-liner, and `merge_codex_config_toml` (F-1.6). Out of scope for
+//! this commit and landing in subsequent Sprint F-1 commits: the
 //! shared `merge_marker_block` helper (F-1.7), preset wiring (F-1.8),
 //! integration test in `tests/phase_f_codex.rs` (F-1.10), and the
 //! `delta-agent-codex` CI gate (F-1.11).
@@ -23,6 +22,7 @@ use std::process::Command;
 use async_trait::async_trait;
 use kernex_adapter_core::Detection;
 use kernex_runtime::{Adapter, AdapterError, AdapterId, Capability};
+use toml_edit::{DocumentMut, Item, Table, TomlError};
 
 /// Canonical OpenAI Codex install one-liner.
 const INSTALL_COMMAND: &str = "npm install -g @openai/codex";
@@ -122,6 +122,65 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
+/// Merge a kernex-rendered `[mcp_servers.*]` block into an existing Codex
+/// `~/.codex/config.toml`, preserving formatting and non-kernex entries.
+///
+/// Codex's MCP-server schema is one named sub-table per server under the
+/// `mcp_servers` parent table:
+/// ```toml
+/// [mcp_servers.kernex]
+/// command = "kx"
+/// args = ["serve"]
+/// ```
+///
+/// Behaviour:
+/// - Existing comments and ordering outside `mcp_servers` are preserved
+///   byte-for-byte via `toml_edit::DocumentMut`.
+/// - Each `[mcp_servers.<name>]` table from `kernex_block` is upserted
+///   into the existing document. Same-name entries are replaced (not
+///   merged at the field level) so kernex's rendered template is the
+///   source of truth for its own servers. Non-kernex entries under
+///   `mcp_servers` are left untouched.
+/// - If `existing` has no `mcp_servers` table, one is created.
+/// - If `kernex_block` contains no `mcp_servers` table, the call is a
+///   no-op returning `existing` unchanged.
+///
+/// Returns a `TomlError` if either input fails to parse.
+pub fn merge_codex_config_toml(existing: &str, kernex_block: &str) -> Result<String, TomlError> {
+    let mut doc: DocumentMut = if existing.is_empty() {
+        DocumentMut::new()
+    } else {
+        existing.parse()?
+    };
+    let kernex: DocumentMut = kernex_block.parse()?;
+
+    let Some(kernex_servers) = kernex.get("mcp_servers").and_then(Item::as_table) else {
+        return Ok(doc.to_string());
+    };
+
+    // Normalise the `mcp_servers` slot to a Table before mutating it. The
+    // explicit replace-if-not-table arm covers a malformed-but-parseable
+    // `mcp_servers = "value"` upstream config; we choose to overwrite that
+    // with a fresh table rather than crash a customer install.
+    if !matches!(doc.get("mcp_servers"), Some(Item::Table(_))) {
+        doc.insert("mcp_servers", Item::Table(Table::new()));
+    }
+
+    match doc.get_mut("mcp_servers").and_then(Item::as_table_mut) {
+        Some(target) => {
+            for (name, item) in kernex_servers.iter() {
+                target.insert(name, item.clone());
+            }
+        }
+        // Unreachable: we just normalised the slot to a Table above.
+        // `unreachable!` is preferred over `.expect()` because lib-level
+        // `clippy::expect_used` is denied.
+        None => unreachable!("mcp_servers slot normalised to Table above"),
+    }
+
+    Ok(doc.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +222,90 @@ mod tests {
         let adapter = CodexAdapter;
         let cmd = adapter.install_command().await.expect("install command");
         assert_eq!(cmd, INSTALL_COMMAND);
+    }
+
+    const KERNEX_BLOCK: &str = r#"
+[mcp_servers.kernex]
+command = "kx"
+args = ["serve"]
+"#;
+
+    #[test]
+    fn merge_config_toml_creates_table_when_absent() {
+        let merged =
+            merge_codex_config_toml("# user comment\n", KERNEX_BLOCK).expect("merge succeeds");
+        assert!(merged.contains("# user comment"), "comment preserved");
+        assert!(
+            merged.contains("[mcp_servers.kernex]"),
+            "kernex entry added"
+        );
+        assert!(merged.contains("command = \"kx\""));
+    }
+
+    #[test]
+    fn merge_config_toml_preserves_existing() {
+        let existing = r#"# top-of-file comment
+project = "demo"
+
+[mcp_servers.other]
+command = "other-server"
+args = ["--flag"]
+"#;
+        let merged = merge_codex_config_toml(existing, KERNEX_BLOCK).expect("merge succeeds");
+        assert!(
+            merged.contains("# top-of-file comment"),
+            "comment preserved"
+        );
+        assert!(
+            merged.contains("project = \"demo\""),
+            "top-level key preserved"
+        );
+        assert!(
+            merged.contains("[mcp_servers.other]"),
+            "non-kernex server preserved: {merged}"
+        );
+        assert!(
+            merged.contains("command = \"other-server\""),
+            "non-kernex command preserved"
+        );
+        assert!(
+            merged.contains("[mcp_servers.kernex]"),
+            "kernex entry added: {merged}"
+        );
+    }
+
+    #[test]
+    fn merge_config_toml_upserts_kernex() {
+        let existing = r#"
+[mcp_servers.kernex]
+command = "stale-binary"
+args = ["old-arg"]
+"#;
+        let merged = merge_codex_config_toml(existing, KERNEX_BLOCK).expect("merge succeeds");
+        assert!(
+            merged.contains("command = \"kx\""),
+            "kernex command upserted to current template: {merged}"
+        );
+        assert!(
+            !merged.contains("stale-binary"),
+            "stale kernex entry replaced: {merged}"
+        );
+        assert!(
+            !merged.contains("old-arg"),
+            "stale kernex args replaced: {merged}"
+        );
+    }
+
+    #[test]
+    fn merge_config_toml_no_op_when_kernex_block_empty() {
+        let existing = "project = \"demo\"\n";
+        let merged = merge_codex_config_toml(existing, "# nothing here\n").expect("merge succeeds");
+        assert_eq!(merged, existing, "empty kernex block leaves existing alone");
+    }
+
+    #[test]
+    fn merge_config_toml_parse_error_surfaces() {
+        let result = merge_codex_config_toml("not = valid = toml", KERNEX_BLOCK);
+        assert!(result.is_err(), "malformed existing TOML must error");
     }
 }
