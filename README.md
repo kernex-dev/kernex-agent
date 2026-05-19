@@ -70,6 +70,17 @@ To install Claude Code (the default):
 
 Documentation: [docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code)
 
+### Agent adapters
+
+`kx install --agent <name> --preset <preset>` wires kernex into a coding assistant's config so it can call kernex's MCP server and share the kernex voice template. The default build ships Claude Code only; the others are opt-in feature flags so the default binary stays under 15 MiB on macOS aarch64.
+
+| Adapter        | Feature flag        | Default? | Docs                                                     |
+|----------------|---------------------|----------|----------------------------------------------------------|
+| `claude-code`  | `agent-claude`      | yes      | (built-in; see top of this README)                       |
+| `codex`        | `agent-codex`       | no       | [docs/adapters/codex.md](docs/adapters/codex.md)         |
+
+Use `cargo install kernex-agent --features agent-codex` (or any combination) to opt into adapters beyond Claude Code.
+
 ### Platform Support
 
 | Platform | Status | Notes |

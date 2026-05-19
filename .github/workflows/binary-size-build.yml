@@ -306,3 +306,67 @@ jobs:
             exit 1
           fi
           echo "PASS: agent-claude delta within budget on macOS aarch64."
+
+  delta-agent-codex:
+    # Per-adapter size discipline: agent-codex must contribute <= 800 KiB
+    # to a memory-cli+serve build, measured on macOS aarch64. Same shape
+    # as delta-agent-claude per F-LOCK-03. agent-codex is opt-in (not in
+    # default features), so this gate sets the budget for any future
+    # plan that promotes it to default.
+    #
+    # toml_edit (0.22) is the main contributor; the codex-cli-adapter
+    # spec projects ~300 KB delta total (toml_edit ~272 KiB + templates
+    # ~20 KB + adapter code ~3 KB), so the 800 KiB ceiling gives ~2.5x
+    # headroom for future adapter logic without touching the budget.
+    name: agent-codex delta <= 800 KiB (macOS aarch64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      # Same baseline as delta-agent-claude so the deltas across the
+      # shell-CLI adapters compose cleanly (sum of deltas roughly
+      # equals the eventual agent-all delta minus shared codegen).
+      - name: Build size_without (memory-cli + serve, no agent-codex)
+        run: cargo build --release --bin kx --no-default-features --features memory-cli,serve --locked
+
+      - name: Capture size_without
+        id: codex_without
+        run: |
+          set -euo pipefail
+          SIZE=$(stat -f%z target/release/kx)
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Build size_with (memory-cli + serve + agent-codex)
+        run: cargo build --release --bin kx --no-default-features --features memory-cli,serve,agent-codex --locked
+
+      - name: Capture size_with
+        id: codex_with
+        run: |
+          set -euo pipefail
+          SIZE=$(stat -f%z target/release/kx)
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: Compute delta_agent_codex and fail if > 800 KiB
+        run: |
+          set -euo pipefail
+          SIZE_WITH=${{ steps.codex_with.outputs.size }}
+          SIZE_WITHOUT=${{ steps.codex_without.outputs.size }}
+          DELTA=$((SIZE_WITH - SIZE_WITHOUT))
+          LIMIT=819200
+          echo "size_without=${SIZE_WITHOUT} bytes"
+          echo "size_with=${SIZE_WITH} bytes"
+          echo "delta_agent_codex=${DELTA} bytes"
+          echo "limit=${LIMIT} bytes (800 KiB)"
+          if [ "$DELTA" -gt "$LIMIT" ]; then
+            echo ""
+            echo "FAIL: agent-codex contributes ${DELTA} bytes on macOS aarch64,"
+            echo "exceeding the 800 KiB F-LOCK-03 budget."
+            echo "Either trim toml_edit usage / template payloads, or"
+            echo "land a size-reduction commit before merging."
+            exit 1
+          fi
+          echo "PASS: agent-codex delta within budget on macOS aarch64."

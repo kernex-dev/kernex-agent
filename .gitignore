@@ -47,3 +47,7 @@ RELEASE_CHECKLIST.md
 !/docs/agent-size-*.txt
 !/docs/agent-dep-tree-*.txt
 !/docs/agent-bloat-*.txt
+# Public adapter docs (`docs/adapters/<name>.md`) are linked from README
+# and ship as part of the repo (per F-1.12).
+!/docs/adapters/
+!/docs/adapters/**
