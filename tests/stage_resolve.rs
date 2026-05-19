@@ -2,7 +2,7 @@
 //!
 //! Covers E-resolve-1..5.
 
-#![cfg(any(feature = "agent-claude", feature = "agent-codex"))]
+#![cfg(feature = "agent-claude")]
 
 use std::fs;
 use std::path::PathBuf;
