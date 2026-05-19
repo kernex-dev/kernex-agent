@@ -2,7 +2,7 @@
 //!
 //! Covers E-resolve-1..5.
 
-#![cfg(feature = "agent-claude")]
+#![cfg(any(feature = "agent-claude", feature = "agent-codex"))]
 
 use std::fs;
 use std::path::PathBuf;
@@ -116,5 +116,49 @@ async fn e_resolve_5_writes_no_files_under_home() {
     assert!(
         !opts.home.join(".claude").exists(),
         ".claude/ should not exist after RESOLVE"
+    );
+}
+
+#[cfg(feature = "agent-codex")]
+#[tokio::test]
+async fn f_1_8_codex_solo_dev_returns_codex_paths() {
+    // Detection from the Codex adapter populates both config_root
+    // (~/.codex) and project_root (cwd at install time). The resolver
+    // turns them into <home>/.codex/{config.toml,output-style.md} plus
+    // <project>/AGENTS.md.
+    let home_tmp = TempDir::new().unwrap();
+    let project_tmp = TempDir::new().unwrap();
+    let audit = AuditWriter::new(home_tmp.path()).unwrap();
+    let mut opts = options(home_tmp.path().to_path_buf());
+    opts.agent = "codex".to_string();
+    let detection = Detection::with_project_root(
+        false,
+        Some(home_tmp.path().join(".codex")),
+        Some(project_tmp.path().to_path_buf()),
+        None,
+    );
+    let plan = stage_resolve::run(&opts, &detection, &audit)
+        .await
+        .expect("resolve ok");
+    assert_eq!(plan.agent, "codex");
+    assert_eq!(
+        plan.components,
+        vec!["agents-md", "config-toml", "output-style"]
+    );
+    let by_component: std::collections::HashMap<_, _> = plan.target_paths.iter().cloned().collect();
+    assert_eq!(
+        by_component.get("agents-md"),
+        Some(&project_tmp.path().join("AGENTS.md")),
+        "agents-md path lives at <project_root>/AGENTS.md"
+    );
+    assert_eq!(
+        by_component.get("config-toml"),
+        Some(&home_tmp.path().join(".codex").join("config.toml")),
+        "config-toml path lives at <config_root>/config.toml"
+    );
+    assert_eq!(
+        by_component.get("output-style"),
+        Some(&home_tmp.path().join(".codex").join("output-style.md")),
+        "output-style path lives at <config_root>/output-style.md"
     );
 }
