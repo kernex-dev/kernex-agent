@@ -12,23 +12,29 @@
 #[cfg(feature = "agent-claude")]
 pub mod claude;
 
-#[cfg(feature = "agent-claude")]
+#[cfg(feature = "agent-codex")]
+pub mod codex;
+
+#[cfg(any(feature = "agent-claude", feature = "agent-codex"))]
 use std::sync::Arc;
 
-#[cfg(feature = "agent-claude")]
+#[cfg(any(feature = "agent-claude", feature = "agent-codex"))]
 use kernex_runtime::Adapter;
 
-/// Name-keyed adapter lookup. Stays minimal because the first adapter
-/// change wires only one adapter; later changes extend the match arm
-/// without changing the call sites in `src/configurator/stage_*.rs`.
-#[cfg(feature = "agent-claude")]
+/// Name-keyed adapter lookup. Each adapter feature contributes one match
+/// arm; the registry surface stays uniform so call sites in
+/// `src/configurator/stage_*.rs` do not change as adapters land.
+#[cfg(any(feature = "agent-claude", feature = "agent-codex"))]
 pub struct AgentRegistry;
 
-#[cfg(feature = "agent-claude")]
+#[cfg(any(feature = "agent-claude", feature = "agent-codex"))]
 impl AgentRegistry {
     pub fn lookup(&self, name: &str) -> Option<Arc<dyn Adapter>> {
         match name {
+            #[cfg(feature = "agent-claude")]
             "claude-code" => Some(Arc::new(claude::ClaudeAdapter)),
+            #[cfg(feature = "agent-codex")]
+            "codex" => Some(Arc::new(codex::CodexAdapter)),
             _ => None,
         }
     }
@@ -37,14 +43,13 @@ impl AgentRegistry {
 /// Build the default registry. Cheap (zero allocations); the adapter
 /// instances are created on each `lookup()` call so the registry itself
 /// is a stateless marker.
-#[cfg(feature = "agent-claude")]
+#[cfg(any(feature = "agent-claude", feature = "agent-codex"))]
 pub fn default_registry() -> AgentRegistry {
     AgentRegistry
 }
 
-// Reserved for future adapters. Each will be added behind its own
-// `agent-*` feature flag:
-//   #[cfg(feature = "agent-codex")]    pub mod codex;
+// Reserved for future Phase F adapters. Each is added behind its own
+// `agent-*` feature flag mirroring the Codex pattern above:
 //   #[cfg(feature = "agent-opencode")] pub mod opencode;
 //   #[cfg(feature = "agent-cursor")]   pub mod cursor;
 //   #[cfg(feature = "agent-cline")]    pub mod cline;
