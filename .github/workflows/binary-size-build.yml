@@ -20,14 +20,24 @@
 #   silicon since GitHub's macos-14+ runners) and enforces the 15 MiB
 #   product commitment directly on every PR.
 #
-# Runs as a read-only-token workflow on `pull_request`. The PR-comment
-# write-token operation lives in the separate `binary-size-comment.yml`
-# workflow that triggers on `workflow_run`.
+# Runs as a read-only-token workflow on `pull_request` AND on `push` to
+# `main`. The `push` trigger closes the gap that allowed the
+# `kernex-* 0.5.0 -> 0.6.0` direct-to-main bump to bypass the size gate
+# entirely (the FU-A-06 root cause: PR-only triggers can be sidestepped
+# by direct main commits, leaving the 15 MiB product commitment
+# unmeasured). The PR-comment write-token operation lives in the
+# separate `binary-size-comment.yml` workflow that triggers on
+# `workflow_run`; its `if: github.event.workflow_run.event ==
+# 'pull_request'` gate keeps it from firing on push events (push runs
+# produce size fragments and enforce ceilings but have no PR to
+# comment on).
 
 name: binary-size-build
 
 on:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 permissions:
@@ -38,7 +48,10 @@ env:
   RUSTFLAGS: "-D warnings"
 
 concurrency:
-  group: binary-size-build-${{ github.event.pull_request.number }}
+  # On pull_request the group key uses the PR number; on push it falls
+  # back to the ref (e.g. refs/heads/main). Without the fallback, push
+  # runs would all share an empty group key and cancel each other.
+  group: binary-size-build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -181,7 +194,7 @@ jobs:
               echo "| ${NAME} | ${MB} (${BYTES}) | ${DELTA_STR} | ${STATUS} |"
             done
             echo ""
-            echo "*Commit: ${{ github.event.pull_request.head.sha }}*"
+            echo "*Commit: ${{ github.event.pull_request.head.sha || github.sha }}*"
           } > size_report.md
           cat size_report.md
 
@@ -201,9 +214,11 @@ jobs:
     # of the Linux matrix jobs: those use 18 MiB as the regression proxy;
     # this job uses the actual product commitment on actual macOS aarch64.
     #
-    # Runs only on `pull_request` (the workflow trigger) so macOS minutes
-    # are billed only when a PR is open. GitHub macOS runners cost ~10x
-    # Linux minutes; only the default variant is built (the variant that
+    # Runs on both `pull_request` and `push` to `main` (the workflow
+    # triggers). GitHub macOS runners cost ~10x Linux minutes, but
+    # leaving this job PR-only would re-open the FU-A-06 gap: a direct
+    # push to main would never get measured against the 15 MiB product
+    # commitment. Only the default variant is built (the variant that
     # carries the kernex.dev "Under 15 MB" public commitment).
     name: macOS aarch64 default-variant ceiling
     runs-on: macos-latest
