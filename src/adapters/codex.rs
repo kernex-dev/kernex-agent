@@ -65,12 +65,23 @@ impl Adapter for CodexAdapter {
         } else {
             None
         };
-        // F-1.5b (Sprint F-1, after kernex-adapter-core 0.8.3 ships) will
-        // switch this to `Detection::with_project_root(installed, config_root,
-        // Some(cwd), version)` so the `<cwd>/AGENTS.md` write passes the
-        // Stage 5 sandbox check. The current 3-arg constructor is the
-        // 0.8.2-compatible call; project_root defaults to None.
-        Ok(Detection::new(installed, config_root, version))
+        // Codex writes both `~/.codex/config.toml` (home-rooted) and
+        // `<cwd>/AGENTS.md` (project-rooted) per Phase F SDD spec.md
+        // §"Codex CLI adapter". The project_root captures the cwd at
+        // `kx install` invocation time so the Stage 5 sandbox check
+        // accepts the project-local write per ADR-001 (RESOLVED Option A
+        // 2026-05-19; kernex-adapter-core 0.8.3 surfaces the field +
+        // builder used here). The Stage 5 sandbox check itself is
+        // refactored to consume Detection's config_root + project_root
+        // in a follow-up F-1.6 commit; until then the constructor call
+        // populates the field for future consumers.
+        let project_root = std::env::current_dir().ok();
+        Ok(Detection::with_project_root(
+            installed,
+            config_root,
+            project_root,
+            version,
+        ))
     }
 
     async fn install_command(&self) -> Result<String, AdapterError> {
