@@ -1,6 +1,6 @@
 # Codex CLI adapter
 
-`kx install --agent codex --preset solo-dev` wires kernex into [OpenAI Codex CLI](https://github.com/openai/codex). After install, Codex sees a kernex MCP server in its server registry and reads the same per-project instruction surface that other Tier 1 agents use.
+`kx install --agent codex --preset solo-dev` wires kernex into [OpenAI Codex CLI](https://github.com/openai/codex). After install, Codex sees a kernex MCP server in its server registry and reads the same per-project instruction surface that other shell-CLI agents use.
 
 This page covers what the install writes, where, and how to roll back. The configurator runs the same 7-stage pipeline as every other adapter (DETECT, RESOLVE, REVIEW, BACKUP, APPLY, VERIFY, REPORT); only the per-file logic differs.
 
@@ -22,7 +22,7 @@ This page covers what the install writes, where, and how to roll back. The confi
 | `output-style`  | `~/.codex/output-style.md`      | Markdown   | Overwritten with the kernex voice template. The previous content is captured in the BACKUP tarball before APPLY writes.                                       |
 | `agents-md`     | `<cwd>/AGENTS.md`               | Markdown   | A `<!-- kernex:begin -->` / `<!-- kernex:end -->` block is inserted (or replaced in-place if already present). Content outside the block is left untouched.   |
 
-The `<cwd>` for `agents-md` is the working directory at the moment `kx install` ran. That directory becomes the project-local allowlisted root for Stage 5 writes per [Phase F SDD ADR-001](https://github.com/kernex-dev/kernex-studio/tree/main/orchestration/sdds-pending/phase-f-tier-1-adapters).
+The `<cwd>` for `agents-md` is the working directory at the moment `kx install` ran. That directory becomes the project-local allowlisted root for Stage 5 writes per ADR-001 in the codex-cli-adapter openspec change.
 
 ## Rollback
 
@@ -70,4 +70,4 @@ This adapter ships behind `--features agent-codex`:
 cargo install kernex-agent --features agent-codex
 ```
 
-The default `cargo install kernex-agent` build does NOT include this adapter so the binary stays under the 15 MiB macOS aarch64 product commitment. Per Phase F F-LOCK-03, enabling `agent-codex` adds at most 800 KiB on macOS aarch64.
+The default `cargo install kernex-agent` build does NOT include this adapter so the binary stays under the 15 MiB macOS aarch64 product commitment. Per F-LOCK-03, enabling `agent-codex` adds at most 800 KiB on macOS aarch64.

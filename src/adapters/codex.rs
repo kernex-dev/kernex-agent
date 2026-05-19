@@ -1,8 +1,9 @@
-//! Codex CLI adapter implementation per Phase F SDD §"Codex CLI adapter".
+//! Codex CLI adapter implementation per ADR-002 / F-codex-1..15.
 //!
 //! `CodexAdapter` implements `kernex_adapter_core::Adapter` for
 //! `AdapterId::CodexCli`. Templates are compiled in via `include_str!`
-//! so air-gapped installs work (carried over from Phase E E-CC-7).
+//! so air-gapped installs work (F-CC-7 carried over from the Claude
+//! adapter cycle).
 //!
 //! Sprint F-1 scope so far: module shell, factory wiring, stub
 //! templates, `detect()` populating `Detection::with_project_root`,
@@ -10,10 +11,10 @@
 //! one-liner, and `merge_codex_config_toml` (F-1.6). Out of scope for
 //! this commit and landing in subsequent Sprint F-1 commits: the
 //! shared `merge_marker_block` helper (F-1.7), preset wiring (F-1.8),
-//! integration test in `tests/phase_f_codex.rs` (F-1.10), and the
-//! `delta-agent-codex` CI gate (F-1.11).
+//! integration test (F-1.10), and the `delta-agent-codex` CI gate
+//! (F-1.11).
 //!
-//! Public openspec scaffold lands at `openspec/changes/phase-f-codex-adapter/`
+//! Public openspec scaffold lands at `openspec/changes/codex-cli-adapter/`
 //! in a separate commit during Sprint F-1 kickoff.
 
 use std::path::PathBuf;
@@ -27,7 +28,7 @@ use toml_edit::{DocumentMut, Item, Table, TomlError};
 /// Canonical OpenAI Codex install one-liner.
 const INSTALL_COMMAND: &str = "npm install -g @openai/codex";
 
-/// Compiled-in templates per Phase F ADR-003. Loaded once at binary link
+/// Compiled-in templates per ADR-003. Loaded once at binary link
 /// time; no runtime template directory lookup. Content is stub-level for
 /// Sprint F-1 scaffold; real template bodies land in subsequent commits.
 pub const AGENTS_MD_TMPL: &str = include_str!("../../templates/codex/AGENTS.md.tmpl");
@@ -36,7 +37,7 @@ pub const OUTPUT_STYLE_TMPL: &str = include_str!("../../templates/codex/output-s
 
 /// Unit struct identity for the Codex CLI adapter. The adapter is
 /// stateless; configuration flows through `InstallOptions` at the
-/// configurator boundary (Phase E discipline).
+/// configurator boundary (carried over from the Claude adapter cycle).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CodexAdapter;
 
@@ -66,15 +67,15 @@ impl Adapter for CodexAdapter {
             None
         };
         // Codex writes both `~/.codex/config.toml` (home-rooted) and
-        // `<cwd>/AGENTS.md` (project-rooted) per Phase F SDD spec.md
-        // §"Codex CLI adapter". The project_root captures the cwd at
-        // `kx install` invocation time so the Stage 5 sandbox check
-        // accepts the project-local write per ADR-001 (RESOLVED Option A
-        // 2026-05-19; kernex-adapter-core 0.8.3 surfaces the field +
-        // builder used here). The Stage 5 sandbox check itself is
-        // refactored to consume Detection's config_root + project_root
-        // in a follow-up F-1.6 commit; until then the constructor call
-        // populates the field for future consumers.
+        // `<cwd>/AGENTS.md` (project-rooted) per the codex-cli-adapter
+        // spec. The project_root captures the cwd at `kx install`
+        // invocation time so the Stage 5 sandbox check accepts the
+        // project-local write per ADR-001 (RESOLVED Option A 2026-05-19;
+        // kernex-adapter-core 0.8.3 surfaces the field + builder used
+        // here). The Stage 5 sandbox check itself is refactored to
+        // consume Detection's config_root + project_root in a follow-up
+        // F-1.6 commit; until then the constructor call populates the
+        // field for future consumers.
         let project_root = std::env::current_dir().ok();
         Ok(Detection::with_project_root(
             installed,

@@ -17,9 +17,9 @@ pub mod codex;
 
 // Cross-adapter helpers (e.g. marker-block merge). Gated on the same
 // `any(agent-*)` set as the registry so dead-code analysis stays quiet
-// when no Tier 1 adapter is enabled. Codex is the first consumer; the
-// Tier 1 OpenCode, Cursor, and Cline sprints will extend this cfg as
-// they land.
+// when no shell-CLI adapter is enabled. Codex is the first consumer;
+// the upcoming OpenCode, Cursor, and Cline adapter sprints extend this
+// cfg as they land.
 #[cfg(feature = "agent-codex")]
 pub mod shared;
 
@@ -56,7 +56,7 @@ pub fn default_registry() -> AgentRegistry {
     AgentRegistry
 }
 
-// Reserved for future Phase F adapters. Each is added behind its own
+// Reserved for future shell-CLI adapters. Each is added behind its own
 // `agent-*` feature flag mirroring the Codex pattern above:
 //   #[cfg(feature = "agent-opencode")] pub mod opencode;
 //   #[cfg(feature = "agent-cursor")]   pub mod cursor;

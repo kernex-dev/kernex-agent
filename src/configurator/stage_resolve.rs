@@ -102,11 +102,11 @@ fn component_path(
         ("claude-code", "mcp-json") => Ok(opts.home.join(".claude").join("mcp-servers.json")),
         ("claude-code", "output-style") => Ok(opts.home.join(".claude").join("output-style.md")),
         // Codex writes its instruction surface to `<cwd>/AGENTS.md`
-        // (project-rooted per Phase F SDD ADR-001) and its MCP server
-        // registry to `~/.codex/config.toml` (home-rooted). When
-        // detection didn't populate the roots, fall back to opts.home
-        // and the current working directory so the resolver stays
-        // pure in tests that pass a minimal Detection stub.
+        // (project-rooted per ADR-001) and its MCP server registry to
+        // `~/.codex/config.toml` (home-rooted). When detection didn't
+        // populate the roots, fall back to opts.home and the current
+        // working directory so the resolver stays pure in tests that
+        // pass a minimal Detection stub.
         ("codex", "agents-md") => Ok(detection
             .project_root
             .clone()

@@ -1,10 +1,10 @@
 //! Adapter-shared helpers.
 //!
-//! Cross-adapter utilities used by more than one of the Phase F Tier 1
-//! adapters (Codex, OpenCode, Cursor, Cline). Keeping them here rather
-//! than in `claude.rs` or `codex.rs` keeps the per-adapter modules
-//! focused on the per-tool contract and avoids the "first adapter wins"
-//! ownership pattern.
+//! Cross-adapter utilities used by more than one shell-CLI adapter
+//! (Codex, OpenCode, Cursor, Cline). Keeping them here rather than in
+//! `claude.rs` or `codex.rs` keeps the per-adapter modules focused on
+//! the per-tool contract and avoids the "first adapter wins" ownership
+//! pattern.
 
 /// Idempotently merge `kernex_block` into `existing` between
 /// `begin_marker` and `end_marker`.
