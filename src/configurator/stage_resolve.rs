@@ -28,7 +28,7 @@ pub struct InstallPlan {
 
 pub async fn run(
     opts: &InstallOptions,
-    _detection: &Detection,
+    detection: &Detection,
     audit: &AuditWriter,
 ) -> Result<InstallPlan, InstallError> {
     let started = Utc::now();
@@ -45,8 +45,8 @@ pub async fn run(
         })
         .map_err(|e| InstallError::Permanent(format!("audit emit failed: {e}")))?;
 
-    let preset = resolve_preset(&opts.preset)?;
-    let plan = build_plan(opts, preset.components)?;
+    let preset = resolve_preset(&opts.preset, &opts.agent)?;
+    let plan = build_plan(opts, detection, preset.components)?;
 
     let ended = Utc::now();
     audit
@@ -65,11 +65,15 @@ pub async fn run(
     Ok(plan)
 }
 
-fn build_plan(opts: &InstallOptions, components: Vec<String>) -> Result<InstallPlan, InstallError> {
+fn build_plan(
+    opts: &InstallOptions,
+    detection: &Detection,
+    components: Vec<String>,
+) -> Result<InstallPlan, InstallError> {
     let target_paths = components
         .iter()
         .map(|component| {
-            let path = component_path(&opts.home, component)?;
+            let path = component_path(opts, detection, component)?;
             Ok((component.clone(), path))
         })
         .collect::<Result<Vec<_>, InstallError>>()?;
@@ -80,10 +84,12 @@ fn build_plan(opts: &InstallOptions, components: Vec<String>) -> Result<InstallP
     })
 }
 
-fn component_path(home: &std::path::Path, component: &str) -> Result<PathBuf, InstallError> {
-    let claude_dir = home.join(".claude");
-    match component {
-        "claude-md" => Ok(claude_dir.join("CLAUDE.md")),
+fn component_path(
+    opts: &InstallOptions,
+    detection: &Detection,
+    component: &str,
+) -> Result<PathBuf, InstallError> {
+    match (opts.agent.as_str(), component) {
         // Claude Code reads global MCP server registrations from
         // <home>/.claude/mcp-servers.json (the dedicated MCP registry)
         // and from <home>/.claude.json (the User MCPs block). We target
@@ -92,10 +98,33 @@ fn component_path(home: &std::path::Path, component: &str) -> Result<PathBuf, In
         // (figma, affine, freepik) already live. stage_apply MERGES the
         // rendered kernex entry into the existing mcpServers block; it
         // does NOT overwrite the file.
-        "mcp-json" => Ok(claude_dir.join("mcp-servers.json")),
-        "output-style" => Ok(claude_dir.join("output-style.md")),
-        other => Err(InstallError::Permanent(format!(
-            "unknown component '{other}' in preset"
+        ("claude-code", "claude-md") => Ok(opts.home.join(".claude").join("CLAUDE.md")),
+        ("claude-code", "mcp-json") => Ok(opts.home.join(".claude").join("mcp-servers.json")),
+        ("claude-code", "output-style") => Ok(opts.home.join(".claude").join("output-style.md")),
+        // Codex writes its instruction surface to `<cwd>/AGENTS.md`
+        // (project-rooted per ADR-001) and its MCP server registry to
+        // `~/.codex/config.toml` (home-rooted). When detection didn't
+        // populate the roots, fall back to opts.home and the current
+        // working directory so the resolver stays pure in tests that
+        // pass a minimal Detection stub.
+        ("codex", "agents-md") => Ok(detection
+            .project_root
+            .clone()
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| opts.home.clone())
+            .join("AGENTS.md")),
+        ("codex", "config-toml") => Ok(detection
+            .config_root
+            .clone()
+            .unwrap_or_else(|| opts.home.join(".codex"))
+            .join("config.toml")),
+        ("codex", "output-style") => Ok(detection
+            .config_root
+            .clone()
+            .unwrap_or_else(|| opts.home.join(".codex"))
+            .join("output-style.md")),
+        (agent, other) => Err(InstallError::Permanent(format!(
+            "unknown component '{other}' for agent '{agent}'"
         ))),
     }
 }
