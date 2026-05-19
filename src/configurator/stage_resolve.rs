@@ -102,27 +102,28 @@ fn component_path(
         ("claude-code", "mcp-json") => Ok(opts.home.join(".claude").join("mcp-servers.json")),
         ("claude-code", "output-style") => Ok(opts.home.join(".claude").join("output-style.md")),
         // Codex writes its instruction surface to `<cwd>/AGENTS.md`
-        // (project-rooted per ADR-001) and its MCP server registry to
-        // `~/.codex/config.toml` (home-rooted). When detection didn't
-        // populate the roots, fall back to opts.home and the current
-        // working directory so the resolver stays pure in tests that
-        // pass a minimal Detection stub.
-        ("codex", "agents-md") => Ok(detection
-            .project_root
+        // (project-rooted per ADR-001) and its MCP server registry +
+        // output-style to `~/.codex/` (home-rooted). Home paths are
+        // computed from `opts.home` so tests can drop the install
+        // fixture under a TempDir without the production `$HOME` ever
+        // becoming the target. The project-root for `agents-md`
+        // similarly prefers `opts.cwd` so tests inject a TempDir
+        // without mutating `std::env::current_dir()`. Detection's
+        // `project_root` is the secondary signal (set by
+        // `CodexAdapter::detect` from the real cwd at `kx install`
+        // invocation), used when the CLI dispatcher did not pre-fill
+        // `opts.cwd`. `opts.home` is the final fallback so the unit
+        // tests that pass a minimal `Detection::new(...)` stub still
+        // resolve cleanly.
+        ("codex", "agents-md") => Ok(opts
+            .cwd
             .clone()
+            .or_else(|| detection.project_root.clone())
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| opts.home.clone())
             .join("AGENTS.md")),
-        ("codex", "config-toml") => Ok(detection
-            .config_root
-            .clone()
-            .unwrap_or_else(|| opts.home.join(".codex"))
-            .join("config.toml")),
-        ("codex", "output-style") => Ok(detection
-            .config_root
-            .clone()
-            .unwrap_or_else(|| opts.home.join(".codex"))
-            .join("output-style.md")),
+        ("codex", "config-toml") => Ok(opts.home.join(".codex").join("config.toml")),
+        ("codex", "output-style") => Ok(opts.home.join(".codex").join("output-style.md")),
         (agent, other) => Err(InstallError::Permanent(format!(
             "unknown component '{other}' for agent '{agent}'"
         ))),
