@@ -22,7 +22,7 @@ This page covers what the install writes, where, and how to roll back. The confi
 | `output-style`  | `~/.codex/output-style.md`      | Markdown   | Overwritten with the kernex voice template. The previous content is captured in the BACKUP tarball before APPLY writes.                                       |
 | `agents-md`     | `<cwd>/AGENTS.md`               | Markdown   | A `<!-- kernex:begin -->` / `<!-- kernex:end -->` block is inserted (or replaced in-place if already present). Content outside the block is left untouched.   |
 
-The `<cwd>` for `agents-md` is the working directory at the moment `kx install` ran. That directory becomes the project-local allowlisted root for Stage 5 writes per ADR-001 in the codex-cli-adapter openspec change.
+The `<cwd>` for `agents-md` is the working directory at the moment `kx install` ran. That directory becomes the project-local allowlisted root for Stage 5 writes per the Codex adapter design notes (ADR-001).
 
 ## Rollback
 
