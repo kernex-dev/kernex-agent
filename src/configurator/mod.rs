@@ -41,6 +41,14 @@ pub struct InstallOptions {
     pub verify_deep: bool,
     /// Invoking user's `$HOME`. Tests override via `$KX_HOME` (see §12.3).
     pub home: PathBuf,
+    /// Project-local working directory at `kx install` invocation time.
+    /// `None` lets the configurator fall back to `std::env::current_dir()`,
+    /// which is what the production CLI dispatcher sets when launching
+    /// from a user shell. Tests pass an explicit `TempDir` so the
+    /// project-local Codex `<cwd>/AGENTS.md` write lands inside the
+    /// per-test fixture instead of the runner's working directory.
+    #[serde(default)]
+    pub cwd: Option<PathBuf>,
 }
 
 /// Final typed report from the REPORT stage. The CLI dispatcher converts

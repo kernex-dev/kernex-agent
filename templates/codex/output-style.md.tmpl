@@ -1,4 +1,11 @@
 # Output style (Codex CLI)
 
-> Sprint F-1 stub. Real kernex voice / formatting expectations land in a
-> subsequent commit.
+> Managed by `kx install --agent codex` for `{{project_name}}` (rendered {{install_timestamp}}, kernex {{kernex_version}}).
+
+Default formatting expectations for Codex when answering inside this project:
+
+- Plain prose; no decorative banners, dividers, or boilerplate preamble.
+- Code blocks fenced with the language identifier (e.g. ` ```rust `).
+- File references in `file:line` form so the editor jumps directly to the location.
+- Match the existing comment style in each file; do not introduce a different docstring or comment convention than what the surrounding code already uses.
+- ASCII only in chat replies. Reserve Unicode for source code, file names, and URLs.

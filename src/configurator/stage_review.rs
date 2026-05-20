@@ -113,6 +113,7 @@ mod tests {
             yes,
             dry_run: dry,
             verify_deep: false,
+            cwd: None,
             home: PathBuf::from("/tmp/kx-review-test"),
         }
     }
