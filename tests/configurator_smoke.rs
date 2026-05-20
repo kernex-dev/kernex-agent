@@ -25,6 +25,7 @@ fn install_options_round_trip_serde() {
         yes: true,
         dry_run: false,
         verify_deep: false,
+        cwd: None,
         home: PathBuf::from("/tmp/kx-smoke"),
     };
     let json = serde_json::to_string(&opts).expect("serialize InstallOptions");

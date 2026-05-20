@@ -21,6 +21,7 @@ pub struct InstallArgs {
 /// Entry point invoked from `main.rs`. Returns the process exit code.
 pub async fn dispatch(args: InstallArgs) -> anyhow::Result<i32> {
     let home = resolve_home()?;
+    let cwd = std::env::current_dir().ok();
     let opts = InstallOptions {
         agent: args.agent,
         preset: args.preset,
@@ -28,6 +29,7 @@ pub async fn dispatch(args: InstallArgs) -> anyhow::Result<i32> {
         dry_run: args.dry_run,
         verify_deep: args.verify_deep,
         home,
+        cwd,
     };
     match run(opts).await {
         Ok(report) => Ok(exit_code_for(&report)),

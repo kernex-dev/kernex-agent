@@ -1,4 +1,16 @@
-# AGENTS.md (Codex CLI)
+# kernex-managed agent instructions
 
-> Sprint F-1 stub. Real instruction surface lands in a subsequent commit.
-> Project: `{{project_name}}`
+This block is owned by `kx install --agent codex`. Edit content **outside the kernex markers** to keep your own instructions; the kernex block is overwritten on every `kx install`.
+
+- Project: `{{project_name}}`
+- Components installed: {{components}}
+- Installed at: {{install_timestamp}}
+- kernex version: {{kernex_version}}
+
+## Runtime
+
+Start the local kernex memory + skills runtime with `kx serve`. The MCP server is registered in `~/.codex/config.toml` under `[mcp_servers.kernex]`; Codex picks it up automatically the next time the CLI is launched.
+
+## Voice and formatting
+
+See `~/.codex/output-style.md` (also managed by kernex) for the default voice and formatting expectations Codex follows inside this project.

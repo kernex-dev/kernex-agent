@@ -21,6 +21,7 @@ fn options(home: PathBuf) -> InstallOptions {
         yes: true,
         dry_run: false,
         verify_deep: false,
+        cwd: None,
         home,
     }
 }

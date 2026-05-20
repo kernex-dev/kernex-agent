@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use crate::adapters::claude::{render, CLAUDE_MD_TMPL, MCP_JSON_TMPL, OUTPUT_STYLE_TMPL};
+use crate::adapters::claude::render;
 use crate::install::audit::{AuditEvent, AuditWriter, EventError, EventStatus, Stage};
 
 use super::stage_backup::BackupReceipt;
@@ -87,7 +87,7 @@ pub async fn run(
                 .map_err(|e| InstallError::Permanent(format!("audit emit failed: {e}")))?;
             return Err(InstallError::SandboxRefused { path: path.clone() });
         }
-        let receipt = render_and_write(component, path, &vars)?;
+        let receipt = render_and_write(&plan.agent, component, path, &vars)?;
         audit
             .emit(AuditEvent {
                 event: "stage.apply.write".to_string(),
@@ -175,25 +175,35 @@ pub async fn rollback(
 }
 
 fn render_and_write(
+    agent: &str,
     component: &str,
     path: &Path,
     vars: &HashMap<&str, String>,
 ) -> Result<Receipt, InstallError> {
-    let tmpl = template_for(component)
-        .ok_or_else(|| InstallError::Permanent(format!("unknown component '{component}'")))?;
+    let tmpl = template_for(agent, component).ok_or_else(|| {
+        InstallError::Permanent(format!(
+            "unknown component '{component}' for agent '{agent}'"
+        ))
+    })?;
     let rendered = render(tmpl, vars);
 
-    // The mcp-json component is special: it ships a JSON document with a
-    // `mcpServers` block intended to be merged INTO the existing Claude
-    // Code MCP registry rather than overwriting it. Other Claude Code
-    // tools (figma, affine, codegraph, etc.) live in the same file; a
-    // blind overwrite would clobber them. For every other component the
-    // rendered template is written verbatim.
+    // Per-component merge semantics:
+    // - Claude Code `mcp-json`: merge into the existing `mcpServers` block
+    //   so other servers (figma, affine, codegraph, ...) are preserved.
+    // - Codex `config-toml`: upsert `[mcp_servers.*]` sub-tables via
+    //   `toml_edit`, preserving unrelated keys and comment formatting.
+    // - Codex `agents-md`: replace just the `<!-- kernex:begin --> ... <!-- kernex:end -->`
+    //   block in place, leaving the rest of the user-owned AGENTS.md
+    //   untouched.
+    // - Everything else: write the rendered bytes verbatim.
     let prior_exists = path.exists();
-    let final_bytes: Vec<u8> = if component == "mcp-json" {
-        merge_mcp_servers(path, &rendered)?.into_bytes()
-    } else {
-        rendered.into_bytes()
+    let final_bytes: Vec<u8> = match (agent, component) {
+        ("claude-code", "mcp-json") => merge_mcp_servers(path, &rendered)?.into_bytes(),
+        #[cfg(feature = "agent-codex")]
+        ("codex", "config-toml") => merge_codex_config(path, &rendered)?.into_bytes(),
+        #[cfg(feature = "agent-codex")]
+        ("codex", "agents-md") => merge_codex_agents_md(path, &rendered)?.into_bytes(),
+        _ => rendered.into_bytes(),
     };
 
     if let Some(parent) = path.parent() {
@@ -300,13 +310,62 @@ fn format_with_trailing_newline(value: &serde_json::Value) -> String {
     out
 }
 
-fn template_for(component: &str) -> Option<&'static str> {
-    match component {
-        "claude-md" => Some(CLAUDE_MD_TMPL),
-        "mcp-json" => Some(MCP_JSON_TMPL),
-        "output-style" => Some(OUTPUT_STYLE_TMPL),
+fn template_for(agent: &str, component: &str) -> Option<&'static str> {
+    use crate::adapters::claude::{CLAUDE_MD_TMPL, MCP_JSON_TMPL, OUTPUT_STYLE_TMPL};
+    #[cfg(feature = "agent-codex")]
+    use crate::adapters::codex::{
+        AGENTS_MD_TMPL as CODEX_AGENTS_MD_TMPL, CONFIG_TOML_TMPL as CODEX_CONFIG_TOML_TMPL,
+        OUTPUT_STYLE_TMPL as CODEX_OUTPUT_STYLE_TMPL,
+    };
+    match (agent, component) {
+        ("claude-code", "claude-md") => Some(CLAUDE_MD_TMPL),
+        ("claude-code", "mcp-json") => Some(MCP_JSON_TMPL),
+        ("claude-code", "output-style") => Some(OUTPUT_STYLE_TMPL),
+        #[cfg(feature = "agent-codex")]
+        ("codex", "config-toml") => Some(CODEX_CONFIG_TOML_TMPL),
+        #[cfg(feature = "agent-codex")]
+        ("codex", "agents-md") => Some(CODEX_AGENTS_MD_TMPL),
+        #[cfg(feature = "agent-codex")]
+        ("codex", "output-style") => Some(CODEX_OUTPUT_STYLE_TMPL),
         _ => None,
     }
+}
+
+/// Merge a freshly-rendered Codex `config.toml` template into an existing
+/// `~/.codex/config.toml`. Delegates to `crate::adapters::codex::merge_codex_config_toml`
+/// which uses `toml_edit` to preserve formatting and unrelated entries.
+#[cfg(feature = "agent-codex")]
+fn merge_codex_config(path: &Path, rendered: &str) -> Result<String, InstallError> {
+    let existing = if path.exists() {
+        fs::read_to_string(path)?
+    } else {
+        String::new()
+    };
+    crate::adapters::codex::merge_codex_config_toml(&existing, rendered).map_err(|e| {
+        InstallError::Permanent(format!(
+            "codex config.toml merge failed at {}: {e}",
+            path.display()
+        ))
+    })
+}
+
+/// Merge a freshly-rendered Codex `AGENTS.md` template into the project-
+/// local `<cwd>/AGENTS.md`. Wraps the rendered body in
+/// `<!-- kernex:begin --> ... <!-- kernex:end -->` via `merge_marker_block`
+/// so the user's pre-existing AGENTS.md prose stays untouched.
+#[cfg(feature = "agent-codex")]
+fn merge_codex_agents_md(path: &Path, rendered: &str) -> Result<String, InstallError> {
+    let existing = if path.exists() {
+        fs::read_to_string(path)?
+    } else {
+        String::new()
+    };
+    Ok(crate::adapters::shared::merge_marker_block(
+        &existing,
+        rendered,
+        "<!-- kernex:begin -->",
+        "<!-- kernex:end -->",
+    ))
 }
 
 fn build_vars(opts: &InstallOptions, plan: &InstallPlan) -> HashMap<&'static str, String> {
