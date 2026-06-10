@@ -24,6 +24,8 @@ pub mod configurator;
 #[cfg(feature = "agent-claude")]
 pub mod install;
 pub mod loader;
+#[cfg(feature = "mcp")]
+pub mod mcp;
 #[cfg(feature = "memory-cli")]
 pub mod mem;
 pub mod prompts;

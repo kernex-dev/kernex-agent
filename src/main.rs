@@ -152,6 +152,8 @@ async fn run() -> anyhow::Result<()> {
             let code = kernex_agent::install::cli::dispatch(args).await?;
             std::process::exit(code);
         }
+        #[cfg(feature = "mcp")]
+        Some(Command::Mcp) => kernex_agent::mcp::serve().await,
         #[cfg(feature = "memory-cli")]
         Some(Command::Mem {
             action,
