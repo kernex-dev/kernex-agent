@@ -126,6 +126,9 @@ pub enum Command {
         #[arg(long)]
         verify_deep: bool,
     },
+    /// Run kx as a stdio MCP server exposing the project's memory tools
+    #[cfg(feature = "mcp")]
+    Mcp,
     /// Read, write, and search the local memory store from outside the REPL
     #[cfg(feature = "memory-cli")]
     Mem {

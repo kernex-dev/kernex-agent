@@ -80,6 +80,7 @@ default = ["agent-claude", "memory-cli", "serve"]
 
 # Core features.
 memory-cli = []                                                                # reserves cfg surface for `kx mem *` subcommands
+mcp = ["memory-cli", "tokio/io-std", "tokio/io-util"]                          # `kx mcp` stdio MCP server exposing the memory tool surface; io-std/io-util add stdin/stdout + buffered line IO only when enabled
 serve = ["dep:axum", "dep:hmac", "dep:subtle", "dep:uuid", "dep:rusqlite", "dep:tower-http"]  # `kx serve` headless HTTP daemon
 tui = ["dep:ratatui", "dep:crossterm"]                                         # placeholder; no source yet
 

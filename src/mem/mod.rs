@@ -520,7 +520,7 @@ fn resolve_project_data_dir(project: &str) -> Result<PathBuf, CliError> {
 /// for membership checks, so cold-open is sub-10 ms on SSD even as the
 /// migration count grows.
 #[tracing::instrument(name = "kernex.mem.open_store", skip_all, err)]
-async fn open_store(data_dir: &Path) -> Result<Arc<dyn MemoryStore>, CliError> {
+pub(crate) async fn open_store(data_dir: &Path) -> Result<Arc<dyn MemoryStore>, CliError> {
     let db_path = data_dir.join("memory.db");
     let cfg = MemoryConfig {
         db_path: db_path.to_string_lossy().into_owned(),
