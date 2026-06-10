@@ -358,7 +358,7 @@ fn format_with_trailing_newline(value: &serde_json::Value) -> String {
 }
 
 fn template_for(agent: &str, component: &str) -> Option<&'static str> {
-    use crate::adapters::claude::{CLAUDE_MD_TMPL, MCP_JSON_TMPL, OUTPUT_STYLE_TMPL};
+    use crate::adapters::claude::{CLAUDE_MD_TMPL, MCP_JSON_TMPL};
     #[cfg(feature = "agent-codex")]
     use crate::adapters::codex::{
         AGENTS_MD_TMPL as CODEX_AGENTS_MD_TMPL, CONFIG_TOML_TMPL as CODEX_CONFIG_TOML_TMPL,
@@ -367,7 +367,6 @@ fn template_for(agent: &str, component: &str) -> Option<&'static str> {
     match (agent, component) {
         ("claude-code", "claude-md") => Some(CLAUDE_MD_TMPL),
         ("claude-code", "mcp-json") => Some(MCP_JSON_TMPL),
-        ("claude-code", "output-style") => Some(OUTPUT_STYLE_TMPL),
         #[cfg(feature = "agent-codex")]
         ("codex", "config-toml") => Some(CODEX_CONFIG_TOML_TMPL),
         #[cfg(feature = "agent-codex")]

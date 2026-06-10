@@ -30,11 +30,10 @@ fn plan_for(home: &std::path::Path) -> InstallPlan {
     let claude = home.join(".claude");
     InstallPlan {
         agent: "claude-code".to_string(),
-        components: vec!["claude-md".into(), "mcp-json".into(), "output-style".into()],
+        components: vec!["claude-md".into(), "mcp-json".into()],
         target_paths: vec![
             ("claude-md".into(), claude.join("CLAUDE.md")),
             ("mcp-json".into(), claude.join("mcp-servers.json")),
-            ("output-style".into(), claude.join("output-style.md")),
         ],
     }
 }
@@ -58,10 +57,9 @@ async fn e_apply_1_writes_all_components_in_declaration_order() {
     let receipts = stage_apply::run(&opts, &plan, &backup, &audit)
         .await
         .unwrap();
-    assert_eq!(receipts.len(), 3);
+    assert_eq!(receipts.len(), 2);
     assert_eq!(receipts[0].component, "claude-md");
     assert_eq!(receipts[1].component, "mcp-json");
-    assert_eq!(receipts[2].component, "output-style");
     for receipt in &receipts {
         assert!(
             receipt.path.exists(),
@@ -109,7 +107,7 @@ async fn e_apply_2_emits_write_event_per_component() {
         .lines()
         .filter(|l| l.contains("\"event\":\"stage.apply.write\""))
         .collect();
-    assert_eq!(writes.len(), 3, "expected 3 stage.apply.write events");
+    assert_eq!(writes.len(), 2, "expected 2 stage.apply.write events");
 }
 
 #[tokio::test]
@@ -268,7 +266,7 @@ async fn apply_end_event_includes_receipts_payload() {
     let end: serde_json::Value = serde_json::from_str(end_line).unwrap();
     assert!(end["payload"]["receipts"].is_array());
     let receipts = end["payload"]["receipts"].as_array().unwrap();
-    assert_eq!(receipts.len(), 3);
+    assert_eq!(receipts.len(), 2);
 }
 
 #[test]

@@ -29,11 +29,10 @@ fn plan_for(home: &std::path::Path) -> InstallPlan {
     let claude = home.join(".claude");
     InstallPlan {
         agent: "claude-code".to_string(),
-        components: vec!["claude-md".into(), "mcp-json".into(), "output-style".into()],
+        components: vec!["claude-md".into(), "mcp-json".into()],
         target_paths: vec![
             ("claude-md".into(), claude.join("CLAUDE.md")),
             ("mcp-json".into(), claude.join("mcp.json")),
-            ("output-style".into(), claude.join("output-style.md")),
         ],
     }
 }

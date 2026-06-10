@@ -44,7 +44,6 @@ async fn happy_path_writes_files_and_exits_zero() {
     let claude = tmp.path().join(".claude");
     assert!(claude.join("CLAUDE.md").exists());
     assert!(claude.join("mcp-servers.json").exists());
-    assert!(claude.join("output-style.md").exists());
     // Audit log is present.
     let audit_dir = tmp.path().join(".kx").join("audit");
     let entries: Vec<_> = fs::read_dir(audit_dir).unwrap().collect();
