@@ -176,7 +176,7 @@ pub const PROVIDERS: &[ProviderSpec] = &[
     ProviderSpec {
         name: "anthropic",
         api_key_env: Some("ANTHROPIC_API_KEY"),
-        default_model: "claude-3-7-sonnet-20250219",
+        default_model: "claude-sonnet-4-6",
     },
     ProviderSpec {
         name: "openai",
@@ -196,7 +196,7 @@ pub const PROVIDERS: &[ProviderSpec] = &[
     ProviderSpec {
         name: "openrouter",
         api_key_env: Some("OPENROUTER_API_KEY"),
-        default_model: "anthropic/claude-sonnet-4-5",
+        default_model: "anthropic/claude-sonnet-4-6",
     },
     ProviderSpec {
         name: "groq",

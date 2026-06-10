@@ -86,6 +86,54 @@ pub async fn handle_health(State(state): State<AppState>) -> Json<HealthResponse
 
 const MAX_MESSAGE_BYTES: usize = 65_536; // 64 KiB
 
+/// A `project` or `workflow` value must be a single safe path component.
+/// Both feed directly into filesystem path construction (`data_dir_for`
+/// joins `project`; the workflow loader joins `<workflow>.toml`), so an
+/// unvalidated value is a path-escape primitive even behind bearer auth:
+/// `"../../etc"` would redirect the data dir or read an arbitrary `.toml`.
+/// Accept exactly one normal path component and nothing else (no separators,
+/// no `.`/`..`, no absolute paths, no control bytes).
+fn is_safe_path_segment(s: &str) -> bool {
+    if s.is_empty() || s.len() > 128 {
+        return false;
+    }
+    if s.bytes().any(|b| b == 0 || b.is_ascii_control()) {
+        return false;
+    }
+    // Reject both separators explicitly: on Unix `\` is a legal filename byte,
+    // so Path::components would accept `a\b` as one component. Rejecting it
+    // here keeps the guard platform-independent and blocks Windows-style
+    // separators regardless of the host.
+    if s.contains('/') || s.contains('\\') {
+        return false;
+    }
+    let mut comps = std::path::Path::new(s).components();
+    matches!(
+        (comps.next(), comps.next()),
+        (Some(std::path::Component::Normal(c)), None) if c == std::ffi::OsStr::new(s)
+    )
+}
+
+/// `channel` is a free-form label persisted to the job store and used as the
+/// runtime channel; it is not a filesystem path (webhook channels carry a
+/// `/`), so it gets a lighter guard: bounded length, no control bytes, no
+/// `..` traversal token.
+fn is_safe_channel(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 128
+        && !s.contains("..")
+        && s.bytes().all(|b| b != 0 && !b.is_ascii_control())
+}
+
+fn bad_request(msg: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: msg.to_string(),
+        }),
+    )
+}
+
 pub async fn handle_run(
     State(state): State<AppState>,
     Json(body): Json<RunBody>,
@@ -97,6 +145,29 @@ pub async fn handle_run(
                 error: format!("message exceeds {MAX_MESSAGE_BYTES} byte limit"),
             }),
         ));
+    }
+
+    // Validate caller-supplied names before they reach path construction or
+    // the job store. project and workflow are path components; channel is a
+    // stored label.
+    if let Some(ref project) = body.project {
+        if !is_safe_path_segment(project) {
+            return Err(bad_request(
+                "invalid project name (expected a single path component, no separators or traversal)",
+            ));
+        }
+    }
+    if let Some(ref workflow) = body.workflow {
+        if !is_safe_path_segment(workflow) {
+            return Err(bad_request(
+                "invalid workflow name (expected a single path component, no separators or traversal)",
+            ));
+        }
+    }
+    if let Some(ref channel) = body.channel {
+        if !is_safe_channel(channel) {
+            return Err(bad_request("invalid channel name"));
+        }
     }
 
     let job_id = Uuid::new_v4().to_string();
@@ -352,6 +423,42 @@ mod tests {
         assert!(!is_valid_webhook_event("with space"));
         assert!(!is_valid_webhook_event("ctrl\x00char"));
         assert!(!is_valid_webhook_event(&"a".repeat(65))); // > 64 chars
+    }
+
+    #[test]
+    fn path_segment_validator_accepts_real_project_names() {
+        // Real Hurtado project dir names: mixed case, hyphens, digits.
+        assert!(is_safe_path_segment("visualaudit-ops"));
+        assert!(is_safe_path_segment("GEOAutopilot"));
+        assert!(is_safe_path_segment("Doli-Producer"));
+        assert!(is_safe_path_segment("repo_123"));
+        assert!(is_safe_path_segment("a"));
+    }
+
+    #[test]
+    fn path_segment_validator_rejects_traversal_and_separators() {
+        assert!(!is_safe_path_segment(""));
+        assert!(!is_safe_path_segment("."));
+        assert!(!is_safe_path_segment(".."));
+        assert!(!is_safe_path_segment("../../etc"));
+        assert!(!is_safe_path_segment("../../../../tmp/x")); // ASEC-01 payload
+        assert!(!is_safe_path_segment("a/b"));
+        assert!(!is_safe_path_segment("a\\b"));
+        assert!(!is_safe_path_segment("/abs"));
+        assert!(!is_safe_path_segment("trailing/"));
+        assert!(!is_safe_path_segment("./rel"));
+        assert!(!is_safe_path_segment("nul\0byte"));
+        assert!(!is_safe_path_segment(&"a".repeat(129))); // > 128
+    }
+
+    #[test]
+    fn channel_validator_allows_labels_rejects_control_and_traversal() {
+        assert!(is_safe_channel("cli"));
+        assert!(is_safe_channel("webhook/github")); // slashes allowed for labels
+        assert!(!is_safe_channel(""));
+        assert!(!is_safe_channel("a/../b"));
+        assert!(!is_safe_channel("ctrl\x00"));
+        assert!(!is_safe_channel(&"a".repeat(129)));
     }
 
     #[test]

@@ -79,6 +79,51 @@ async fn happy_path_writes_all_components_with_full_audit_trail() {
 }
 
 #[tokio::test]
+async fn apply_failure_rolls_back_partial_writes_through_orchestrator() {
+    // End-to-end guard for the auto-rollback path. Stage-level rollback tests
+    // feed hand-built receipts and so never exercised the orchestrator, which
+    // was passing an empty receipts slice (rollback was a silent no-op).
+    //
+    // Inject a failure on the 2nd component (mcp-json) by pre-seeding an
+    // invalid mcp-servers.json. The 1st component (CLAUDE.md) is written first;
+    // the orchestrator must roll it back so a failed install leaves no partial
+    // state on disk.
+    let tmp = TempDir::new().unwrap();
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    fs::write(claude_dir.join("mcp-servers.json"), "{ not json").unwrap();
+
+    let audit = AuditWriter::new(tmp.path()).unwrap();
+    let result = run_with_audit(opts(tmp.path().to_path_buf()), &audit).await;
+
+    assert!(
+        result.is_err(),
+        "install must fail when mcp-servers.json is invalid JSON"
+    );
+
+    // CLAUDE.md was created before the failing component; rollback must remove
+    // it. output-style.md comes after the failure and was never written.
+    assert!(
+        !claude_dir.join("CLAUDE.md").exists(),
+        "CLAUDE.md must be rolled back after a partial-apply failure"
+    );
+    assert!(!claude_dir.join("output-style.md").exists());
+
+    // The user's invalid file is left untouched (merge refused, no overwrite).
+    assert_eq!(
+        fs::read_to_string(claude_dir.join("mcp-servers.json")).unwrap(),
+        "{ not json"
+    );
+
+    // A rollback event was emitted for the undone component.
+    let lines = fs::read_to_string(audit.path()).unwrap();
+    assert!(
+        lines.lines().any(|l| l.contains("stage.apply.rollback")),
+        "expected a stage.apply.rollback audit event after partial-apply failure"
+    );
+}
+
+#[tokio::test]
 async fn dry_run_skips_backup_apply_verify_and_exits_clean() {
     let tmp = TempDir::new().unwrap();
     let audit = AuditWriter::new(tmp.path()).unwrap();

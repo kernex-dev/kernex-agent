@@ -386,10 +386,15 @@ async fn mcp_merge_errors_on_invalid_existing_json() {
     let opts = options(tmp.path().to_path_buf());
     let plan = plan_for(tmp.path());
     let backup = run_backup(&opts, &plan, &audit).await;
-    let result = stage_apply::run(&opts, &plan, &backup, &audit).await;
+    let failure = stage_apply::run(&opts, &plan, &backup, &audit)
+        .await
+        .expect_err("APPLY should fail when the existing mcp-servers.json is not valid JSON");
+    // claude-md is written before the failing mcp-json component, so it must be
+    // reported in `partial` for the orchestrator to roll it back. (An empty
+    // `partial` here is exactly the bug that left half-written installs behind.)
     assert!(
-        result.is_err(),
-        "APPLY should fail when the existing mcp-servers.json is not valid JSON"
+        failure.partial.iter().any(|r| r.component == "claude-md"),
+        "partial receipts must include components written before the failure"
     );
     // The garbage file must be left untouched (no silent overwrite).
     let still_there = fs::read_to_string(mcp_path(&tmp)).unwrap();

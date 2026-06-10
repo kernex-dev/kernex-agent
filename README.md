@@ -309,7 +309,7 @@ Always use MyError instead of anyhow.
 
 # Provider settings
 [provider]
-model = "claude-sonnet-4-20250514"  # Model to use
+model = "claude-sonnet-4-6"          # Model to use
 max_turns = 10                       # Max agentic turns per request
 timeout_secs = 300                   # Request timeout in seconds
 ```
@@ -453,7 +453,7 @@ You can also set defaults via environment variables:
 
 ```bash
 export KERNEX_PROVIDER=anthropic
-export KERNEX_MODEL=claude-opus-4-6-20251001
+export KERNEX_MODEL=claude-opus-4-8
 ```
 
 ## Architecture
