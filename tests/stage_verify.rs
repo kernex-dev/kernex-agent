@@ -13,6 +13,9 @@ use kernex_agent::configurator::{stage_apply, stage_backup, stage_verify, Instal
 use kernex_agent::install::audit::AuditWriter;
 use tempfile::TempDir;
 
+mod common;
+use common::RecordingRegistrar;
+
 fn options(home: PathBuf, deep: bool) -> InstallOptions {
     InstallOptions {
         agent: "claude-code".to_string(),
@@ -42,7 +45,8 @@ async fn fresh_install(tmp: &TempDir) -> (InstallOptions, InstallPlan, AuditWrit
     let opts = options(tmp.path().to_path_buf(), false);
     let plan = plan_for(tmp.path());
     let backup = stage_backup::run(&opts, &plan, &audit).await.unwrap();
-    let receipts = stage_apply::run(&opts, &plan, &backup, &audit)
+    let reg = RecordingRegistrar::new();
+    let receipts = stage_apply::run(&opts, &plan, &backup, &audit, &reg)
         .await
         .unwrap();
     (opts, plan, audit, receipts)
@@ -92,39 +96,23 @@ async fn e_verify_1_sha256_mismatch_recorded_but_no_rollback() {
 }
 
 #[tokio::test]
-async fn e_verify_2_checks_mcp_servers_key() {
+async fn verify_skips_the_mcp_registration_component() {
     let tmp = TempDir::new().unwrap();
     let (opts, plan, audit, receipts) = fresh_install(&tmp).await;
     let report = stage_verify::run(&opts, &plan, &receipts, &audit)
         .await
         .unwrap();
-    let mcp_check = report
-        .checks
-        .iter()
-        .find(|c| c.name == "mcp-json:parses")
-        .unwrap();
-    assert!(mcp_check.passed);
-}
-
-#[tokio::test]
-async fn e_verify_2_mcp_json_invalid_fails_check() {
-    let tmp = TempDir::new().unwrap();
-    let (opts, plan, audit, receipts) = fresh_install(&tmp).await;
-    let mcp_path = &receipts
-        .iter()
-        .find(|r| r.component == "mcp-json")
-        .unwrap()
-        .path;
-    fs::write(mcp_path, b"{ not valid json").unwrap();
-    let report = stage_verify::run(&opts, &plan, &receipts, &audit)
-        .await
-        .unwrap();
-    let mcp_check = report
-        .checks
-        .iter()
-        .find(|c| c.name == "mcp-json:parses")
-        .unwrap();
-    assert!(!mcp_check.passed);
+    // mcp-json is a host-CLI registration now, not a file, so VERIFY emits no
+    // file check for it and still passes a clean install.
+    assert!(
+        receipts.iter().any(|r| r.component == "mcp-json"),
+        "mcp-json receipt should be present"
+    );
+    assert!(
+        !report.checks.iter().any(|c| c.name.starts_with("mcp-json")),
+        "verify must not emit a file check for the mcp-json registration"
+    );
+    assert!(report.all_passed());
 }
 
 #[tokio::test]

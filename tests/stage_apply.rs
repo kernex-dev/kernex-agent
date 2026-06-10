@@ -14,6 +14,9 @@ use kernex_agent::configurator::{stage_apply, stage_backup, InstallError, Instal
 use kernex_agent::install::audit::AuditWriter;
 use tempfile::TempDir;
 
+mod common;
+use common::RecordingRegistrar;
+
 fn options(home: PathBuf) -> InstallOptions {
     InstallOptions {
         agent: "claude-code".to_string(),
@@ -54,20 +57,21 @@ async fn e_apply_1_writes_all_components_in_declaration_order() {
     let plan = plan_for(tmp.path());
     let backup = run_backup(&opts, &plan, &audit).await;
 
-    let receipts = stage_apply::run(&opts, &plan, &backup, &audit)
+    let reg = RecordingRegistrar::new();
+    let receipts = stage_apply::run(&opts, &plan, &backup, &audit, &reg)
         .await
         .unwrap();
     assert_eq!(receipts.len(), 2);
+    // claude-md is a file write; mcp-json is a host-CLI registration.
     assert_eq!(receipts[0].component, "claude-md");
+    assert_eq!(receipts[0].action, ReceiptAction::Created);
+    assert!(
+        receipts[0].path.exists(),
+        "{:?} should exist after APPLY",
+        receipts[0].path
+    );
     assert_eq!(receipts[1].component, "mcp-json");
-    for receipt in &receipts {
-        assert!(
-            receipt.path.exists(),
-            "{:?} should exist after APPLY",
-            receipt.path
-        );
-        assert_eq!(receipt.action, ReceiptAction::Created);
-    }
+    assert_eq!(receipts[1].action, ReceiptAction::Registered);
 }
 
 #[tokio::test]
@@ -78,10 +82,16 @@ async fn e_apply_2_receipts_include_sha256_and_bytes_written() {
     let plan = plan_for(tmp.path());
     let backup = run_backup(&opts, &plan, &audit).await;
 
-    let receipts = stage_apply::run(&opts, &plan, &backup, &audit)
+    let reg = RecordingRegistrar::new();
+    let receipts = stage_apply::run(&opts, &plan, &backup, &audit, &reg)
         .await
         .unwrap();
-    for receipt in &receipts {
+    // Only file components carry bytes/sha on disk; the mcp-json registration
+    // has none.
+    for receipt in receipts
+        .iter()
+        .filter(|r| r.action != ReceiptAction::Registered)
+    {
         assert!(receipt.bytes_written > 0);
         // sha256 is the digest of the written bytes.
         let bytes = fs::read(&receipt.path).unwrap();
@@ -99,7 +109,8 @@ async fn e_apply_2_emits_write_event_per_component() {
     let opts = options(tmp.path().to_path_buf());
     let plan = plan_for(tmp.path());
     let backup = run_backup(&opts, &plan, &audit).await;
-    let _ = stage_apply::run(&opts, &plan, &backup, &audit)
+    let reg = RecordingRegistrar::new();
+    let _ = stage_apply::run(&opts, &plan, &backup, &audit, &reg)
         .await
         .unwrap();
     let lines = fs::read_to_string(audit.path()).unwrap();
@@ -163,7 +174,8 @@ async fn claude_md_merge_preserves_existing_user_content() {
     .unwrap();
 
     let backup = run_backup(&opts, &plan, &audit).await;
-    stage_apply::run(&opts, &plan, &backup, &audit)
+    let reg = RecordingRegistrar::new();
+    stage_apply::run(&opts, &plan, &backup, &audit, &reg)
         .await
         .unwrap();
 
@@ -184,28 +196,36 @@ async fn rollback_removes_created_files() {
     let opts = options(tmp.path().to_path_buf());
     let plan = plan_for(tmp.path());
     let backup = run_backup(&opts, &plan, &audit).await;
-    let receipts = stage_apply::run(&opts, &plan, &backup, &audit)
+    let reg = RecordingRegistrar::new();
+    let receipts = stage_apply::run(&opts, &plan, &backup, &audit, &reg)
         .await
         .unwrap();
 
-    // Confirm files exist post-APPLY.
-    for r in &receipts {
+    // File components exist post-APPLY (the mcp-json registration has no file).
+    for r in receipts
+        .iter()
+        .filter(|r| r.action != ReceiptAction::Registered)
+    {
         assert!(r.path.exists());
     }
 
     let dummy_err = InstallError::Permanent("simulated".to_string());
-    stage_apply::rollback(&backup, &receipts, &dummy_err, &audit)
+    stage_apply::rollback(&backup, &receipts, &dummy_err, &audit, &reg)
         .await
         .unwrap();
 
-    // All `Created` receipts should result in the file being removed.
-    for r in &receipts {
+    // Created files are removed; the registration is undone via the registrar.
+    for r in receipts
+        .iter()
+        .filter(|r| r.action != ReceiptAction::Registered)
+    {
         assert!(
             !r.path.exists(),
             "{:?} should be removed by rollback",
             r.path
         );
     }
+    assert!(reg.removed("kernex"), "rollback should unregister kernex");
 }
 
 #[tokio::test]
@@ -222,7 +242,8 @@ async fn rollback_restores_overwrote_files_from_backup() {
     fs::write(&pre_existing, b"original content").unwrap();
 
     let backup = run_backup(&opts, &plan, &audit).await;
-    let receipts = stage_apply::run(&opts, &plan, &backup, &audit)
+    let reg = RecordingRegistrar::new();
+    let receipts = stage_apply::run(&opts, &plan, &backup, &audit, &reg)
         .await
         .unwrap();
 
@@ -236,7 +257,7 @@ async fn rollback_restores_overwrote_files_from_backup() {
     assert_eq!(claude_receipt.action, ReceiptAction::Overwrote);
 
     let dummy_err = InstallError::Permanent("simulated".to_string());
-    stage_apply::rollback(&backup, &receipts, &dummy_err, &audit)
+    stage_apply::rollback(&backup, &receipts, &dummy_err, &audit, &reg)
         .await
         .unwrap();
 
@@ -255,7 +276,8 @@ async fn apply_end_event_includes_receipts_payload() {
     let opts = options(tmp.path().to_path_buf());
     let plan = plan_for(tmp.path());
     let backup = run_backup(&opts, &plan, &audit).await;
-    let _ = stage_apply::run(&opts, &plan, &backup, &audit)
+    let reg = RecordingRegistrar::new();
+    let _ = stage_apply::run(&opts, &plan, &backup, &audit, &reg)
         .await
         .unwrap();
     let lines = fs::read_to_string(audit.path()).unwrap();
@@ -283,152 +305,60 @@ fn receipt_serializes_with_typed_action() {
 }
 
 // ---------------------------------------------------------------------------
-// mcp-json merge semantics (FU-E-02). The mcp-json component must merge
-// the rendered kernex entry into Claude Code's existing mcpServers block
-// rather than overwriting the file. These tests cover the four real
-// scenarios: target missing, target empty, target has unrelated entries,
-// target has a stale kernex entry (idempotency).
+// MCP registration (AGT-04). The mcp-json component registers kernex with the
+// host CLI via the injected registrar instead of writing a file. These tests
+// use a RecordingRegistrar so no real `claude` binary is spawned.
 // ---------------------------------------------------------------------------
 
-async fn run_install_for_merge_test(
-    tmp: &TempDir,
-) -> (kernex_agent::install::audit::AuditWriter, Vec<Receipt>) {
+#[tokio::test]
+async fn mcp_json_registers_via_registrar_not_a_file() {
+    let tmp = TempDir::new().unwrap();
     let audit = AuditWriter::new(tmp.path()).unwrap();
     let opts = options(tmp.path().to_path_buf());
     let plan = plan_for(tmp.path());
     let backup = run_backup(&opts, &plan, &audit).await;
-    let receipts = stage_apply::run(&opts, &plan, &backup, &audit)
+    let reg = RecordingRegistrar::new();
+
+    let receipts = stage_apply::run(&opts, &plan, &backup, &audit, &reg)
         .await
         .unwrap();
-    (audit, receipts)
-}
 
-fn mcp_path(tmp: &TempDir) -> std::path::PathBuf {
-    tmp.path().join(".claude").join("mcp-servers.json")
-}
+    let mcp = receipts
+        .iter()
+        .find(|r| r.component == "mcp-json")
+        .expect("mcp-json receipt present");
+    assert_eq!(mcp.action, ReceiptAction::Registered);
+    // No mcp-servers.json file is written anymore.
+    assert!(!tmp.path().join(".claude").join("mcp-servers.json").exists());
 
-#[tokio::test]
-async fn mcp_merge_creates_file_when_target_missing() {
-    let tmp = TempDir::new().unwrap();
-    // No .claude/ dir, no mcp-servers.json. APPLY must create both and
-    // write the rendered kernex entry verbatim.
-    let (_audit, _receipts) = run_install_for_merge_test(&tmp).await;
-    let written = fs::read_to_string(mcp_path(&tmp)).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&written).unwrap();
-    assert!(parsed["mcpServers"]["kernex"].is_object());
-    assert_eq!(parsed["mcpServers"]["kernex"]["command"], "kx");
-}
-
-#[tokio::test]
-async fn mcp_merge_preserves_unrelated_entries() {
-    let tmp = TempDir::new().unwrap();
-    let claude_dir = tmp.path().join(".claude");
-    fs::create_dir_all(&claude_dir).unwrap();
-    // Pre-seed a registry with two unrelated MCP entries.
-    fs::write(
-        claude_dir.join("mcp-servers.json"),
-        r#"{
-  "mcpServers": {
-    "figma": { "command": "/opt/homebrew/bin/figma-developer-mcp", "args": [], "env": {} },
-    "freepik": { "command": "/usr/local/bin/freepik-mcp", "args": [], "env": {} }
-  }
-}
-"#,
-    )
-    .unwrap();
-
-    let (_audit, _receipts) = run_install_for_merge_test(&tmp).await;
-
-    let merged_text = fs::read_to_string(mcp_path(&tmp)).unwrap();
-    let merged: serde_json::Value = serde_json::from_str(&merged_text).unwrap();
-    let servers = merged["mcpServers"].as_object().unwrap();
-    // All three entries present: figma + freepik preserved, kernex added.
-    assert!(servers.contains_key("figma"), "figma should be preserved");
-    assert!(
-        servers.contains_key("freepik"),
-        "freepik should be preserved"
-    );
-    assert!(servers.contains_key("kernex"), "kernex should be added");
-    assert_eq!(servers["kernex"]["command"], "kx");
-    // Original entries kept their structure.
-    assert_eq!(
-        servers["figma"]["command"],
-        "/opt/homebrew/bin/figma-developer-mcp"
-    );
+    // The registrar recorded one user-scope add of the kernex stdio server.
+    let adds = reg.adds.lock().unwrap();
+    assert_eq!(adds.len(), 1);
+    let (name, server_json, scope) = &adds[0];
+    assert_eq!(name, "kernex");
+    assert_eq!(scope, "user");
+    let server: serde_json::Value = serde_json::from_str(server_json).unwrap();
+    assert_eq!(server["command"], "kx");
+    assert_eq!(server["args"][0], "mcp");
 }
 
 #[tokio::test]
-async fn mcp_merge_idempotent_on_rerun() {
+async fn registration_failure_reports_prior_file_in_partial() {
     let tmp = TempDir::new().unwrap();
-    let claude_dir = tmp.path().join(".claude");
-    fs::create_dir_all(&claude_dir).unwrap();
-    // Pre-seed a STALE kernex entry from a prior install. The merge must
-    // overwrite it cleanly so a second `kx install` produces the same
-    // registry shape as the first.
-    fs::write(
-        claude_dir.join("mcp-servers.json"),
-        r#"{
-  "mcpServers": {
-    "kernex": { "command": "old-kx-path", "args": ["legacy"], "env": {} },
-    "figma": { "command": "/opt/homebrew/bin/figma-developer-mcp", "args": [], "env": {} }
-  }
-}
-"#,
-    )
-    .unwrap();
-
-    let (_audit, _receipts) = run_install_for_merge_test(&tmp).await;
-
-    let merged_text = fs::read_to_string(mcp_path(&tmp)).unwrap();
-    let merged: serde_json::Value = serde_json::from_str(&merged_text).unwrap();
-    let servers = merged["mcpServers"].as_object().unwrap();
-    assert!(servers.contains_key("figma"));
-    // kernex entry must be the new shape, not the legacy one.
-    assert_eq!(servers["kernex"]["command"], "kx");
-    assert_ne!(
-        servers["kernex"]["command"], "old-kx-path",
-        "stale kernex entry should be overwritten by merge"
-    );
-}
-
-#[tokio::test]
-async fn mcp_merge_handles_empty_existing_file() {
-    let tmp = TempDir::new().unwrap();
-    let claude_dir = tmp.path().join(".claude");
-    fs::create_dir_all(&claude_dir).unwrap();
-    // Zero-byte existing file: merge falls back to rendered-as-is.
-    fs::write(claude_dir.join("mcp-servers.json"), "").unwrap();
-
-    let (_audit, _receipts) = run_install_for_merge_test(&tmp).await;
-
-    let written = fs::read_to_string(mcp_path(&tmp)).unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&written).unwrap();
-    assert!(parsed["mcpServers"]["kernex"].is_object());
-}
-
-#[tokio::test]
-async fn mcp_merge_errors_on_invalid_existing_json() {
-    let tmp = TempDir::new().unwrap();
-    let claude_dir = tmp.path().join(".claude");
-    fs::create_dir_all(&claude_dir).unwrap();
-    // Garbage JSON should make merge refuse rather than corrupt the user's file.
-    fs::write(claude_dir.join("mcp-servers.json"), "{ not json").unwrap();
-
     let audit = AuditWriter::new(tmp.path()).unwrap();
     let opts = options(tmp.path().to_path_buf());
     let plan = plan_for(tmp.path());
     let backup = run_backup(&opts, &plan, &audit).await;
-    let failure = stage_apply::run(&opts, &plan, &backup, &audit)
+    // A registrar that fails every add makes the mcp-json component fail.
+    let reg = RecordingRegistrar::failing();
+
+    let failure = stage_apply::run(&opts, &plan, &backup, &audit, &reg)
         .await
-        .expect_err("APPLY should fail when the existing mcp-servers.json is not valid JSON");
-    // claude-md is written before the failing mcp-json component, so it must be
-    // reported in `partial` for the orchestrator to roll it back. (An empty
-    // `partial` here is exactly the bug that left half-written installs behind.)
+        .expect_err("APPLY should fail when registration fails");
+    // claude-md is written before the failing mcp-json registration, so it must
+    // be in `partial` for the orchestrator to roll it back.
     assert!(
         failure.partial.iter().any(|r| r.component == "claude-md"),
-        "partial receipts must include components written before the failure"
+        "partial receipts must include the file written before the failure"
     );
-    // The garbage file must be left untouched (no silent overwrite).
-    let still_there = fs::read_to_string(mcp_path(&tmp)).unwrap();
-    assert_eq!(still_there, "{ not json");
 }
