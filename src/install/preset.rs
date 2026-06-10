@@ -24,8 +24,8 @@ pub struct Preset {
 /// Resolve a preset name + agent to its typed shape.
 ///
 /// Component identifiers are agent-specific so the per-tool file
-/// layout stays explicit: `claude-md`/`mcp-json`/`output-style` for
-/// Claude Code; `agents-md`/`config-toml`/`output-style` for Codex.
+/// layout stays explicit: `claude-md`/`mcp-json` for Claude Code;
+/// `agents-md`/`config-toml`/`output-style` for Codex.
 /// The downstream `component_path` resolver dispatches on the same
 /// `(agent, component)` pair to compute the target path.
 ///
@@ -38,11 +38,7 @@ pub fn resolve_preset(name: &str, agent: &str) -> Result<Preset, InstallError> {
     match (name, agent) {
         ("solo-dev", "claude-code") => Ok(Preset {
             adapters: vec![AdapterId::ClaudeCode],
-            components: vec![
-                "claude-md".to_string(),
-                "mcp-json".to_string(),
-                "output-style".to_string(),
-            ],
+            components: vec!["claude-md".to_string(), "mcp-json".to_string()],
         }),
         ("solo-dev", "codex") => Ok(Preset {
             adapters: vec![AdapterId::CodexCli],
@@ -66,10 +62,7 @@ mod tests {
         let preset =
             resolve_preset("solo-dev", "claude-code").expect("solo-dev/claude-code resolves");
         assert_eq!(preset.adapters, vec![AdapterId::ClaudeCode]);
-        assert_eq!(
-            preset.components,
-            vec!["claude-md", "mcp-json", "output-style"]
-        );
+        assert_eq!(preset.components, vec!["claude-md", "mcp-json"]);
     }
 
     #[test]

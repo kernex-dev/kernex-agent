@@ -21,7 +21,6 @@ const INSTALL_COMMAND: &str = "curl -fsSL https://claude.ai/install.sh | sh";
 /// no runtime template directory lookup.
 pub const CLAUDE_MD_TMPL: &str = include_str!("../../templates/claude/CLAUDE.md.tmpl");
 pub const MCP_JSON_TMPL: &str = include_str!("../../templates/claude/mcp.json.tmpl");
-pub const OUTPUT_STYLE_TMPL: &str = include_str!("../../templates/claude/output-style.md.tmpl");
 
 /// Unit struct identity for the Claude Code adapter. The adapter is
 /// stateless; configuration flows through `InstallOptions` at the

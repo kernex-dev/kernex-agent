@@ -100,7 +100,6 @@ fn component_path(
         // does NOT overwrite the file.
         ("claude-code", "claude-md") => Ok(opts.home.join(".claude").join("CLAUDE.md")),
         ("claude-code", "mcp-json") => Ok(opts.home.join(".claude").join("mcp-servers.json")),
-        ("claude-code", "output-style") => Ok(opts.home.join(".claude").join("output-style.md")),
         // Codex writes its instruction surface to `<cwd>/AGENTS.md`
         // (project-rooted per ADR-001) and its MCP server registry +
         // output-style to `~/.codex/` (home-rooted). Home paths are

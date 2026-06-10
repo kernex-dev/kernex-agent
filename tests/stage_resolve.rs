@@ -46,11 +46,8 @@ async fn e_resolve_1_returns_plan_with_agent_components_target_paths() {
         .await
         .expect("resolve ok");
     assert_eq!(plan.agent, "claude-code");
-    assert_eq!(
-        plan.components,
-        vec!["claude-md", "mcp-json", "output-style"]
-    );
-    assert_eq!(plan.target_paths.len(), 3);
+    assert_eq!(plan.components, vec!["claude-md", "mcp-json"]);
+    assert_eq!(plan.target_paths.len(), 2);
 }
 
 #[tokio::test]
