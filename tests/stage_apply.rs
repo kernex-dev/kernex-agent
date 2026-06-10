@@ -146,6 +146,40 @@ async fn e_apply_8_path_not_in_plan_errors() {
 }
 
 #[tokio::test]
+async fn claude_md_merge_preserves_existing_user_content() {
+    // AGT-03: the claude-md component must marker-merge, not clobber. A user
+    // who already has a global ~/.claude/CLAUDE.md keeps their prose; kernex's
+    // block is inserted between markers.
+    let tmp = TempDir::new().unwrap();
+    let audit = AuditWriter::new(tmp.path()).unwrap();
+    let opts = options(tmp.path().to_path_buf());
+    let plan = plan_for(tmp.path());
+
+    let claude_dir = tmp.path().join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    let claude_md = claude_dir.join("CLAUDE.md");
+    fs::write(
+        &claude_md,
+        "# My Project\n\nMy own house rules. Do not delete.\n",
+    )
+    .unwrap();
+
+    let backup = run_backup(&opts, &plan, &audit).await;
+    stage_apply::run(&opts, &plan, &backup, &audit)
+        .await
+        .unwrap();
+
+    let after = fs::read_to_string(&claude_md).unwrap();
+    assert!(
+        after.contains("My own house rules. Do not delete."),
+        "marker-merge must preserve the user's existing CLAUDE.md content; got:\n{after}"
+    );
+    assert!(after.contains("<!-- kernex:begin -->"));
+    assert!(after.contains("<!-- kernex:end -->"));
+    assert!(after.contains("Kernex"), "kernex block should be present");
+}
+
+#[tokio::test]
 async fn rollback_removes_created_files() {
     let tmp = TempDir::new().unwrap();
     let audit = AuditWriter::new(tmp.path()).unwrap();

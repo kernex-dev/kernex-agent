@@ -230,6 +230,10 @@ fn render_and_write(
     let rendered = render(tmpl, vars);
 
     // Per-component merge semantics:
+    // - Claude Code `claude-md`: replace just the `<!-- kernex:begin --> ...
+    //   <!-- kernex:end -->` block in place, leaving the rest of the user-owned
+    //   `~/.claude/CLAUDE.md` prose untouched (parity with Codex `agents-md`).
+    //   Previously this was written verbatim, clobbering the user's global file.
     // - Claude Code `mcp-json`: merge into the existing `mcpServers` block
     //   so other servers (figma, affine, codegraph, ...) are preserved.
     // - Codex `config-toml`: upsert `[mcp_servers.*]` sub-tables via
@@ -240,6 +244,7 @@ fn render_and_write(
     // - Everything else: write the rendered bytes verbatim.
     let prior_exists = path.exists();
     let final_bytes: Vec<u8> = match (agent, component) {
+        ("claude-code", "claude-md") => merge_claude_md(path, &rendered)?.into_bytes(),
         ("claude-code", "mcp-json") => merge_mcp_servers(path, &rendered)?.into_bytes(),
         #[cfg(feature = "agent-codex")]
         ("codex", "config-toml") => merge_codex_config(path, &rendered)?.into_bytes(),
@@ -371,6 +376,26 @@ fn template_for(agent: &str, component: &str) -> Option<&'static str> {
         ("codex", "output-style") => Some(CODEX_OUTPUT_STYLE_TMPL),
         _ => None,
     }
+}
+
+/// Merge a freshly-rendered Claude `CLAUDE.md` template into the user's
+/// `~/.claude/CLAUDE.md`. Wraps the rendered body in
+/// `<!-- kernex:begin --> ... <!-- kernex:end -->` via `merge_marker_block`
+/// so the user's existing CLAUDE.md prose is preserved across installs
+/// (parity with Codex `agents-md`). This replaces the prior verbatim write,
+/// which clobbered the user's global CLAUDE.md.
+fn merge_claude_md(path: &Path, rendered: &str) -> Result<String, InstallError> {
+    let existing = if path.exists() {
+        fs::read_to_string(path)?
+    } else {
+        String::new()
+    };
+    Ok(crate::adapters::shared::merge_marker_block(
+        &existing,
+        rendered,
+        "<!-- kernex:begin -->",
+        "<!-- kernex:end -->",
+    ))
 }
 
 /// Merge a freshly-rendered Codex `config.toml` template into an existing
