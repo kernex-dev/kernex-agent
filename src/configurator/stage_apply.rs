@@ -40,13 +40,30 @@ pub enum ReceiptAction {
     Skipped,
 }
 
+/// APPLY failure that carries the receipts written *before* the failure so the
+/// orchestrator can roll them back. Threading these (instead of an empty slice)
+/// is what makes auto-rollback actually undo a partial install: a failure on
+/// component N must still remove components 1..N-1 that were already written.
+#[derive(Debug)]
+pub struct ApplyFailure {
+    pub partial: Vec<Receipt>,
+    pub error: InstallError,
+}
+
+impl ApplyFailure {
+    fn new(partial: Vec<Receipt>, error: InstallError) -> Self {
+        Self { partial, error }
+    }
+}
+
 pub async fn run(
     opts: &InstallOptions,
     plan: &InstallPlan,
     _backup: &BackupReceipt,
     audit: &AuditWriter,
-) -> Result<Vec<Receipt>, InstallError> {
+) -> Result<Vec<Receipt>, ApplyFailure> {
     let started = Utc::now();
+    // No receipts exist yet: a start-audit failure rolls back nothing.
     audit
         .emit(AuditEvent {
             event: "stage.apply.start".to_string(),
@@ -58,7 +75,12 @@ pub async fn run(
             payload: json!({"agent": &plan.agent, "components": &plan.components}),
             errors: vec![],
         })
-        .map_err(|e| InstallError::Permanent(format!("audit emit failed: {e}")))?;
+        .map_err(|e| {
+            ApplyFailure::new(
+                Vec::new(),
+                InstallError::Permanent(format!("audit emit failed: {e}")),
+            )
+        })?;
 
     let vars = build_vars(opts, plan);
     let data_dir = opts.home.join(".kx");
@@ -66,56 +88,76 @@ pub async fn run(
 
     for (component, path) in &plan.target_paths {
         if !plan_contains(plan, path) {
-            return Err(InstallError::PathNotInPlan(path.clone()));
+            return Err(ApplyFailure::new(
+                receipts,
+                InstallError::PathNotInPlan(path.clone()),
+            ));
         }
         if kernex_sandbox::is_write_blocked(path, &data_dir, None) {
-            audit
-                .emit(AuditEvent {
-                    event: "stage.apply.error".to_string(),
-                    stage: Stage::Apply,
-                    status: EventStatus::Failure,
-                    started_at: started,
-                    ended_at: Some(Utc::now()),
-                    duration_ms: None,
-                    payload: json!({"component": component, "path": path}),
-                    errors: vec![EventError {
-                        code: "sandbox_refused".to_string(),
-                        message: format!("sandbox blocked write to {}", path.display()),
-                        transient: true,
-                    }],
-                })
-                .map_err(|e| InstallError::Permanent(format!("audit emit failed: {e}")))?;
-            return Err(InstallError::SandboxRefused { path: path.clone() });
-        }
-        let receipt = render_and_write(&plan.agent, component, path, &vars)?;
-        audit
-            .emit(AuditEvent {
-                event: "stage.apply.write".to_string(),
+            if let Err(e) = audit.emit(AuditEvent {
+                event: "stage.apply.error".to_string(),
                 stage: Stage::Apply,
-                status: EventStatus::Success,
-                started_at: Utc::now(),
-                ended_at: None,
+                status: EventStatus::Failure,
+                started_at: started,
+                ended_at: Some(Utc::now()),
                 duration_ms: None,
-                payload: serde_json::to_value(&receipt).unwrap_or(serde_json::Value::Null),
-                errors: vec![],
-            })
-            .map_err(|e| InstallError::Permanent(format!("audit emit failed: {e}")))?;
+                payload: json!({"component": component, "path": path}),
+                errors: vec![EventError {
+                    code: "sandbox_refused".to_string(),
+                    message: format!("sandbox blocked write to {}", path.display()),
+                    transient: true,
+                }],
+            }) {
+                return Err(ApplyFailure::new(
+                    receipts,
+                    InstallError::Permanent(format!("audit emit failed: {e}")),
+                ));
+            }
+            return Err(ApplyFailure::new(
+                receipts,
+                InstallError::SandboxRefused { path: path.clone() },
+            ));
+        }
+        let receipt = match render_and_write(&plan.agent, component, path, &vars) {
+            Ok(r) => r,
+            Err(error) => return Err(ApplyFailure::new(receipts, error)),
+        };
+        // The file is on disk now: record the receipt BEFORE the write-event
+        // emit so that even a logging failure leaves the write rollback-able.
         receipts.push(receipt);
+        if let Err(e) = audit.emit(AuditEvent {
+            event: "stage.apply.write".to_string(),
+            stage: Stage::Apply,
+            status: EventStatus::Success,
+            started_at: Utc::now(),
+            ended_at: None,
+            duration_ms: None,
+            payload: serde_json::to_value(receipts.last()).unwrap_or(serde_json::Value::Null),
+            errors: vec![],
+        }) {
+            return Err(ApplyFailure::new(
+                receipts,
+                InstallError::Permanent(format!("audit emit failed: {e}")),
+            ));
+        }
     }
 
     let ended = Utc::now();
-    audit
-        .emit(AuditEvent {
-            event: "stage.apply.end".to_string(),
-            stage: Stage::Apply,
-            status: EventStatus::Success,
-            started_at: started,
-            ended_at: Some(ended),
-            duration_ms: Some((ended - started).num_milliseconds().max(0) as u64),
-            payload: json!({"receipts": &receipts}),
-            errors: vec![],
-        })
-        .map_err(|e| InstallError::Permanent(format!("audit emit failed: {e}")))?;
+    if let Err(e) = audit.emit(AuditEvent {
+        event: "stage.apply.end".to_string(),
+        stage: Stage::Apply,
+        status: EventStatus::Success,
+        started_at: started,
+        ended_at: Some(ended),
+        duration_ms: Some((ended - started).num_milliseconds().max(0) as u64),
+        payload: json!({"receipts": &receipts}),
+        errors: vec![],
+    }) {
+        return Err(ApplyFailure::new(
+            receipts,
+            InstallError::Permanent(format!("audit emit failed: {e}")),
+        ));
+    }
 
     Ok(receipts)
 }
