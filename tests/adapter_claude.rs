@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use kernex_agent::adapters::claude::{render, ClaudeAdapter, MCP_JSON_TMPL};
+use kernex_agent::adapters::claude::{render, ClaudeAdapter};
 use kernex_runtime::{Adapter, AdapterId, Capability};
 
 #[test]
@@ -58,18 +58,4 @@ fn render_leaves_unknown_keys_literal() {
     vars.insert("known", "yes".to_string());
     let out = render("known={{known}} unknown={{unknown}}", &vars);
     assert_eq!(out, "known=yes unknown={{unknown}}");
-}
-
-#[test]
-fn mcp_json_template_renders_to_valid_json() {
-    let mut vars = HashMap::new();
-    vars.insert("project_name", "demo-project".to_string());
-    let rendered = render(MCP_JSON_TMPL, &vars);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&rendered).expect("rendered mcp.json parses");
-    assert!(parsed.get("mcpServers").is_some(), "mcpServers key present");
-    assert_eq!(
-        parsed["mcpServers"]["kernex"]["env"]["KERNEX_PROJECT"],
-        serde_json::json!("demo-project")
-    );
 }

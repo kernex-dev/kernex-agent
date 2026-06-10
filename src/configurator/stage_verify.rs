@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 use crate::install::audit::{AuditEvent, AuditWriter, EventStatus, Stage};
 
-use super::stage_apply::Receipt;
+use super::stage_apply::{Receipt, ReceiptAction};
 use super::stage_resolve::InstallPlan;
 use super::{InstallError, InstallOptions};
 
@@ -55,10 +55,15 @@ pub async fn run(
 
     let mut checks = Vec::new();
     for receipt in receipts {
-        checks.push(check_path_exists_and_sha256(receipt));
-        if receipt.component == "mcp-json" {
-            checks.push(check_mcp_json(&receipt.path));
+        // Registration components (Registered, or Skipped when no host CLI)
+        // have no file on disk; lenient verify skips them.
+        if matches!(
+            receipt.action,
+            ReceiptAction::Registered | ReceiptAction::Skipped
+        ) {
+            continue;
         }
+        checks.push(check_path_exists_and_sha256(receipt));
         if receipt.component == "claude-md" {
             checks.push(check_utf8(&receipt.path, "claude-md UTF-8"));
         }
@@ -142,38 +147,6 @@ fn check_path_exists_and_sha256(receipt: &Receipt) -> VerifyCheck {
             name: format!("{}:exists", receipt.component),
             passed: false,
             detail: Some(format!("{}: {err}", receipt.path.display())),
-        },
-    }
-}
-
-fn check_mcp_json(path: &std::path::Path) -> VerifyCheck {
-    let bytes = match std::fs::read(path) {
-        Ok(b) => b,
-        Err(err) => {
-            return VerifyCheck {
-                name: "mcp-json:parses".to_string(),
-                passed: false,
-                detail: Some(format!("read {}: {err}", path.display())),
-            };
-        }
-    };
-    match serde_json::from_slice::<serde_json::Value>(&bytes) {
-        Ok(value) => {
-            let has_servers = value.get("mcpServers").is_some();
-            VerifyCheck {
-                name: "mcp-json:parses".to_string(),
-                passed: has_servers,
-                detail: if has_servers {
-                    None
-                } else {
-                    Some("missing 'mcpServers' key".to_string())
-                },
-            }
-        }
-        Err(err) => VerifyCheck {
-            name: "mcp-json:parses".to_string(),
-            passed: false,
-            detail: Some(format!("invalid JSON: {err}")),
         },
     }
 }
