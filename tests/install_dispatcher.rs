@@ -30,20 +30,34 @@ fn args_solo_dev(yes: bool, dry_run: bool) -> InstallArgs {
 async fn happy_path_writes_files_and_exits_zero() {
     let _g = ENV_LOCK.lock().await;
     let tmp = TempDir::new().unwrap();
-    let saved = std::env::var_os("KX_HOME");
-    unsafe { std::env::set_var("KX_HOME", tmp.path()) };
+    let saved_kx = std::env::var_os("KX_HOME");
+    let saved_home = std::env::var_os("HOME");
+    // Override HOME too: the MCP registration (`claude mcp add-json --scope
+    // user`) writes to $HOME/.claude.json. Pointing HOME at the temp dir keeps
+    // it off the real config; when `claude` is absent (CI) registration is
+    // skipped entirely.
+    unsafe {
+        std::env::set_var("KX_HOME", tmp.path());
+        std::env::set_var("HOME", tmp.path());
+    }
 
     let code = dispatch(args_solo_dev(true, false)).await.unwrap();
-    if let Some(prior) = saved {
-        unsafe { std::env::set_var("KX_HOME", prior) };
-    } else {
-        unsafe { std::env::remove_var("KX_HOME") };
+    unsafe {
+        match saved_kx {
+            Some(p) => std::env::set_var("KX_HOME", p),
+            None => std::env::remove_var("KX_HOME"),
+        }
+        match saved_home {
+            Some(p) => std::env::set_var("HOME", p),
+            None => std::env::remove_var("HOME"),
+        }
     }
 
     assert_eq!(code, 0);
     let claude = tmp.path().join(".claude");
     assert!(claude.join("CLAUDE.md").exists());
-    assert!(claude.join("mcp-servers.json").exists());
+    // mcp-json registers via the host CLI (or is skipped when claude is
+    // absent), so no mcp-servers.json file is written.
     // Audit log is present.
     let audit_dir = tmp.path().join(".kx").join("audit");
     let entries: Vec<_> = fs::read_dir(audit_dir).unwrap().collect();

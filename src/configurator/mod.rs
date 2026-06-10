@@ -15,12 +15,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::install::audit::AuditWriter;
 
+pub mod mcp_registrar;
 pub mod stage_apply;
 pub mod stage_backup;
 pub mod stage_detect;
 pub mod stage_report;
 pub mod stage_resolve;
 pub mod stage_review;
+
+use mcp_registrar::{ClaudeCliRegistrar, McpRegistrar};
 pub mod stage_verify;
 
 /// User-supplied options parsed from the `kx install` CLI surface.
@@ -112,9 +115,21 @@ pub async fn run(opts: InstallOptions) -> Result<InstallReport, InstallError> {
 }
 
 /// Same as `run` but with an injected audit writer (tests, advanced callers).
+/// Uses the production [`ClaudeCliRegistrar`] for MCP registration.
 pub async fn run_with_audit(
     opts: InstallOptions,
     audit: &AuditWriter,
+) -> Result<InstallReport, InstallError> {
+    run_with_audit_and_registrar(opts, audit, &ClaudeCliRegistrar).await
+}
+
+/// As [`run_with_audit`], but with an injected MCP registrar so tests can
+/// exercise the apply/rollback path without spawning the real `claude` binary
+/// or touching the user's real config.
+pub async fn run_with_audit_and_registrar(
+    opts: InstallOptions,
+    audit: &AuditWriter,
+    registrar: &dyn McpRegistrar,
 ) -> Result<InstallReport, InstallError> {
     let detection = stage_detect::run(&opts, audit).await?;
     let plan = stage_resolve::run(&opts, &detection, audit).await?;
@@ -123,13 +138,13 @@ pub async fn run_with_audit(
         return stage_report::run_dry_run(&opts, &plan, audit).await;
     }
     let backup = stage_backup::run(&opts, &plan, audit).await?;
-    let apply = match stage_apply::run(&opts, &plan, &backup, audit).await {
+    let apply = match stage_apply::run(&opts, &plan, &backup, audit, registrar).await {
         Ok(receipts) => receipts,
         Err(stage_apply::ApplyFailure { partial, error }) => {
             // Roll back the components written before the failure. Passing the
             // partial receipts (not an empty slice) is what makes auto-rollback
             // actually undo a partial install.
-            let _ = stage_apply::rollback(&backup, &partial, &error, audit).await;
+            let _ = stage_apply::rollback(&backup, &partial, &error, audit, registrar).await;
             return Err(error);
         }
     };

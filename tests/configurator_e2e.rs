@@ -4,7 +4,7 @@
 //! -> BACKUP -> APPLY -> VERIFY -> REPORT) against a TempDir HOME and
 //! asserts every exit-signal clause from proposal.md §"What done looks
 //! like":
-//!   1. Files written: CLAUDE.md, mcp-servers.json.
+//!   1. CLAUDE.md written; mcp-json registered via the host CLI.
 //!   2. Audit log present at <home>/.kx/audit/install-*.jsonl.
 //!   3. Per-stage trace events all present (no stage skipped).
 //!   4. install.summary event emitted with status='success'.
@@ -14,9 +14,14 @@
 use std::fs;
 use std::path::PathBuf;
 
-use kernex_agent::configurator::{run_with_audit, InstallOptions, InstallStatus};
+use kernex_agent::configurator::{
+    run_with_audit, run_with_audit_and_registrar, InstallOptions, InstallStatus,
+};
 use kernex_agent::install::audit::AuditWriter;
 use tempfile::TempDir;
+
+mod common;
+use common::RecordingRegistrar;
 
 fn opts(home: PathBuf) -> InstallOptions {
     InstallOptions {
@@ -34,22 +39,23 @@ fn opts(home: PathBuf) -> InstallOptions {
 async fn happy_path_writes_all_components_with_full_audit_trail() {
     let tmp = TempDir::new().unwrap();
     let audit = AuditWriter::new(tmp.path()).unwrap();
-    let report = run_with_audit(opts(tmp.path().to_path_buf()), &audit)
+    let reg = RecordingRegistrar::new();
+    let report = run_with_audit_and_registrar(opts(tmp.path().to_path_buf()), &audit, &reg)
         .await
         .expect("install ok");
 
-    // Clause 1: every component file exists and is non-empty. The
-    // mcp-json component lands at .claude/mcp-servers.json (the
-    // dedicated Claude Code MCP registry), not .claude/mcp.json.
+    // Clause 1: the claude-md file is written and non-empty.
     let claude_dir = tmp.path().join(".claude");
-    for component in ["CLAUDE.md", "mcp-servers.json"] {
-        let path = claude_dir.join(component);
-        assert!(path.exists(), "{component} not written at {path:?}");
-        assert!(
-            fs::metadata(&path).unwrap().len() > 0,
-            "{component} is empty"
-        );
-    }
+    let claude_md = claude_dir.join("CLAUDE.md");
+    assert!(claude_md.exists(), "CLAUDE.md not written at {claude_md:?}");
+    assert!(
+        fs::metadata(&claude_md).unwrap().len() > 0,
+        "CLAUDE.md empty"
+    );
+    // The mcp-json component registers (not writes a file): the registrar
+    // recorded a kernex add, and no mcp-servers.json was written.
+    assert!(reg.added("kernex"), "kernex should be registered");
+    assert!(!claude_dir.join("mcp-servers.json").exists());
 
     // Clause 2: report status is success (verify all passed).
     assert!(matches!(
@@ -84,34 +90,23 @@ async fn apply_failure_rolls_back_partial_writes_through_orchestrator() {
     // feed hand-built receipts and so never exercised the orchestrator, which
     // was passing an empty receipts slice (rollback was a silent no-op).
     //
-    // Inject a failure on the 2nd component (mcp-json) by pre-seeding an
-    // invalid mcp-servers.json. The 1st component (CLAUDE.md) is written first;
-    // the orchestrator must roll it back so a failed install leaves no partial
-    // state on disk.
+    // The 2nd component (mcp-json) fails via a registrar whose `add` always
+    // errors. The 1st component (CLAUDE.md) is written first; the orchestrator
+    // must roll it back so a failed install leaves no partial state on disk.
     let tmp = TempDir::new().unwrap();
     let claude_dir = tmp.path().join(".claude");
-    fs::create_dir_all(&claude_dir).unwrap();
-    fs::write(claude_dir.join("mcp-servers.json"), "{ not json").unwrap();
 
     let audit = AuditWriter::new(tmp.path()).unwrap();
-    let result = run_with_audit(opts(tmp.path().to_path_buf()), &audit).await;
+    let reg = RecordingRegistrar::failing();
+    let result = run_with_audit_and_registrar(opts(tmp.path().to_path_buf()), &audit, &reg).await;
 
-    assert!(
-        result.is_err(),
-        "install must fail when mcp-servers.json is invalid JSON"
-    );
+    assert!(result.is_err(), "install must fail when registration fails");
 
-    // CLAUDE.md was created before the failing mcp-json component; rollback
+    // CLAUDE.md was created before the failing mcp-json registration; rollback
     // must remove it.
     assert!(
         !claude_dir.join("CLAUDE.md").exists(),
         "CLAUDE.md must be rolled back after a partial-apply failure"
-    );
-
-    // The user's invalid file is left untouched (merge refused, no overwrite).
-    assert_eq!(
-        fs::read_to_string(claude_dir.join("mcp-servers.json")).unwrap(),
-        "{ not json"
     );
 
     // A rollback event was emitted for the undone component.

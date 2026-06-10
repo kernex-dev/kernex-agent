@@ -58,15 +58,22 @@ async fn e_resolve_2_expands_solo_dev_preset() {
     let plan = stage_resolve::run(&opts, &detection_stub(), &audit)
         .await
         .expect("resolve ok");
-    let paths: Vec<&PathBuf> = plan.target_paths.iter().map(|(_, p)| p).collect();
-    // Every target path sits under <home>/.claude/.
+    let by_component: std::collections::HashMap<&str, &PathBuf> = plan
+        .target_paths
+        .iter()
+        .map(|(c, p)| (c.as_str(), p))
+        .collect();
+    // claude-md is a file under <home>/.claude/; mcp-json is a host-CLI
+    // registration descriptor, not a filesystem path.
     let claude_dir = opts.home.join(".claude");
-    for p in &paths {
-        assert!(
-            p.starts_with(&claude_dir),
-            "target path {p:?} not under {claude_dir:?}"
-        );
-    }
+    assert!(
+        by_component["claude-md"].starts_with(&claude_dir),
+        "claude-md should live under {claude_dir:?}"
+    );
+    assert!(
+        !by_component["mcp-json"].starts_with(&claude_dir),
+        "mcp-json is a registration descriptor, not a .claude file path"
+    );
 }
 
 #[tokio::test]
