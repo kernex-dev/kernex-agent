@@ -17,10 +17,10 @@ pub mod codex;
 
 // Cross-adapter helpers (e.g. marker-block merge). Gated on the same
 // `any(agent-*)` set as the registry so dead-code analysis stays quiet
-// when no shell-CLI adapter is enabled. Codex is the first consumer;
-// the upcoming OpenCode, Cursor, and Cline adapter sprints extend this
-// cfg as they land.
-#[cfg(feature = "agent-codex")]
+// when no shell-CLI adapter is enabled. Used by the Claude `claude-md`
+// merge and the Codex `agents-md` merge; the upcoming OpenCode, Cursor,
+// and Cline adapter sprints extend this cfg as they land.
+#[cfg(any(feature = "agent-claude", feature = "agent-codex"))]
 pub mod shared;
 
 #[cfg(any(feature = "agent-claude", feature = "agent-codex"))]
