@@ -125,9 +125,12 @@ pub async fn run_with_audit(
     let backup = stage_backup::run(&opts, &plan, audit).await?;
     let apply = match stage_apply::run(&opts, &plan, &backup, audit).await {
         Ok(receipts) => receipts,
-        Err(err) => {
-            let _ = stage_apply::rollback(&backup, &[], &err, audit).await;
-            return Err(err);
+        Err(stage_apply::ApplyFailure { partial, error }) => {
+            // Roll back the components written before the failure. Passing the
+            // partial receipts (not an empty slice) is what makes auto-rollback
+            // actually undo a partial install.
+            let _ = stage_apply::rollback(&backup, &partial, &error, audit).await;
+            return Err(error);
         }
     };
     let verify = stage_verify::run(&opts, &plan, &apply, audit).await?;
