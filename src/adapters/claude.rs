@@ -20,7 +20,6 @@ const INSTALL_COMMAND: &str = "curl -fsSL https://claude.ai/install.sh | sh";
 /// Compiled-in templates per ADR-002. Loaded once at binary link time;
 /// no runtime template directory lookup.
 pub const CLAUDE_MD_TMPL: &str = include_str!("../../templates/claude/CLAUDE.md.tmpl");
-pub const MCP_JSON_TMPL: &str = include_str!("../../templates/claude/mcp.json.tmpl");
 
 /// Unit struct identity for the Claude Code adapter. The adapter is
 /// stateless; configuration flows through `InstallOptions` at the

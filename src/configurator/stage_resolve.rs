@@ -99,7 +99,10 @@ fn component_path(
         // rendered kernex entry into the existing mcpServers block; it
         // does NOT overwrite the file.
         ("claude-code", "claude-md") => Ok(opts.home.join(".claude").join("CLAUDE.md")),
-        ("claude-code", "mcp-json") => Ok(opts.home.join(".claude").join("mcp-servers.json")),
+        // mcp-json is a host-CLI registration, not a file write. The path is a
+        // stable descriptor (never a real file), so BACKUP skips it (not
+        // `is_file()`) and VERIFY skips it (Registered receipts).
+        ("claude-code", "mcp-json") => Ok(PathBuf::from("mcp-register:claude-code/user/kernex")),
         // Codex writes its instruction surface to `<cwd>/AGENTS.md`
         // (project-rooted per ADR-001) and its MCP server registry +
         // output-style to `~/.codex/` (home-rooted). Home paths are

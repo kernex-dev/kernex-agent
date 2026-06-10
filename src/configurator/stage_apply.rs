@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 use crate::adapters::claude::render;
 use crate::install::audit::{AuditEvent, AuditWriter, EventError, EventStatus, Stage};
 
+use super::mcp_registrar::{McpRegistrar, RegisterOutcome};
 use super::stage_backup::BackupReceipt;
 use super::stage_resolve::InstallPlan;
 use super::{InstallError, InstallOptions};
@@ -38,6 +39,9 @@ pub enum ReceiptAction {
     Created,
     Overwrote,
     Skipped,
+    /// The component registered an MCP server with the host CLI (no file
+    /// written). Rollback unregisters it via the host CLI.
+    Registered,
 }
 
 /// APPLY failure that carries the receipts written *before* the failure so the
@@ -56,11 +60,22 @@ impl ApplyFailure {
     }
 }
 
+/// MCP registry name and scope kernex registers under. Single registration
+/// today; apply and rollback share these so they stay in lockstep.
+const MCP_REGISTER_NAME: &str = "kernex";
+const MCP_REGISTER_SCOPE: &str = "user";
+
+/// True for components that register with a host CLI instead of writing a file.
+fn is_mcp_registration(agent: &str, component: &str) -> bool {
+    matches!((agent, component), ("claude-code", "mcp-json"))
+}
+
 pub async fn run(
     opts: &InstallOptions,
     plan: &InstallPlan,
     _backup: &BackupReceipt,
     audit: &AuditWriter,
+    registrar: &dyn McpRegistrar,
 ) -> Result<Vec<Receipt>, ApplyFailure> {
     let started = Utc::now();
     // No receipts exist yet: a start-audit failure rolls back nothing.
@@ -93,37 +108,46 @@ pub async fn run(
                 InstallError::PathNotInPlan(path.clone()),
             ));
         }
-        if kernex_sandbox::is_write_blocked(path, &data_dir, None) {
-            if let Err(e) = audit.emit(AuditEvent {
-                event: "stage.apply.error".to_string(),
-                stage: Stage::Apply,
-                status: EventStatus::Failure,
-                started_at: started,
-                ended_at: Some(Utc::now()),
-                duration_ms: None,
-                payload: json!({"component": component, "path": path}),
-                errors: vec![EventError {
-                    code: "sandbox_refused".to_string(),
-                    message: format!("sandbox blocked write to {}", path.display()),
-                    transient: true,
-                }],
-            }) {
+        let receipt = if is_mcp_registration(&plan.agent, component) {
+            // Registration is a host-CLI command, not a file write, so the
+            // sandbox write-probe does not apply.
+            match register_mcp(component, path, registrar) {
+                Ok(r) => r,
+                Err(error) => return Err(ApplyFailure::new(receipts, error)),
+            }
+        } else {
+            if kernex_sandbox::is_write_blocked(path, &data_dir, None) {
+                if let Err(e) = audit.emit(AuditEvent {
+                    event: "stage.apply.error".to_string(),
+                    stage: Stage::Apply,
+                    status: EventStatus::Failure,
+                    started_at: started,
+                    ended_at: Some(Utc::now()),
+                    duration_ms: None,
+                    payload: json!({"component": component, "path": path}),
+                    errors: vec![EventError {
+                        code: "sandbox_refused".to_string(),
+                        message: format!("sandbox blocked write to {}", path.display()),
+                        transient: true,
+                    }],
+                }) {
+                    return Err(ApplyFailure::new(
+                        receipts,
+                        InstallError::Permanent(format!("audit emit failed: {e}")),
+                    ));
+                }
                 return Err(ApplyFailure::new(
                     receipts,
-                    InstallError::Permanent(format!("audit emit failed: {e}")),
+                    InstallError::SandboxRefused { path: path.clone() },
                 ));
             }
-            return Err(ApplyFailure::new(
-                receipts,
-                InstallError::SandboxRefused { path: path.clone() },
-            ));
-        }
-        let receipt = match render_and_write(&plan.agent, component, path, &vars) {
-            Ok(r) => r,
-            Err(error) => return Err(ApplyFailure::new(receipts, error)),
+            match render_and_write(&plan.agent, component, path, &vars) {
+                Ok(r) => r,
+                Err(error) => return Err(ApplyFailure::new(receipts, error)),
+            }
         };
-        // The file is on disk now: record the receipt BEFORE the write-event
-        // emit so that even a logging failure leaves the write rollback-able.
+        // The component is applied now: record the receipt BEFORE the write-event
+        // emit so that even a logging failure leaves it rollback-able.
         receipts.push(receipt);
         if let Err(e) = audit.emit(AuditEvent {
             event: "stage.apply.write".to_string(),
@@ -165,21 +189,26 @@ pub async fn run(
 /// Best-effort rollback per E-apply-4..5.
 ///
 /// Walks receipts in reverse. `Created` files are removed; `Overwrote`
-/// files are restored from the backup tarball. Each restoration emits
-/// `stage.apply.rollback` (or `stage.apply.rollback.error`) and the walk
-/// continues after individual failures so a single broken restore does
-/// not strand the rest of the rollback.
+/// files are restored from the backup tarball; `Registered` MCP servers are
+/// unregistered via the host CLI. Each step emits `stage.apply.rollback`
+/// (or `stage.apply.rollback.error`) and the walk continues after individual
+/// failures so a single broken restore does not strand the rest of the
+/// rollback.
 pub async fn rollback(
     backup: &BackupReceipt,
     receipts: &[Receipt],
     _err: &InstallError,
     audit: &AuditWriter,
+    registrar: &dyn McpRegistrar,
 ) -> Result<(), InstallError> {
     for receipt in receipts.iter().rev() {
         let action_outcome = match receipt.action {
             ReceiptAction::Created => undo_created(&receipt.path),
             ReceiptAction::Overwrote => restore_from_backup(backup, &receipt.path),
             ReceiptAction::Skipped => Ok(()),
+            ReceiptAction::Registered => registrar
+                .remove(MCP_REGISTER_NAME, MCP_REGISTER_SCOPE)
+                .map_err(|e| e.to_string()),
         };
 
         let now = Utc::now();
@@ -216,6 +245,29 @@ pub async fn rollback(
     Ok(())
 }
 
+/// Register kernex's MCP server with the host CLI (Claude Code) via the
+/// injected registrar. Produces a `Registered` receipt, or `Skipped` when no
+/// host CLI is present (nothing to register into). Rollback unregisters via
+/// the same registrar.
+fn register_mcp(
+    component: &str,
+    path: &Path,
+    registrar: &dyn McpRegistrar,
+) -> Result<Receipt, InstallError> {
+    let server_json = json!({ "command": "kx", "args": ["mcp"] }).to_string();
+    let action = match registrar.add(MCP_REGISTER_NAME, &server_json, MCP_REGISTER_SCOPE)? {
+        RegisterOutcome::Registered => ReceiptAction::Registered,
+        RegisterOutcome::SkippedNoClaude => ReceiptAction::Skipped,
+    };
+    Ok(Receipt {
+        component: component.to_string(),
+        path: path.to_path_buf(),
+        action,
+        bytes_written: 0,
+        sha256: [0u8; 32],
+    })
+}
+
 fn render_and_write(
     agent: &str,
     component: &str,
@@ -234,8 +286,8 @@ fn render_and_write(
     //   <!-- kernex:end -->` block in place, leaving the rest of the user-owned
     //   `~/.claude/CLAUDE.md` prose untouched (parity with Codex `agents-md`).
     //   Previously this was written verbatim, clobbering the user's global file.
-    // - Claude Code `mcp-json`: merge into the existing `mcpServers` block
-    //   so other servers (figma, affine, codegraph, ...) are preserved.
+    //   (Claude `mcp-json` is NOT a file component: it registers via the host
+    //   CLI in `register_mcp`, so it never reaches `render_and_write`.)
     // - Codex `config-toml`: upsert `[mcp_servers.*]` sub-tables via
     //   `toml_edit`, preserving unrelated keys and comment formatting.
     // - Codex `agents-md`: replace just the `<!-- kernex:begin --> ... <!-- kernex:end -->`
@@ -245,7 +297,6 @@ fn render_and_write(
     let prior_exists = path.exists();
     let final_bytes: Vec<u8> = match (agent, component) {
         ("claude-code", "claude-md") => merge_claude_md(path, &rendered)?.into_bytes(),
-        ("claude-code", "mcp-json") => merge_mcp_servers(path, &rendered)?.into_bytes(),
         #[cfg(feature = "agent-codex")]
         ("codex", "config-toml") => merge_codex_config(path, &rendered)?.into_bytes(),
         #[cfg(feature = "agent-codex")]
@@ -275,90 +326,8 @@ fn render_and_write(
     })
 }
 
-/// Merge the rendered `mcp-json` template into an existing MCP registry
-/// file, preserving every other `mcpServers` entry already present.
-///
-/// Behavior:
-/// - If the target file does not exist, returns the rendered template
-///   verbatim (so the first install creates a valid one-entry file).
-/// - If the target file is empty or non-existent JSON, returns the
-///   rendered template verbatim.
-/// - If the target file is valid JSON with an `mcpServers` object, each
-///   key from the rendered template's `mcpServers` is merged in. Keys
-///   that already exist (e.g., a prior `kernex` entry from a re-run) are
-///   overwritten with the new value, matching install-idempotency: the
-///   second `kx install` produces the same registry as the first.
-/// - If the target file exists but is invalid JSON, returns an error so
-///   the install fails clean rather than corrupting the user's config.
-///
-/// Returns the serialized JSON to write back to disk, formatted with
-/// two-space indentation and a trailing newline so diffs against the
-/// original stay readable.
-fn merge_mcp_servers(path: &Path, rendered: &str) -> Result<String, InstallError> {
-    let rendered_value: serde_json::Value = serde_json::from_str(rendered).map_err(|e| {
-        InstallError::Permanent(format!(
-            "mcp-json template did not render to valid JSON: {e}"
-        ))
-    })?;
-
-    if !path.exists() {
-        return Ok(format_with_trailing_newline(&rendered_value));
-    }
-
-    let existing_text = fs::read_to_string(path)?;
-    if existing_text.trim().is_empty() {
-        return Ok(format_with_trailing_newline(&rendered_value));
-    }
-
-    let mut existing: serde_json::Value = serde_json::from_str(&existing_text).map_err(|e| {
-        InstallError::Permanent(format!(
-            "existing MCP registry at {} is not valid JSON: {e}; refusing to overwrite",
-            path.display()
-        ))
-    })?;
-
-    let rendered_servers = rendered_value
-        .get("mcpServers")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| {
-            InstallError::Permanent(
-                "mcp-json template is missing a top-level mcpServers object".to_string(),
-            )
-        })?;
-
-    let existing_obj = existing.as_object_mut().ok_or_else(|| {
-        InstallError::Permanent(format!(
-            "existing MCP registry at {} is not a JSON object",
-            path.display()
-        ))
-    })?;
-
-    let target_servers = existing_obj
-        .entry("mcpServers")
-        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
-
-    let target_map = target_servers.as_object_mut().ok_or_else(|| {
-        InstallError::Permanent(format!(
-            "existing mcpServers at {} is not a JSON object",
-            path.display()
-        ))
-    })?;
-
-    for (name, server_value) in rendered_servers {
-        target_map.insert(name.clone(), server_value.clone());
-    }
-
-    Ok(format_with_trailing_newline(&existing))
-}
-
-fn format_with_trailing_newline(value: &serde_json::Value) -> String {
-    let mut out = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
-    out.push('\n');
-    out
-}
-
 fn template_for(agent: &str, component: &str) -> Option<&'static str> {
-    use crate::adapters::claude::{CLAUDE_MD_TMPL, MCP_JSON_TMPL};
+    use crate::adapters::claude::CLAUDE_MD_TMPL;
     #[cfg(feature = "agent-codex")]
     use crate::adapters::codex::{
         AGENTS_MD_TMPL as CODEX_AGENTS_MD_TMPL, CONFIG_TOML_TMPL as CODEX_CONFIG_TOML_TMPL,
@@ -366,7 +335,6 @@ fn template_for(agent: &str, component: &str) -> Option<&'static str> {
     };
     match (agent, component) {
         ("claude-code", "claude-md") => Some(CLAUDE_MD_TMPL),
-        ("claude-code", "mcp-json") => Some(MCP_JSON_TMPL),
         #[cfg(feature = "agent-codex")]
         ("codex", "config-toml") => Some(CODEX_CONFIG_TOML_TMPL),
         #[cfg(feature = "agent-codex")]
