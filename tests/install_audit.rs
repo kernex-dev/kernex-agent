@@ -112,3 +112,24 @@ fn redacts_secret_keys_in_payload() {
     assert_eq!(out["list"][0]["secret_value"], json!("<redacted>"));
     assert_eq!(out["list"][1]["safe"], json!("shown"));
 }
+
+#[test]
+fn redacts_auth_header_style_keys() {
+    // The original substring list missed common auth-header naming; these
+    // must all redact.
+    let payload = json!({
+        "Authorization": "Bearer abc123",
+        "bearer_value": "abc123",
+        "aws_credentials": "AKIA...",
+        "x-api-key": "sk-123",
+        "apiKey": "sk-456",
+        "plain": "visible"
+    });
+    let out = redact_payload(payload);
+    assert_eq!(out["Authorization"], json!("<redacted>"));
+    assert_eq!(out["bearer_value"], json!("<redacted>"));
+    assert_eq!(out["aws_credentials"], json!("<redacted>"));
+    assert_eq!(out["x-api-key"], json!("<redacted>"));
+    assert_eq!(out["apiKey"], json!("<redacted>"));
+    assert_eq!(out["plain"], json!("visible"));
+}

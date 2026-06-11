@@ -30,7 +30,9 @@ pub struct Job {
 }
 
 /// Sent through the mpsc channel from HTTP handlers to the worker pool.
-#[derive(Debug)]
+///
+/// `Debug` is implemented manually so `api_key` is redacted: a derived impl
+/// would print the key in plaintext the moment anything logs a request.
 pub struct JobRequest {
     pub job_id: String,
     pub message: String,
@@ -49,6 +51,26 @@ pub struct JobRequest {
     /// Named workflow to execute. If set, `message` is used as the workflow input and
     /// each step is dispatched as a separate agent call.
     pub workflow: Option<String>,
+}
+
+impl std::fmt::Debug for JobRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JobRequest")
+            .field("job_id", &self.job_id)
+            .field("message", &self.message)
+            .field("provider", &self.provider)
+            .field("model", &self.model)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("base_url", &self.base_url)
+            .field("project", &self.project)
+            .field("channel", &self.channel)
+            .field("max_tokens", &self.max_tokens)
+            .field("verbose", &self.verbose)
+            .field("skills", &self.skills)
+            .field("mode", &self.mode)
+            .field("workflow", &self.workflow)
+            .finish()
+    }
 }
 
 pub type JobStore = Arc<RwLock<HashMap<String, Job>>>;
@@ -89,6 +111,28 @@ pub fn evict_oldest_finished(store: &mut HashMap<String, Job>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn job_request_debug_redacts_api_key() {
+        let req = JobRequest {
+            job_id: "j1".into(),
+            message: "hello".into(),
+            provider: "anthropic".into(),
+            model: None,
+            api_key: Some("sk-ant-secret-value".into()),
+            base_url: None,
+            project: None,
+            channel: None,
+            max_tokens: None,
+            verbose: false,
+            skills: None,
+            mode: None,
+            workflow: None,
+        };
+        let dbg = format!("{req:?}");
+        assert!(!dbg.contains("sk-ant-secret-value"), "key leaked: {dbg}");
+        assert!(dbg.contains("<redacted>"));
+    }
 
     fn make_job(id: &str, status: JobStatus, created_at: &str) -> Job {
         Job {

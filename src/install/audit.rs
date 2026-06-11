@@ -15,7 +15,17 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 
 const REDACTED: &str = "<redacted>";
-const SECRET_KEY_SUBSTRINGS: [&str; 4] = ["token", "secret", "password", "api_key"];
+const SECRET_KEY_SUBSTRINGS: [&str; 9] = [
+    "token",
+    "secret",
+    "password",
+    "api_key",
+    "api-key",
+    "apikey",
+    "authorization",
+    "bearer",
+    "credential",
+];
 const COLLISION_LIMIT: u32 = 1000;
 
 /// Audit writer error surface.
