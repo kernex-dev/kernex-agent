@@ -16,6 +16,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 # Build actual source (builtins/ is embedded via include_str! at compile time)
 COPY src ./src
 COPY builtins ./builtins
+COPY templates ./templates
 RUN touch src/main.rs && cargo build --release --locked
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────

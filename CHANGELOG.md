@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-06-12
+
+### Fixed
+
+- **Docker build.** The builder stage now copies `templates/` (compiled in
+  via `include_str!` since the Claude adapter landed); the v0.6.0 image
+  build failed on the first tag push since that change. Binaries and the
+  GitHub Release for v0.6.0 were unaffected.
+
 ## [0.6.0] - 2026-06-12
 
 ### Security
