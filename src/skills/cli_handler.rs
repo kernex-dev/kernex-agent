@@ -7,7 +7,7 @@ use super::audit::{log_event, AuditEvent};
 use super::manifest::{compute_sha256, skill_dir, verify_skill, SkillsManifest, VerifyResult};
 use super::parser::{parse_skill_md, parse_source, validate_skill_name, validate_skill_size};
 use super::permissions::{resolve_permissions, PermissionPolicy};
-use super::types::{InstalledSkill, TrustLevel};
+use super::types::{InstalledSkill, SkillSource, TrustLevel};
 
 pub async fn list_skills(data_dir: &Path) {
     let manifest = SkillsManifest::load(data_dir);
@@ -64,6 +64,70 @@ pub async fn list_skills(data_dir: &Path) {
         "  ({count} skill{} active)\n",
         if count == 1 { "" } else { "s" }
     );
+}
+
+/// Resolve the source's ref to a full commit SHA for the install record.
+///
+/// A pinned full SHA is its own resolution (no network). Tags, branches,
+/// and the unpinned default branch resolve through the GitHub commits API.
+/// Resolution failure degrades to `None` with a warning: the content
+/// sha256 still pins the installed bytes; only the ref-to-commit audit
+/// trail is lost.
+async fn resolve_commit_sha(skill_source: &SkillSource) -> Option<String> {
+    if skill_source.ref_is_full_sha() {
+        return skill_source.git_ref.as_deref().map(str::to_lowercase);
+    }
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/commits/{}",
+        skill_source.owner,
+        skill_source.repo,
+        skill_source.git_ref.as_deref().unwrap_or("main")
+    );
+    let result = tokio::task::spawn_blocking(move || -> Result<String, String> {
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(std::time::Duration::from_secs(5))
+            .timeout_read(std::time::Duration::from_secs(10))
+            .timeout_write(std::time::Duration::from_secs(5))
+            .build();
+        let response = agent
+            .get(&url)
+            // This media type returns the bare commit SHA as text.
+            .set("Accept", "application/vnd.github.sha")
+            .set("User-Agent", "kx-skills")
+            .call()
+            .map_err(|e| e.to_string())?;
+        let mut sha = String::new();
+        response
+            .into_reader()
+            .take(64)
+            .read_to_string(&mut sha)
+            .map_err(|e| e.to_string())?;
+        let sha = sha.trim().to_lowercase();
+        if sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+            Ok(sha)
+        } else {
+            Err(format!("unexpected commit API response shape: {sha:.40}"))
+        }
+    })
+    .await;
+
+    match result {
+        Ok(Ok(sha)) => Some(sha),
+        Ok(Err(e)) => {
+            eprintln!(
+                "  {} could not resolve ref to a commit SHA ({e});                  recording content hash only",
+                "warning:".yellow()
+            );
+            None
+        }
+        Err(e) => {
+            eprintln!(
+                "  {} commit resolution task failed ({e}); recording content hash only",
+                "warning:".yellow()
+            );
+            None
+        }
+    }
 }
 
 pub async fn add_skill(
@@ -208,6 +272,11 @@ pub async fn add_skill(
 
     let sha256 = compute_sha256(&body);
 
+    let resolved_commit = resolve_commit_sha(&skill_source).await;
+    if let Some(ref sha) = resolved_commit {
+        println!("  {} {}", "Commit:".dimmed(), sha);
+    }
+
     let installed = InstalledSkill {
         name: skill_manifest.name.clone(),
         source: new_source,
@@ -217,6 +286,8 @@ pub async fn add_skill(
         trust,
         granted_permissions: resolved.granted,
         denied_permissions: resolved.denied,
+        requested_ref: skill_source.git_ref.clone(),
+        resolved_commit,
     };
 
     log_event(

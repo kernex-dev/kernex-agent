@@ -96,6 +96,8 @@ pub fn install_builtin_skills(data_dir: &Path) -> anyhow::Result<usize> {
             trust: TrustLevel::Trusted,
             granted_permissions: granted,
             denied_permissions: BTreeSet::new(),
+            requested_ref: None,
+            resolved_commit: None,
         });
 
         installed += 1;
