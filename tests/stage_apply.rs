@@ -362,3 +362,64 @@ async fn registration_failure_reports_prior_file_in_partial() {
         "partial receipts must include the file written before the failure"
     );
 }
+
+#[tokio::test]
+#[cfg(unix)]
+async fn apply_refuses_write_through_planted_symlink() {
+    // A symlink planted at a target path must refuse the write outright:
+    // following it would redirect the configurator's bytes to wherever
+    // the link points (and report the victim path in the receipt).
+    let tmp = TempDir::new().unwrap();
+    let audit = AuditWriter::new(tmp.path()).unwrap();
+    let opts = options(tmp.path().to_path_buf());
+    let plan = plan_for(tmp.path());
+
+    let victim = tmp.path().join("victim.txt");
+    fs::write(&victim, "untouched").unwrap();
+    let target = tmp.path().join(".claude/CLAUDE.md");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&victim, &target).unwrap();
+
+    let backup = run_backup(&opts, &plan, &audit).await;
+    let reg = RecordingRegistrar::new();
+    let result = stage_apply::run(&opts, &plan, &backup, &audit, &reg).await;
+
+    assert!(result.is_err(), "write through a symlink was not refused");
+    let msg = format!("{:?}", result.err().unwrap());
+    assert!(msg.contains("symlink"), "unexpected error shape: {msg}");
+    assert_eq!(
+        fs::read_to_string(&victim).unwrap(),
+        "untouched",
+        "the symlink referent was modified"
+    );
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn backup_archives_symlink_as_link_not_referent() {
+    // A symlink among the backup targets must be archived as the link
+    // itself, never as the pointed-to file's bytes: otherwise the restore
+    // would write foreign content back over the target path.
+    let tmp = TempDir::new().unwrap();
+    let audit = AuditWriter::new(tmp.path()).unwrap();
+    let opts = options(tmp.path().to_path_buf());
+    let plan = plan_for(tmp.path());
+
+    let secret = tmp.path().join("secret.txt");
+    fs::write(&secret, "TARBALL-MUST-NOT-CONTAIN-THIS").unwrap();
+    let target = tmp.path().join(".claude/CLAUDE.md");
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&secret, &target).unwrap();
+
+    let receipt = run_backup(&opts, &plan, &audit).await;
+
+    let raw = fs::read(&receipt.tarball_path).unwrap();
+    let mut decoder = flate2::read::GzDecoder::new(&raw[..]);
+    let mut decompressed = Vec::new();
+    std::io::Read::read_to_end(&mut decoder, &mut decompressed).unwrap();
+    let haystack = String::from_utf8_lossy(&decompressed);
+    assert!(
+        !haystack.contains("TARBALL-MUST-NOT-CONTAIN-THIS"),
+        "backup embedded the symlink referent's bytes"
+    );
+}

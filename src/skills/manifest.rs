@@ -107,6 +107,10 @@ pub fn skill_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("skills")
 }
 
+/// File-permission hardening is Unix-only: on non-Unix targets this is a
+/// no-op and the manifest's confidentiality relies on the platform's
+/// default ACLs. Recorded limitation; Windows ACL management is not
+/// implemented.
 #[cfg(unix)]
 fn tighten_perms(path: &Path) {
     use std::os::unix::fs::PermissionsExt;

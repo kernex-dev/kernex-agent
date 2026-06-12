@@ -307,6 +307,18 @@ fn render_and_write(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    // Refuse to write through a symlink: a link planted at the target path
+    // (e.g. ~/.claude/CLAUDE.md -> ~/.ssh/authorized_keys) would otherwise
+    // redirect this write to wherever it points. symlink_metadata does not
+    // follow, so the check sees the link itself.
+    if let Ok(meta) = fs::symlink_metadata(path) {
+        if meta.file_type().is_symlink() {
+            return Err(InstallError::Permanent(format!(
+                "refusing to write through symlink at {} (replace the link                  with a regular file to proceed)",
+                path.display()
+            )));
+        }
+    }
     fs::write(path, &final_bytes)?;
 
     let mut hasher = Sha256::new();
