@@ -19,59 +19,111 @@ recommended remediation; backports are not provided.
 
 | Version | Supported |
 |---------|-----------|
-| 0.5.x   | Yes       |
-| < 0.5   | No        |
+| 0.6.x   | Yes       |
+| < 0.6   | No        |
 
 ## Security Model
 
-kx inherits security from kernex-runtime:
+What follows describes enforced behavior, not aspirations. Platform limits
+and deliberate trade-offs are stated below so operators do not assume
+stronger guarantees than the implementation provides.
 
-1. **OS-level sandbox** — Seatbelt (macOS), Landlock (Linux)
-2. **Code-level enforcement** — Path validation via SandboxProfile
-3. **No credential storage** — API keys are read from environment variables only; never written to disk by kx
-4. **Skills integrity** — SHA-256 hash verified on install; `kx skills verify` detects post-install tampering
-5. **Skills audit log** — all install/remove/verify operations logged to `~/.kernex/audit.log`
+### Tool execution is sandboxed, fail-closed
 
-## Best Practices
+kx builds every provider with OS-level sandbox enforcement REQUIRED: on a
+host that cannot apply Seatbelt (macOS) or Landlock (Linux 5.13+), agent
+tool subprocesses are refused rather than silently run unsandboxed.
+Inside the sandbox (enforced by the kernex crates):
 
-- Keep your AI provider's CLI or SDK updated
-- Don't run kx as root
-- Review `.kx.toml` before using third-party project configs
-- Review skill permissions before installing community skills (`kx skills add` shows granted/denied permissions before writing anything)
-- Use `kx skills verify` after installing skills from untrusted sources
+- Subprocesses start from a cleared environment plus a minimal base
+  allowlist; provider API keys never reach them implicitly.
+- Writes inside `$HOME` are denied outside the workspace/data, temp, and
+  toolchain cache dirs; credential stores (`~/.ssh`, `~/.aws`,
+  `~/.gnupg`, and friends) are read-denied.
+- Network egress is denied by default; a tool gets it only by declaring
+  `network = true`. Full socket coverage on macOS; TCP-only on Linux
+  6.7+ (older kernels cannot restrict the network and the gap is logged
+  at spawn time). UDP and non-TCP sockets are never restricted on Linux.
+
+### Skills
+
+- **Ref pinning** — `kx skills add owner/repo@<sha|tag>` installs that
+  exact ref; the manifest records the requested ref and the resolved
+  commit SHA alongside the content SHA-256.
+- **Integrity** — SHA-256 verified on install; `kx skills verify` detects
+  post-install tampering. Install/remove/verify operations are logged to
+  the audit log.
+- **Enforced runtime permissions** — the `[permissions]` a skill declares
+  in its frontmatter are enforced by the runtime, not advisory: the
+  command allow-list is checked at load time and re-checked by the tool
+  executor immediately before every spawn; only declared environment
+  variable names pass through to the tool subprocess (dynamic-linker
+  names are refused even when declared); network access requires the
+  declared opt-in.
+- **Configurator write safety** — installs refuse to write through
+  symlinked targets, and backups archive symlinks as links, so a planted
+  link can neither redirect writes nor smuggle foreign content into a
+  restore.
+
+### Release integrity
+
+Standalone binaries ship with a `SHA256SUMS` file and per-artifact
+sigstore attestations (SLSA v1 provenance, signed via GitHub's OIDC
+identity). Verify before running:
+
+```
+shasum -a 256 -c SHA256SUMS
+gh attestation verify kx-<version>-<target>.tar.gz --repo kernex-dev/kernex-agent
+```
+
+The Docker image carries the same provenance pattern (SLSA + SBOM,
+verifiable with `cosign verify-attestation`).
+
+### Credentials
+
+API keys are read from environment variables only; kx never writes them
+to disk.
+
+## Deployment Warnings (read before exposing kx serve)
+
+- **`kx serve` has no TLS and no rate limiting.** It speaks plain HTTP
+  and serves requests as fast as they arrive. Run it behind a reverse
+  proxy (Caddy, nginx) that terminates TLS and enforces rate limits, and
+  always set `--auth-token`. Never expose a bare `kx serve` port to an
+  untrusted network.
+- **Job results are stored in plaintext at rest** (`jobs.db` under the kx
+  data directory). Anything an agent reads or produces during a serve job
+  lands there unencrypted; rely on full-disk encryption and filesystem
+  permissions for at-rest protection, and scrub the data directory when
+  decommissioning a host. This is an accepted, documented trade-off: an
+  encrypted store would not protect against an attacker who can already
+  read the same user's files, which is outside kx's threat model.
 
 ## Threat Model Caveats
 
-These limitations are deliberate trade-offs. They are documented here so
-operators do not assume stronger guarantees than the implementation
-provides.
+These limitations are deliberate trade-offs, documented so operators do
+not assume stronger guarantees than the implementation provides.
 
 ### Skills SHA-256 manifest is integrity, not authenticity
 
 The hashes recorded by `kx skills add` are TOFU (Trust On First Use).
-They detect post-install tampering of files on disk and they detect a
-network-tampered initial download if the hash you compare against came
-from a separate trusted channel. They do **not** prove that the entity
-who published the skill is who they claim to be. There is no signature
-verification today. If you install a skill from a compromised upstream,
-the manifest will faithfully record the compromised content.
+They detect post-install tampering and, combined with a commit-SHA pin,
+they make the install reproducible and auditable. They do **not** prove
+that the entity who published the skill is who they claim to be; there is
+no publisher signature verification today. If you install a skill from a
+compromised upstream, the manifest will faithfully record the compromised
+content.
 
-Guidance: only install skills from sources you have evaluated, prefer
-sources that publish their own out-of-band hashes, and re-run `kx skills
-verify` after upgrades.
+Guidance: pin installs to a commit SHA, only install skills from sources
+you have evaluated, and re-run `kx skills verify` after upgrades.
 
-### Skill permission model is advisory
+### The kx hook layer is observability, not the permission gate
 
-`SKILL.md` frontmatter declares the tools, paths, and commands a skill
-expects to use. The kx runtime's `HookRunner` currently logs (when
-`--verbose` is on) and otherwise allows every tool call. Path-traversal
-and shell-metacharacter blocks happen earlier in `kernex-skills` and at
-the OS sandbox layer (Seatbelt/Landlock), so a skill cannot escape the
-sandbox just because the hook said yes. But the per-tool allow-list in
-`SKILL.md` is documentation, not a runtime gate.
-
-Guidance: treat `SKILL.md` permissions as contract-with-the-author, not
-runtime enforcement. Trust skills accordingly.
+kx's `HookRunner` logs tool calls (with `--verbose`) and allows them; it
+is not where permissions are enforced. Enforcement lives below it: the
+skill loader's validation chain, the executor's pre-spawn allow-list
+re-check, and the OS sandbox. A skill cannot bypass those layers by the
+hook saying yes.
 
 ### Builtin skills are auto-trusted
 
@@ -86,12 +138,23 @@ confirmation. If you do not want builtins on a host, either skip
 
 `kx serve` chmods its SQLite job database to `0o600` and its data
 directory to `0o700` at startup so other local accounts cannot read
-queued messages, provider responses, or webhook payloads. This
-hardening is `#[cfg(unix)]` only; on Windows the equivalent ACL
-restrictions are not applied today, and the files inherit whatever
-default ACL the parent directory grants.
+queued messages, provider responses, or webhook payloads, and the skills
+manifest applies the same `0o600` discipline. This hardening is
+`#[cfg(unix)]` only; on Windows the equivalent ACL restrictions are not
+applied today, and the files inherit whatever default ACL the parent
+directory grants.
 
 Guidance: if you run `kx serve` on Windows, treat the data directory
 (`%LOCALAPPDATA%\kernex\projects\serve\`) as needing manual ACL
-hardening, or run the daemon under a dedicated low-privilege user
-whose profile is not readable by others.
+hardening, or run the daemon under a dedicated low-privilege user whose
+profile is not readable by others.
+
+## Best Practices
+
+- Keep your AI provider's CLI or SDK updated
+- Don't run kx as root
+- Review `.kx.toml` before using third-party project configs
+- Review skill permissions before installing community skills (`kx skills
+  add` shows granted/denied permissions before writing anything)
+- Pin skills to a commit SHA for reproducible installs
+- Use `kx skills verify` after installing skills from untrusted sources
