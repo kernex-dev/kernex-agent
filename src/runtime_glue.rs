@@ -70,6 +70,18 @@ pub struct ProviderFlags {
     pub verbose: bool,
 }
 
+/// Sandbox posture for every provider kx builds: OS-level enforcement is
+/// required, never best-effort. A host that cannot apply Seatbelt (macOS)
+/// or Landlock (Linux 5.13+) refuses to spawn agent tool subprocesses
+/// instead of silently running them unsandboxed. Embedders of the kernex
+/// crates choose their own posture; kx as a product chooses fail-closed.
+pub fn sandbox_profile() -> kernex_sandbox::SandboxProfile {
+    kernex_sandbox::SandboxProfile {
+        require_os_enforcement: true,
+        ..Default::default()
+    }
+}
+
 pub fn context_needs(no_memory: bool) -> ContextNeeds {
     if no_memory {
         ContextNeeds::default()
@@ -134,6 +146,7 @@ pub fn build_provider(
             .max_tokens
             .or_else(|| config.provider.as_ref().and_then(|pc| pc.max_tokens)),
         workspace_path: cwd,
+        sandbox_profile: Some(sandbox_profile()),
         ..Default::default()
     };
 
@@ -262,4 +275,17 @@ pub fn data_dir_for(project_name: &str) -> PathBuf {
         }
     };
     base.join(".kx").join("projects").join(project_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sandbox_profile_requires_os_enforcement() {
+        // kx's fail-closed posture: every provider gets a profile that
+        // refuses unsandboxed tool subprocesses. If this flag ever flips
+        // back to best-effort it must be a deliberate, reviewed change.
+        assert!(sandbox_profile().require_os_enforcement);
+    }
 }
