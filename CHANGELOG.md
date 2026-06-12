@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped `kernex-*` dependencies to 0.10.0 (mid-loop token budget and the scheduled-task claim/run-history store surface). See the [kernex-dev CHANGELOG](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md) for upstream changes.
+
 ## [0.6.1] - 2026-06-12
 
 ### Fixed
