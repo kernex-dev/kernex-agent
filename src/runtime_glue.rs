@@ -138,17 +138,15 @@ pub fn build_provider(
 
     let label = display_model(&provider_name, model.as_deref());
 
-    let kx_config = KxProviderConfig {
+    let kx_config = base_provider_config(
         base_url,
         api_key,
         model,
-        max_tokens: flags
+        flags
             .max_tokens
             .or_else(|| config.provider.as_ref().and_then(|pc| pc.max_tokens)),
-        workspace_path: cwd,
-        sandbox_profile: Some(sandbox_profile()),
-        ..Default::default()
-    };
+        cwd,
+    );
 
     let provider = ProviderFactory::create(&provider_name, kx_config).map_err(|e| {
         let msg = e.to_string();
@@ -164,6 +162,28 @@ pub fn build_provider(
         }
     })?;
     Ok((provider, label))
+}
+
+/// Assemble the provider config every kx entry point shares. REPL,
+/// one-shot, and serve all construct providers through [`build_provider`],
+/// so this is the single place the fail-closed sandbox posture is
+/// attached; the test below pins that it cannot be dropped silently.
+fn base_provider_config(
+    base_url: Option<String>,
+    api_key: Option<String>,
+    model: Option<String>,
+    max_tokens: Option<u32>,
+    workspace_path: Option<PathBuf>,
+) -> KxProviderConfig {
+    KxProviderConfig {
+        base_url,
+        api_key,
+        model,
+        max_tokens,
+        workspace_path,
+        sandbox_profile: Some(sandbox_profile()),
+        ..Default::default()
+    }
 }
 
 fn display_model(provider: &str, model: Option<&str>) -> String {
@@ -287,5 +307,17 @@ mod tests {
         // refuses unsandboxed tool subprocesses. If this flag ever flips
         // back to best-effort it must be a deliberate, reviewed change.
         assert!(sandbox_profile().require_os_enforcement);
+    }
+
+    #[test]
+    fn every_provider_config_carries_the_fail_closed_profile() {
+        // REPL, one-shot, AND serve construct providers through
+        // build_provider -> base_provider_config, so this seam is the
+        // serve path's sandbox threading. The profile must be present
+        // and fail-closed; egress stays deny-by-default.
+        let cfg = base_provider_config(None, None, None, None, None);
+        let profile = cfg.sandbox_profile.expect("sandbox profile missing");
+        assert!(profile.require_os_enforcement);
+        assert!(!profile.allow_network, "egress must default to deny");
     }
 }

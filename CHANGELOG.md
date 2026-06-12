@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-12
+
+### Security
+
+- **Fail-closed tool execution.** Every provider kx builds now requires
+  OS-level sandbox enforcement: hosts that cannot apply Seatbelt (macOS) or
+  Landlock (Linux 5.13+) refuse to spawn agent tool subprocesses instead of
+  silently running them unsandboxed. With `kernex-* 0.9.0`, tool
+  subprocesses run with subprocess environment isolation, a `$HOME` write
+  lockdown plus credential read-deny list, and network egress denied by
+  default with a per-tool `network = true` opt-in (full coverage on macOS;
+  TCP-only on Linux 6.7+, with the older-kernel gap logged).
+- **Skill ref pinning.** `kx skills add owner/repo@<sha|tag>` installs that
+  exact ref; the manifest records the requested ref and the resolved commit
+  SHA alongside the content SHA-256.
+- **Symlink-safe configurator.** Installs refuse to write through symlinked
+  targets, and backups archive symlinks as links, so a planted link can
+  neither redirect writes nor smuggle foreign content into a restore.
+- **Signed releases.** Standalone binaries ship with `SHA256SUMS` and
+  per-artifact sigstore attestations (SLSA v1 via GitHub OIDC); the release
+  workflow gains a non-publishing dry-run entry point.
+- **SECURITY.md rewritten** to describe enforced behavior, deployment
+  warnings (`kx serve` TLS/rate-limiting posture, plaintext-at-rest
+  `jobs.db`), and the updated threat-model caveats.
+
+### Changed
+
+- **Bumped to `kernex-* 0.9.0`.** See the
+  [kernex-dev CHANGELOG `[0.9.0]`](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md)
+  for the upstream security-hardening and provider-correctness notes
+  (subprocess env isolation, sandbox scope, egress policy, enforced skill
+  permissions, hardened MCP command validation, SSRF resolve-time pinning,
+  adaptive thinking, SSE rebuild, pricing and model-default fixes).
+
 ### Added
 
 - **Codex CLI adapter (opt-in, behind `--features agent-codex`).** Wires kernex into OpenAI Codex CLI. `kx install --agent codex --preset solo-dev` resolves to three components: `config-toml` (writes `~/.codex/config.toml` with `[mcp_servers.kernex]` upserted via `toml_edit`, preserving non-kernex entries byte-for-byte), `agents-md` (writes `<cwd>/AGENTS.md` with a `<!-- kernex:begin -->` / `<!-- kernex:end -->` marker block, leaving the rest of the file untouched), and `output-style` (writes `~/.codex/output-style.md`). New `merge_codex_config_toml` and `merge_marker_block` helpers cover the merge semantics; the latter lives in `src/adapters/shared.rs` for reuse by the upcoming OpenCode, Cursor, and Cline adapter sprints. Detection uses the new `Detection::with_project_root` constructor (kernex-adapter-core 0.8.3) so the cwd at `kx install` time flows through into the Stage 5 plan as the project-local allowlisted root per ADR-001. New `delta-agent-codex` CI gate enforces a 800 KiB ceiling on macOS aarch64 per F-LOCK-03. Public docs at [docs/adapters/codex.md](docs/adapters/codex.md).
