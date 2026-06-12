@@ -356,7 +356,17 @@ fn is_valid_segment(s: &str) -> bool {
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-/// Parse a skill source string in "owner/repo" or "owner/repo/path/to/skill" format.
+/// Validate a git ref pinned via `@`: commit SHAs, tags, or branch names.
+/// Slashes are rejected to keep the grammar unambiguous against the path
+/// segment (pin slash-named branches by commit SHA instead).
+fn is_valid_git_ref(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+/// Parse a skill source string: "owner/repo", "owner/repo/path/to/skill",
+/// optionally pinned with a trailing "@<sha|tag|branch>".
 pub fn parse_source(input: &str) -> Result<SkillSource, SkillParseError> {
     let input = input.trim();
 
@@ -365,6 +375,19 @@ pub fn parse_source(input: &str) -> Result<SkillSource, SkillParseError> {
             "source must not be empty".to_string(),
         ));
     }
+
+    // Split off an optional trailing ref pin before path parsing.
+    let (input, git_ref) = match input.rsplit_once('@') {
+        Some((base, r)) => {
+            if !is_valid_git_ref(r) {
+                return Err(SkillParseError::InvalidSource(format!(
+                    "invalid ref '{r}' after '@': only alphanumeric, hyphens,                      underscores, and dots are allowed (pin slash-named                      branches by commit SHA)"
+                )));
+            }
+            (base, Some(r.to_string()))
+        }
+        None => (input, None),
+    };
 
     let parts: Vec<&str> = input.splitn(3, '/').collect();
 
@@ -410,6 +433,7 @@ pub fn parse_source(input: &str) -> Result<SkillSource, SkillParseError> {
         owner: owner.to_string(),
         repo: repo.to_string(),
         path,
+        git_ref,
     })
 }
 
@@ -580,6 +604,37 @@ content
     fn parse_source_empty() {
         assert!(parse_source("").is_err());
         assert!(parse_source("onlyone").is_err());
+    }
+
+    #[test]
+    fn parse_source_with_ref_pin() {
+        let src = parse_source("acme/repo@v1.2.3").unwrap();
+        assert_eq!(src.owner, "acme");
+        assert_eq!(src.repo, "repo");
+        assert_eq!(src.git_ref.as_deref(), Some("v1.2.3"));
+        assert!(!src.ref_is_full_sha());
+
+        let sha = "868b34b3ee9f773d1b6ad57740db951039f3e53c";
+        let src = parse_source(&format!("acme/repo/skills/rust@{sha}")).unwrap();
+        assert_eq!(src.path.as_deref(), Some("skills/rust"));
+        assert_eq!(src.git_ref.as_deref(), Some(sha));
+        assert!(src.ref_is_full_sha());
+        assert!(src.raw_url().contains(&format!("/{sha}/")));
+    }
+
+    #[test]
+    fn parse_source_unpinned_defaults_to_main() {
+        let src = parse_source("acme/repo").unwrap();
+        assert_eq!(src.git_ref, None);
+        assert!(src.raw_url().contains("/main/"));
+    }
+
+    #[test]
+    fn parse_source_rejects_bad_refs() {
+        assert!(parse_source("acme/repo@").is_err());
+        assert!(parse_source("acme/repo@feature/branch").is_err());
+        assert!(parse_source("acme/repo@v1;rm").is_err());
+        assert!(parse_source("acme/repo@a b").is_err());
     }
 
     #[test]

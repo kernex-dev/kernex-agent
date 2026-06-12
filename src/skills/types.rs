@@ -154,6 +154,16 @@ pub struct InstalledSkill {
     pub trust: TrustLevel,
     pub granted_permissions: BTreeSet<Permission>,
     pub denied_permissions: BTreeSet<Permission>,
+    /// The ref the user pinned at install time (`owner/repo@<ref>`), as
+    /// given. `None` for unpinned installs (default branch).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_ref: Option<String>,
+    /// The full commit SHA the install actually resolved to. Recorded so a
+    /// moving tag or branch can be audited after the fact. `None` when
+    /// resolution was unavailable (offline, API limit) - the content
+    /// `sha256` above still pins the bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_commit: Option<String>,
 }
 
 /// Source reference for a skill on GitHub.
@@ -162,16 +172,29 @@ pub struct SkillSource {
     pub owner: String,
     pub repo: String,
     pub path: Option<String>,
+    /// Git ref to fetch (`owner/repo@<sha|tag|branch>`). `None` fetches the
+    /// default branch (`main`), which is a moving target - pin for
+    /// reproducible installs.
+    pub git_ref: Option<String>,
 }
 
 impl SkillSource {
     pub fn raw_url(&self) -> String {
         let default_path = format!("skills/{}", self.inferred_skill_name());
         let path = self.path.as_deref().unwrap_or(&default_path);
+        let git_ref = self.git_ref.as_deref().unwrap_or("main");
         format!(
-            "https://raw.githubusercontent.com/{}/{}/main/{}/SKILL.md",
-            self.owner, self.repo, path
+            "https://raw.githubusercontent.com/{}/{}/{}/{}/SKILL.md",
+            self.owner, self.repo, git_ref, path
         )
+    }
+
+    /// True when the pinned ref is already a full 40-hex commit SHA, in
+    /// which case no remote resolution is needed.
+    pub fn ref_is_full_sha(&self) -> bool {
+        self.git_ref
+            .as_deref()
+            .is_some_and(|r| r.len() == 40 && r.bytes().all(|b| b.is_ascii_hexdigit()))
     }
 
     pub fn display_source(&self) -> String {
@@ -264,6 +287,7 @@ mod tests {
             owner: "acme".to_string(),
             repo: "my-skill".to_string(),
             path: None,
+            git_ref: None,
         };
         assert_eq!(
             source.raw_url(),
@@ -277,6 +301,7 @@ mod tests {
             owner: "acme".to_string(),
             repo: "skills-repo".to_string(),
             path: Some("skills/rust".to_string()),
+            git_ref: None,
         };
         assert_eq!(
             source.raw_url(),
@@ -290,6 +315,7 @@ mod tests {
             owner: "acme".to_string(),
             repo: "my-skill".to_string(),
             path: None,
+            git_ref: None,
         };
         assert_eq!(source.to_string(), "acme/my-skill");
 
@@ -297,6 +323,7 @@ mod tests {
             owner: "acme".to_string(),
             repo: "repo".to_string(),
             path: Some("path/to/skill".to_string()),
+            git_ref: None,
         };
         assert_eq!(source_with_path.to_string(), "acme/repo/path/to/skill");
     }

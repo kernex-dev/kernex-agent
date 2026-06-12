@@ -407,9 +407,11 @@ pub enum PipelineAction {
 pub enum SkillsAction {
     /// List installed skills
     List,
-    /// Add a skill from GitHub (owner/repo or owner/repo/path)
+    /// Add a skill from GitHub (owner/repo or owner/repo/path, optionally
+    /// pinned with @<tag|commit-sha> for reproducible installs)
     Add {
-        /// Skill source (e.g., acme/my-skill or acme/repo/skills/rust)
+        /// Skill source (e.g., acme/my-skill, acme/repo/skills/rust, or
+        /// acme/my-skill@v1.2.0 / acme/my-skill@<commit-sha>)
         source: String,
         /// Trust level to assign (sandboxed, standard, trusted)
         #[arg(short, long, default_value = "sandboxed")]

@@ -180,6 +180,8 @@ mod tests {
             trust: TrustLevel::Sandboxed,
             granted_permissions: BTreeSet::new(),
             denied_permissions: BTreeSet::new(),
+            requested_ref: None,
+            resolved_commit: None,
         }
     }
 
@@ -312,6 +314,8 @@ mod tests {
             trust: TrustLevel::Standard,
             granted_permissions: perms,
             denied_permissions: BTreeSet::new(),
+            requested_ref: None,
+            resolved_commit: None,
         });
 
         manifest.save(tmp).unwrap();
@@ -350,6 +354,8 @@ mod tests {
             trust: TrustLevel::Sandboxed,
             granted_permissions: BTreeSet::new(),
             denied_permissions: BTreeSet::new(),
+            requested_ref: None,
+            resolved_commit: None,
         };
 
         match verify_skill(tmp, &skill) {
@@ -376,6 +382,8 @@ mod tests {
             trust: TrustLevel::Sandboxed,
             granted_permissions: BTreeSet::new(),
             denied_permissions: BTreeSet::new(),
+            requested_ref: None,
+            resolved_commit: None,
         };
 
         match verify_skill(tmp, &skill) {
@@ -398,6 +406,8 @@ mod tests {
             trust: TrustLevel::Sandboxed,
             granted_permissions: BTreeSet::new(),
             denied_permissions: BTreeSet::new(),
+            requested_ref: None,
+            resolved_commit: None,
         };
 
         match verify_skill(tmp, &skill) {

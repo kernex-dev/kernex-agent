@@ -228,6 +228,8 @@ mod tests {
                 trust,
                 granted_permissions: granted,
                 denied_permissions: denied,
+                requested_ref: None,
+                resolved_commit: None,
             },
             content: content.to_string(),
             domain: None,
