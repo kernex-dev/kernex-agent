@@ -116,6 +116,12 @@ fn build_backup(
     let file = File::create(&tarball_path)?;
     let encoder = GzEncoder::new(file, Compression::default());
     let mut builder = tar::Builder::new(encoder);
+    // Archive symlinks as links, never their referents: with following on
+    // (the default), a link planted among the targets would embed the
+    // POINTED-TO file's bytes under the target's name, and the restore
+    // (`tar -xzf -C /`) would then write that foreign content back over
+    // the target path. Restoring the link itself is the faithful backup.
+    builder.follow_symlinks(false);
 
     let mut included: Vec<PathBuf> = Vec::new();
     for (_, path) in &plan.target_paths {
