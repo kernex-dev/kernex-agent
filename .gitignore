@@ -25,6 +25,7 @@ logs/
 .vscode/
 !.vscode/extensions.json
 !.vscode/settings.json
+.continue/
 *.swp
 *.swo
 *~
