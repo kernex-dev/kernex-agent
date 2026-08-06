@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Bumped `anyhow` to 1.0.104, closing RUSTSEC-2026-0190 (unsoundness in
+  `Error::downcast_mut`). `anyhow` is a direct dependency of `kx`.
+- Bumped `quinn-proto` to 0.11.16, closing RUSTSEC-2026-0185 (remote memory
+  exhaustion from unbounded out-of-order stream reassembly, 7.5 high). The
+  crate is present in `Cargo.lock` but is not in the build graph for any
+  supported target, so released binaries were never exposed; the bump keeps
+  `cargo audit` and `cargo deny` clean.
+
+Both changes are lockfile-only, with no source changes.
+
 ### Changed
 
 - Bumped `kernex-*` dependencies to 0.10.0 (mid-loop token budget and the scheduled-task claim/run-history store surface). See the [kernex-dev CHANGELOG](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md) for upstream changes.
