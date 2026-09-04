@@ -6,4 +6,16 @@
 # sqlx-macros-core compiles sqlx-mysql at build time even when only the
 # sqlite feature is enabled. MySQL is never used or activated at runtime.
 # Risk is accepted because the vulnerable code path is never executed.
-ignore = ["RUSTSEC-2023-0071"]
+#
+# RUSTSEC-2026-0253: use-after-free in `lru` 0.12.5 `LruCache::pop()`.
+# Patched in lru >= 0.18.2, which no 0.12.x release backports, so
+# `cargo update -p lru` cannot resolve it. lru reaches kx only via
+# `ratatui 0.29.0 -> lru ^0.12.0`, behind the optional `tui` feature,
+# which is a placeholder with no source under any default build.
+# Clearing it needs ratatui 0.30.x, whose rust-version is 1.88.0 against
+# this crate's declared 1.74 and which splits into ratatui-core /
+# ratatui-widgets, so it is a breaking manifest change, not a lockfile
+# bump. TIME-BOX: revisit by 2026-12-31 or when the `tui` feature gets
+# real source, whichever comes first. Drop this entry the moment either
+# happens; do not renew it silently.
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0253"]
