@@ -52,11 +52,41 @@ pub struct JobStats {
     pub total: usize,
 }
 
+/// A queued or running job older than this, or a stretch this long with
+/// pending work and no completion at all, degrades `/health`.
+///
+/// Sized so a slow agent run does not trip it while a wedged worker or a
+/// provider that never answers shows up within a few container healthcheck
+/// intervals.
+pub const STALE_AFTER_SECS: u64 = 900;
+
+/// Set when a queued or running job has been pending longer than
+/// [`STALE_AFTER_SECS`].
+pub const FLAG_STALE_PENDING_JOB: &str = "stale_pending_job";
+
+/// Set alongside [`FLAG_STALE_PENDING_JOB`] when nothing at all reached a
+/// terminal status within [`STALE_AFTER_SECS`]. One stuck job raises only
+/// the first flag; both together mean the daemon, not one job, is wedged.
+pub const FLAG_STALE_COMPLETION: &str = "stale_completion";
+
 #[derive(Debug, Serialize)]
 pub struct HealthResponse {
+    /// `"ok"` while `flags` is empty, `"degraded"` otherwise. Never absent,
+    /// so existing consumers keep the field they already read.
     pub status: &'static str,
     pub version: &'static str,
     pub jobs: JobStats,
+    /// Most recent terminal transition (done, flagged or failed) still held
+    /// in the in-memory store. `None` when nothing has finished since this
+    /// process started, which is also the state of a freshly booted daemon.
+    pub last_job_completed_at: Option<String>,
+    /// The staleness threshold in effect, so a caller can reason about the
+    /// flags without hardcoding the constant.
+    pub stale_after_secs: u64,
+    /// Explicit staleness reasons. Empty means healthy. Named flags rather
+    /// than a binary up/down so an operator can tell WHY the daemon
+    /// degraded without correlating logs.
+    pub flags: Vec<&'static str>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,11 +107,76 @@ pub async fn handle_health(State(state): State<AppState>) -> Json<HealthResponse
             JobStatus::Failed => stats.failed += 1,
         }
     }
+
+    // `iso_timestamp` is fixed-width UTC, so these compare chronologically
+    // as plain strings. `evict_oldest_finished` already relies on the same
+    // property.
+    let last_job_completed_at = store
+        .values()
+        .filter(|j| {
+            matches!(
+                j.status,
+                JobStatus::Done | JobStatus::Flagged | JobStatus::Failed
+            )
+        })
+        .filter_map(|j| j.finished_at.as_deref())
+        .max();
+    let oldest_pending = store
+        .values()
+        .filter(|j| matches!(j.status, JobStatus::Queued | JobStatus::Running))
+        .map(|j| j.created_at.as_str())
+        .min();
+
+    let flags = health_flags(
+        last_job_completed_at,
+        oldest_pending,
+        &utils::iso_timestamp_at(utils::unix_now_secs().saturating_sub(STALE_AFTER_SECS)),
+    );
+
     Json(HealthResponse {
-        status: "ok",
+        status: if flags.is_empty() { "ok" } else { "degraded" },
         version: env!("CARGO_PKG_VERSION"),
         jobs: stats,
+        last_job_completed_at: last_job_completed_at.map(str::to_string),
+        stale_after_secs: STALE_AFTER_SECS,
+        flags,
     })
+}
+
+/// Decide which staleness flags apply, given the newest terminal timestamp,
+/// the oldest still-pending job's creation time, and the ISO cutoff below
+/// which a timestamp counts as stale.
+///
+/// Degradation is anchored on one fact: work that went in and has not come
+/// out. That is the shape a dead or hung provider takes from the outside,
+/// and it keeps the two false positives that matter off the endpoint. An
+/// idle daemon stays healthy, because with nothing pending there is nothing
+/// to be late. A freshly booted daemon working its first job stays healthy
+/// too, because that job has not yet aged past the threshold.
+fn health_flags(
+    last_completed: Option<&str>,
+    oldest_pending: Option<&str>,
+    cutoff: &str,
+) -> Vec<&'static str> {
+    let mut flags = Vec::new();
+    let Some(oldest_pending) = oldest_pending else {
+        return flags;
+    };
+    if oldest_pending >= cutoff {
+        return flags;
+    }
+    flags.push(FLAG_STALE_PENDING_JOB);
+
+    // A single stuck job while others still finish is one bad job. Nothing
+    // finishing at all is the daemon.
+    let no_recent_completion = match last_completed {
+        Some(ts) => ts < cutoff,
+        None => true,
+    };
+    if no_recent_completion {
+        flags.push(FLAG_STALE_COMPLETION);
+    }
+    flags
 }
 
 const MAX_MESSAGE_BYTES: usize = 65_536; // 64 KiB
@@ -406,6 +501,62 @@ fn is_valid_webhook_event(event: &str) -> bool {
 mod tests {
     use super::*;
 
+    // -- /health staleness -------------------------------------------
+    //
+    // `/health` used to hardcode `status: "ok"`, so a daemon whose provider
+    // had died reported healthy for as long as it stayed up. These pin the
+    // conditions under which it now degrades, and the two idle cases that
+    // must NOT degrade.
+
+    const CUTOFF: &str = "2026-09-03T12:00:00Z";
+    const BEFORE_CUTOFF: &str = "2026-09-03T11:00:00Z";
+    const AFTER_CUTOFF: &str = "2026-09-03T13:00:00Z";
+
+    #[test]
+    fn health_flags_empty_when_nothing_is_pending() {
+        // Idle daemon, last job finished hours ago. Nothing is late,
+        // because nothing is owed.
+        assert!(health_flags(Some(BEFORE_CUTOFF), None, CUTOFF).is_empty());
+        assert!(health_flags(None, None, CUTOFF).is_empty());
+    }
+
+    #[test]
+    fn health_flags_empty_for_a_fresh_pending_job() {
+        // First job on a just-booted daemon: pending, nothing has ever
+        // completed, and that is normal.
+        assert!(health_flags(None, Some(AFTER_CUTOFF), CUTOFF).is_empty());
+    }
+
+    #[test]
+    fn health_flags_stale_pending_job_alone_when_others_still_finish() {
+        // One job wedged, but the daemon is still completing work.
+        let flags = health_flags(Some(AFTER_CUTOFF), Some(BEFORE_CUTOFF), CUTOFF);
+        assert_eq!(flags, vec![FLAG_STALE_PENDING_JOB]);
+    }
+
+    #[test]
+    fn health_flags_both_when_nothing_completes_at_all() {
+        // Work went in, nothing came out, nothing else finished either.
+        let flags = health_flags(Some(BEFORE_CUTOFF), Some(BEFORE_CUTOFF), CUTOFF);
+        assert_eq!(flags, vec![FLAG_STALE_PENDING_JOB, FLAG_STALE_COMPLETION]);
+
+        // Same, on a daemon that has never completed anything.
+        let flags = health_flags(None, Some(BEFORE_CUTOFF), CUTOFF);
+        assert_eq!(flags, vec![FLAG_STALE_PENDING_JOB, FLAG_STALE_COMPLETION]);
+    }
+
+    #[test]
+    fn health_cutoff_is_derived_from_the_threshold() {
+        // The cutoff `handle_health` builds must be STALE_AFTER_SECS in the
+        // past, and must compare against ISO timestamps as a plain string.
+        let now = utils::unix_now_secs();
+        let cutoff = utils::iso_timestamp_at(now.saturating_sub(STALE_AFTER_SECS));
+        let just_now = utils::iso_timestamp_at(now);
+        let long_ago = utils::iso_timestamp_at(now.saturating_sub(STALE_AFTER_SECS * 2));
+        assert!(just_now.as_str() > cutoff.as_str());
+        assert!(long_ago.as_str() < cutoff.as_str());
+    }
+
     #[test]
     fn webhook_event_validator_accepts_well_formed() {
         assert!(is_valid_webhook_event("github"));
@@ -474,12 +625,18 @@ mod tests {
                 failed: 1,
                 total: 7,
             },
+            last_job_completed_at: Some("2026-09-03T12:00:00Z".to_string()),
+            stale_after_secs: STALE_AFTER_SECS,
+            flags: Vec::new(),
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains("\"status\":\"ok\""));
         assert!(json.contains(&format!("\"version\":\"{}\"", env!("CARGO_PKG_VERSION"))));
         assert!(json.contains("\"jobs\":{"));
         assert!(json.contains("\"total\":7"));
+        assert!(json.contains("\"last_job_completed_at\":\"2026-09-03T12:00:00Z\""));
+        assert!(json.contains(&format!("\"stale_after_secs\":{STALE_AFTER_SECS}")));
+        assert!(json.contains("\"flags\":[]"));
     }
 
     #[test]

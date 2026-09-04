@@ -902,6 +902,104 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(json["status"], "ok");
         assert!(json["version"].is_string());
+        // Staleness fields are additive: the pre-existing ones above still
+        // read the same on an idle daemon.
+        assert_eq!(json["flags"].as_array().map(Vec::len), Some(0));
+        assert!(json["last_job_completed_at"].is_null());
+        assert_eq!(json["stale_after_secs"], routes::STALE_AFTER_SECS);
+    }
+
+    async fn health_json(state: AppState) -> serde_json::Value {
+        let app = build_app(state, TEST_MAX_BODY);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    fn stub_job(
+        id: &str,
+        status: JobStatus,
+        created_at: &str,
+        finished_at: Option<&str>,
+    ) -> jobs::Job {
+        jobs::Job {
+            id: id.to_string(),
+            status,
+            output: None,
+            error: None,
+            message: "stub".to_string(),
+            provider: "claude-code".to_string(),
+            project: None,
+            channel: None,
+            created_at: created_at.to_string(),
+            finished_at: finished_at.map(str::to_string),
+        }
+    }
+
+    #[tokio::test]
+    async fn health_degrades_when_a_job_has_been_pending_past_the_threshold() {
+        // The gap this closes: /health returned a hardcoded "ok", so a
+        // daemon whose provider had died reported healthy forever while the
+        // Dockerfile curled it every 30s.
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let stale = crate::utils::iso_timestamp_at(
+            crate::utils::unix_now_secs().saturating_sub(routes::STALE_AFTER_SECS * 4),
+        );
+        state.jobs.write().await.insert(
+            "stuck".to_string(),
+            stub_job("stuck", JobStatus::Running, &stale, None),
+        );
+
+        let json = health_json(state).await;
+        assert_eq!(json["status"], "degraded");
+        assert!(json["last_job_completed_at"].is_null());
+        let flags: Vec<String> = serde_json::from_value(json["flags"].clone()).unwrap();
+        assert_eq!(
+            flags,
+            vec![
+                routes::FLAG_STALE_PENDING_JOB.to_string(),
+                routes::FLAG_STALE_COMPLETION.to_string(),
+            ]
+        );
+        // Existing fields are untouched by the new signal.
+        assert_eq!(json["jobs"]["running"], 1);
+        assert_eq!(json["jobs"]["total"], 1);
+        assert!(json["version"].is_string());
+    }
+
+    #[tokio::test]
+    async fn health_stays_ok_while_jobs_keep_finishing() {
+        let (state, _rx) = make_test_state(TEST_TOKEN);
+        let now = crate::utils::unix_now_secs();
+        let recent = crate::utils::iso_timestamp_at(now);
+        let stale =
+            crate::utils::iso_timestamp_at(now.saturating_sub(routes::STALE_AFTER_SECS * 4));
+        {
+            let mut store = state.jobs.write().await;
+            // An old job that finished, and a fresh one still running.
+            store.insert(
+                "done".to_string(),
+                stub_job("done", JobStatus::Done, &stale, Some(&recent)),
+            );
+            store.insert(
+                "fresh".to_string(),
+                stub_job("fresh", JobStatus::Queued, &recent, None),
+            );
+        }
+
+        let json = health_json(state).await;
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["flags"].as_array().map(Vec::len), Some(0));
+        assert_eq!(json["last_job_completed_at"], recent);
     }
 
     #[tokio::test]

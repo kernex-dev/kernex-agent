@@ -1,13 +1,23 @@
 /// Returns the current UTC time as an ISO 8601 string (e.g. `2025-01-02T15:04:05Z`).
+pub fn iso_timestamp() -> String {
+    iso_timestamp_at(unix_now_secs())
+}
+
+/// Seconds since the Unix epoch, saturating to 0 if the clock is before it.
+pub fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+/// Formats `secs` seconds since the Unix epoch as an ISO 8601 string
+/// (e.g. `2025-01-02T15:04:05Z`).
 ///
 /// Implemented via Howard Hinnant's civil-date algorithm to avoid pulling in a
-/// date-time dependency.
-pub fn iso_timestamp() -> String {
-    let duration = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = duration.as_secs();
-
+/// date-time dependency. The output is fixed-width UTC, so two of these
+/// strings compare chronologically under plain lexicographic ordering.
+pub fn iso_timestamp_at(secs: u64) -> String {
     let days = secs / 86400;
     let time_secs = secs % 86400;
     let hours = time_secs / 3600;
