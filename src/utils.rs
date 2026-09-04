@@ -52,9 +52,126 @@ pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// Best-effort text of a panic payload, for logging.
+///
+/// `catch_unwind` and `JoinError::into_panic` both hand back a
+/// `Box<dyn Any + Send>`. In practice it holds a `&'static str` (from
+/// `panic!("literal")`) or a `String` (from a formatted panic); anything
+/// else is reported as such rather than dropped silently.
+pub fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "panic payload was not a string".to_string()
+    }
+}
+
+/// Report a background task that did not end normally, at a level that
+/// matches what happened.
+///
+/// A panicking `tokio::spawn`ed task prints nothing by itself: the payload is
+/// parked in its `JoinHandle`, and a join site that discards the `Result`
+/// throws it away. Routing every join through here means a panic reaches the
+/// log at `error` with its message attached. Cancellation is an ordinary part
+/// of shutdown and stays at `debug`.
+pub fn log_join_error(context: &str, err: tokio::task::JoinError) {
+    if err.is_cancelled() {
+        tracing::debug!("{context}: background task cancelled");
+        return;
+    }
+    match err.try_into_panic() {
+        Ok(payload) => tracing::error!(
+            "{context}: background task PANICKED: {}",
+            panic_message(payload.as_ref())
+        ),
+        Err(err) => tracing::error!("{context}: background task ended abnormally: {err}"),
+    }
+}
+
+/// Logs at `error` level if it is dropped while the thread is unwinding.
+///
+/// Hold one at the top of a spawned future when its `JoinHandle` is not
+/// polled until shutdown. Without it, a panic mid-run is silent for as long
+/// as the process keeps running: the task is gone, nothing joins it, and the
+/// first sign is whatever stops happening. The panic payload itself still
+/// arrives at the join site through [`log_join_error`]; this only makes the
+/// death visible at the moment it happens.
+pub struct PanicLogGuard {
+    context: &'static str,
+}
+
+impl PanicLogGuard {
+    pub fn new(context: &'static str) -> Self {
+        Self { context }
+    }
+}
+
+impl Drop for PanicLogGuard {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            tracing::error!("{}: background task PANICKED", self.context);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn iso_timestamp_at_is_fixed_width_and_orders_lexicographically() {
+        // /health compares ISO timestamps as plain strings, which only works
+        // because the format is fixed-width UTC.
+        let earlier = iso_timestamp_at(1_756_900_000);
+        let later = iso_timestamp_at(1_756_900_900);
+        assert_eq!(earlier.len(), 20);
+        assert_eq!(later.len(), 20);
+        assert!(earlier < later);
+    }
+
+    #[test]
+    fn panic_message_reads_str_and_string_payloads() {
+        let literal: Box<dyn std::any::Any + Send> = Box::new("boom");
+        assert_eq!(panic_message(literal.as_ref()), "boom");
+
+        let formatted: Box<dyn std::any::Any + Send> = Box::new("boom 42".to_string());
+        assert_eq!(panic_message(formatted.as_ref()), "boom 42");
+
+        let other: Box<dyn std::any::Any + Send> = Box::new(42u32);
+        assert_eq!(
+            panic_message(other.as_ref()),
+            "panic payload was not a string"
+        );
+    }
+
+    #[tokio::test]
+    async fn panic_payload_survives_the_join_handle() {
+        // The end-to-end path the join sites rely on: a spawned task panics,
+        // the payload is parked in the JoinHandle, and the message comes back
+        // out instead of being discarded.
+        let handle = tokio::spawn(async {
+            panic!("scheduler exploded: {}", 7);
+        });
+        let err = handle.await.expect_err("task should have panicked");
+        assert!(!err.is_cancelled());
+        let payload = err.into_panic();
+        assert_eq!(panic_message(payload.as_ref()), "scheduler exploded: 7");
+    }
+
+    #[tokio::test]
+    async fn cancelled_tasks_are_not_reported_as_panics() {
+        let handle = tokio::spawn(async {
+            std::future::pending::<()>().await;
+        });
+        handle.abort();
+        let err = handle.await.expect_err("task should have been cancelled");
+        assert!(err.is_cancelled());
+        // Exercises the debug-level branch; it must not panic on a
+        // cancellation JoinError, which has no payload to unwrap.
+        log_join_error("test", err);
+    }
 
     #[test]
     fn iso_timestamp_format() {

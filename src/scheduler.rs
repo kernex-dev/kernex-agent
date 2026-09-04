@@ -31,7 +31,11 @@ impl SchedulerHandle {
         let _ = self.shutdown_tx.send(true);
         if let Some(handle) = self.join.take() {
             if let Err(e) = handle.await {
-                tracing::warn!("scheduler: task did not exit cleanly: {e}");
+                // A panic here means the scheduler had already been dead for
+                // however long the REPL stayed open. Log the payload at
+                // error, not a bare warn: this used to read as an untidy
+                // exit rather than a loop that stopped scheduling.
+                crate::utils::log_join_error("scheduler", e);
             }
         }
     }
@@ -52,6 +56,10 @@ pub fn spawn(
 ) -> SchedulerHandle {
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
     let join = tokio::spawn(async move {
+        // The JoinHandle below is not polled until `shutdown`, so without
+        // this guard a panic in the loop is silent for the life of the
+        // process: tasks simply stop being scheduled and nothing says why.
+        let _panic_guard = crate::utils::PanicLogGuard::new("scheduler loop");
         tracing::debug!("scheduler: started, polling every {poll_secs}s");
         let interval = tokio::time::Duration::from_secs(poll_secs);
         loop {

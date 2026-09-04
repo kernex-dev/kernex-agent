@@ -130,7 +130,7 @@ pub async fn cmd_serve(
 
     tracing::info!("kx serve: shutdown signalled, draining worker pool");
     if let Err(e) = worker_handle.await {
-        tracing::warn!("kx serve: worker task did not exit cleanly: {e}");
+        crate::utils::log_join_error("kx serve worker pool", e);
     }
     tracing::info!("kx serve: stopped");
     Ok(())
@@ -233,6 +233,11 @@ async fn run_worker(
     db: Option<Arc<db::JobDb>>,
     semaphore: Arc<Semaphore>,
 ) {
+    // The pool's own JoinHandle is not polled until shutdown, so a panic
+    // in this loop would otherwise leave the daemon accepting jobs that
+    // nothing ever picks up, with no log line to say so.
+    let _panic_guard = crate::utils::PanicLogGuard::new("kx serve worker pool");
+
     // Track the JoinHandle for every spawned job so a graceful shutdown can
     // await them before returning. Without this, axum::serve exits as soon
     // as rx.recv() returns None, then run_worker returns, and the runtime
@@ -261,6 +266,11 @@ async fn run_worker(
         joinset.spawn(async move {
             // Hold the permit for the duration of the job; drop on completion.
             let _permit = permit;
+            // A panicking job never reaches set_status, so it stays Running
+            // in the store forever. The JoinSet holds the payload until the
+            // shutdown drain, which can be hours away; this reports the
+            // death when it happens.
+            let _panic_guard = crate::utils::PanicLogGuard::new("kx serve job");
             execute_job(req, jobs_clone, db_clone).await;
         });
     }
@@ -272,14 +282,26 @@ async fn run_worker(
     const SHUTDOWN_DRAIN_SECS: u64 = 30;
     let drain_deadline =
         std::time::Instant::now() + std::time::Duration::from_secs(SHUTDOWN_DRAIN_SECS);
-    while joinset.join_next().await.is_some() {
+    while let Some(joined) = joinset.join_next().await {
+        // Surface the payload of any job that panicked. Discarding this
+        // Result was the last place a panicking job could disappear
+        // without a trace.
+        if let Err(e) = joined {
+            crate::utils::log_join_error("kx serve job", e);
+        }
         if std::time::Instant::now() >= drain_deadline {
             tracing::warn!(
                 in_flight = joinset.len(),
                 "shutdown drain timeout reached; aborting remaining jobs"
             );
             joinset.abort_all();
-            while joinset.join_next().await.is_some() {}
+            while let Some(joined) = joinset.join_next().await {
+                // Cancellations here are expected; log_join_error keeps
+                // those at debug and reports anything else.
+                if let Err(e) = joined {
+                    crate::utils::log_join_error("kx serve job", e);
+                }
+            }
             break;
         }
     }
