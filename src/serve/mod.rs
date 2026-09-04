@@ -411,21 +411,122 @@ async fn run_workflow(req: JobRequest, wf: workflow::Workflow) -> Result<(String
     }
 }
 
-/// Returns `true` if the reality-checker verdict is anything other than "SHIP IT".
+/// The three verdicts the reality-checker skill contract defines.
+const VERDICT_SHIP_IT: &str = "SHIP IT";
+const VERDICT_NEEDS_WORK: &str = "NEEDS WORK";
+const VERDICT_BLOCKED: &str = "BLOCKED";
+
+/// Cap the input fed into the JSON parser. Provider responses can be many
+/// MB; without a cap a runaway response amplifies cost on every workflow
+/// flag check. 256 KiB is generous for a verdict struct.
+const MAX_VERDICT_JSON_BYTES: usize = 256 * 1024;
+
+/// Longest `key` we will consider on the left of a `key: value` line when
+/// hunting for the verdict. Bounds the per-line work on a huge response.
+const MAX_VERDICT_LABEL_BYTES: usize = 64;
+
+/// Returns `true` unless the reality-checker issued an explicit `SHIP IT`.
+///
+/// This gate FAILS CLOSED. Output that does not parse, carries no verdict,
+/// or carries a verdict outside the contract set flags the job instead of
+/// passing it. The previous implementation ended in
+/// `!output.contains("SHIP IT")`, so any prose merely mentioning the phrase
+/// passed the gate, including a sentence saying "do not SHIP IT".
 fn is_verdict_flagged(output: &str) -> bool {
-    // Cap the input fed into the JSON parser. Provider responses can be
-    // many MB; without a cap a runaway response amplifies cost on every
-    // workflow flag check. 256 KiB is generous for a verdict struct.
-    const MAX_VERDICT_JSON_BYTES: usize = 256 * 1024;
-    if output.len() <= MAX_VERDICT_JSON_BYTES {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(output) {
-            if let Some(verdict) = val.get("verdict").and_then(|v| v.as_str()) {
-                return verdict != "SHIP IT";
-            }
+    match parse_verdict(output) {
+        Some(verdict) => verdict != VERDICT_SHIP_IT,
+        None => {
+            tracing::warn!(
+                bytes = output.len(),
+                "reality-checker output carried no recognisable verdict; flagging job"
+            );
+            true
         }
     }
-    // Fallback: plain text scan — absence of "SHIP IT" is treated as flagged.
-    !output.contains("SHIP IT")
+}
+
+/// Extract the verdict when the output carries one we recognise.
+///
+/// Two shapes are accepted, matching the two reality-checker contracts: a
+/// JSON body with a `verdict` field, and a markdown report with a
+/// `Verdict:` line. Everything else yields `None`, which the caller treats
+/// as a flag.
+fn parse_verdict(output: &str) -> Option<&'static str> {
+    let body = strip_code_fence(output.trim());
+    if body.starts_with('{') {
+        // The body announces itself as a JSON document, so it either parses
+        // and carries a verdict we recognise, or we do not know. Do NOT fall
+        // through to the line scan here: that would let a response truncated
+        // mid-generation be salvaged into a pass, which is the ambiguous
+        // case this gate exists to reject. The length guard keeps a runaway
+        // multi-MB response out of the parser on every workflow check.
+        if body.len() > MAX_VERDICT_JSON_BYTES {
+            return None;
+        }
+        let val = serde_json::from_str::<serde_json::Value>(body).ok()?;
+        return val
+            .get("verdict")
+            .and_then(|v| v.as_str())
+            .and_then(known_verdict);
+    }
+    body.lines().find_map(verdict_from_line)
+}
+
+/// Unwrap a fenced block so a JSON body the model wrapped in ```` ```json ````
+/// still reaches the JSON parser. Returns the input unchanged when there is
+/// no complete fence.
+fn strip_code_fence(text: &str) -> &str {
+    let Some(rest) = text.strip_prefix("```") else {
+        return text;
+    };
+    // Drop the info string (`json`, `JSON`, or nothing) up to its newline.
+    let Some((_, body)) = rest.split_once('\n') else {
+        return text;
+    };
+    body.trim_end()
+        .strip_suffix("```")
+        .map_or(text, str::trim_end)
+}
+
+/// Pull a verdict out of a single `key: value` line, e.g. `**Verdict:** SHIP
+/// IT` from the markdown report, or a `"verdict": "NEEDS WORK",` line inside
+/// a report that embeds JSON without fencing it.
+fn verdict_from_line(line: &str) -> Option<&'static str> {
+    let (label, value) = line.split_once(':')?;
+    if label.len() > MAX_VERDICT_LABEL_BYTES {
+        return None;
+    }
+    // Compare the label on its letters alone so `**Verdict**`, `"verdict"`
+    // and `- Verdict` all match, and `## Reality Check` does not.
+    let matches_label = label
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .eq("verdict".chars());
+    if !matches_label {
+        return None;
+    }
+    // Strip leading markdown / JSON decoration, then keep only the first
+    // clause. `SHIP IT. All good.` is a decision; `SHIP IT / NEEDS WORK /
+    // BLOCKED` is the report template echoed back without one, and must not
+    // read as a pass.
+    const DECORATION: &[char] = &[' ', '\t', '*', '"', '\'', '`', '#'];
+    let value = value.trim_start_matches(DECORATION);
+    let clause = value
+        .find(['.', ',', ';', '"', '(', '*', '`'])
+        .map_or(value, |i| &value[..i]);
+    known_verdict(clause)
+}
+
+/// Map a raw verdict onto the contract set, ignoring case and surrounding
+/// whitespace. Anything outside the set is `None`, never a pass.
+fn known_verdict(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_uppercase().as_str() {
+        VERDICT_SHIP_IT => Some(VERDICT_SHIP_IT),
+        VERDICT_NEEDS_WORK => Some(VERDICT_NEEDS_WORK),
+        VERDICT_BLOCKED => Some(VERDICT_BLOCKED),
+        _ => None,
+    }
 }
 
 async fn run_agent(req: JobRequest) -> Result<String, String> {
@@ -663,6 +764,83 @@ mod tests {
     #[test]
     fn is_verdict_flagged_non_json_no_ship_it() {
         assert!(is_verdict_flagged("Something went wrong with the output."));
+    }
+
+    // -- fail-closed verdict gate ------------------------------------
+    //
+    // The gate used to end in `!output.contains("SHIP IT")`, so any prose
+    // carrying the phrase passed. These pin the closed direction: only an
+    // explicit, unambiguous SHIP IT verdict passes.
+
+    #[test]
+    fn is_verdict_flagged_markdown_ship_it_passes() {
+        let output = "## Reality Check: auth flow\n\n**Verdict:** SHIP IT\n\n**Rating:** B\n";
+        assert!(!is_verdict_flagged(output));
+    }
+
+    #[test]
+    fn is_verdict_flagged_markdown_blocked_is_flagged() {
+        let output = "## Reality Check: auth flow\n\n**Verdict:** BLOCKED\n\n**Rating:** F\n";
+        assert!(is_verdict_flagged(output));
+    }
+
+    #[test]
+    fn is_verdict_flagged_prose_saying_do_not_ship_it() {
+        // The regression this gate exists for: the phrase appears, the
+        // meaning is the opposite, and the old substring check passed it.
+        assert!(is_verdict_flagged(
+            "The reviewer was explicit: do not SHIP IT until the migration has tests."
+        ));
+    }
+
+    #[test]
+    fn is_verdict_flagged_verdict_line_saying_do_not_ship_it() {
+        assert!(is_verdict_flagged("**Verdict:** do not SHIP IT"));
+    }
+
+    #[test]
+    fn is_verdict_flagged_template_echoed_without_a_decision() {
+        // The model repeated the report template instead of choosing.
+        assert!(is_verdict_flagged(
+            "**Verdict:** SHIP IT / NEEDS WORK / BLOCKED"
+        ));
+    }
+
+    #[test]
+    fn is_verdict_flagged_unparseable_output_is_flagged() {
+        // Truncated JSON, empty body, and a bare provider apology all mean
+        // "we do not know", which must not read as a pass.
+        assert!(is_verdict_flagged(r#"{"verdict":"SHIP IT","grade":"A","#));
+        assert!(is_verdict_flagged(""));
+        assert!(is_verdict_flagged("I'm sorry, I can't help with that."));
+    }
+
+    #[test]
+    fn is_verdict_flagged_json_without_verdict_field_is_flagged() {
+        assert!(is_verdict_flagged(
+            r#"{"grade":"A","summary":"looks fine to me"}"#
+        ));
+    }
+
+    #[test]
+    fn is_verdict_flagged_unknown_verdict_value_is_flagged() {
+        assert!(is_verdict_flagged(r#"{"verdict":"LGTM","grade":"A"}"#));
+    }
+
+    #[test]
+    fn is_verdict_flagged_fenced_json_ship_it_passes() {
+        // A code-fenced body does not parse as JSON, so the line scan has
+        // to find the verdict.
+        let output = "```json\n{\n  \"verdict\": \"SHIP IT\",\n  \"grade\": \"A\"\n}\n```";
+        assert!(!is_verdict_flagged(output));
+    }
+
+    #[test]
+    fn is_verdict_flagged_ignores_non_verdict_labels() {
+        // A heading that merely mentions the phrase is not a verdict line.
+        assert!(is_verdict_flagged(
+            "### Conditions for SHIP IT: add integration tests"
+        ));
     }
 
     // -- HTTP boundary tests for `kx serve` ---------------------------
