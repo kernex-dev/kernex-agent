@@ -1,18 +1,19 @@
 # Domain-Specific SKILL.md Templates
 
-Templates organized by Jose's five operational domains. Copy the relevant template and customize for your specific skill.
+Templates organized by five operational domains. Copy the relevant template and customize for your specific skill.
 
 ---
 
 ## §product — Product Development Skills
 
+Use for any product feature work.
 
 ```markdown
 ---
 name: [product-skill-name]
 description: [Action verb] + [specific output] + [trigger contexts]. Example: "Generate feature specifications with user stories and acceptance criteria. Use when planning features, writing PRDs, or defining requirements for any product in the portfolio."
 metadata:
-  author: jose-hurtado
+  author: your-name
   version: "0.1"
   domain: product
 ---
@@ -24,6 +25,7 @@ metadata:
 ## Context
 
 Tech stack: Next.js 14+, React, Supabase, GSAP, Tailwind CSS, MDX.
+Products: [your products and what each one does].
 
 ## Workflow
 
@@ -39,12 +41,12 @@ Tech stack: Next.js 14+, React, Supabase, GSAP, Tailwind CSS, MDX.
 ## Examples
 
 **Example 1:**
-Input: "add a freemium tier comparison table to uxuiprinciples — show what's free vs paid for the icon set and components"
+Input: "add a freemium tier comparison table to the product — show what's free vs paid for the icon set and components"
 Output: [MDX component with pricing comparison, responsive, using existing design tokens]
 
 ## Edge Cases
 
-- If the target product is unclear, default to uxuiprinciples.com
+- If the target product is unclear, default to the product.com
 - If the feature conflicts with existing architecture, note the conflict and propose a migration path
 ```
 
@@ -52,12 +54,14 @@ Output: [MDX component with pricing comparison, responsive, using existing desig
 
 ## §client — Client Work Skills
 
+Use for client deliverables, vendor onboarding, and strategy reports.
 
 ```markdown
 ---
 name: [client-skill-name]
+description: [Action verb] + [deliverable type] + [client context]. Example: "Create client-facing strategy reports with executive summaries, data visualizations, and recommendations. Use for agency deliverables, vendor onboarding checklists, or client presentations."
 metadata:
-  author: jose-hurtado
+  author: your-name
   version: "0.1"
   domain: client
 ---
@@ -96,6 +100,8 @@ Before finalizing any client deliverable:
 ## Examples
 
 **Example 1:**
+Input: "create the Acme Foods GA4 vendor onboarding checklist — include access provisioning, tag setup, and training schedule"
+Output: [Branded checklist document with Acme Foods colors, numbered steps, responsible parties, and deadlines]
 ```
 
 ---
@@ -109,7 +115,7 @@ Use for component creation, Figma-to-code workflows, design tokens, icon sets, a
 name: [design-skill-name]
 description: [Action verb] + [design output] + [trigger contexts]. Example: "Build React components from Figma designs with proper design tokens, accessibility, and anti-AI aesthetics. Use when converting designs to code, creating component libraries, or building design system elements."
 metadata:
-  author: jose-hurtado
+  author: your-name
   version: "0.1"
   domain: design
 ---
@@ -150,7 +156,7 @@ All visual output must pass the anti-AI quality gate:
 ## Examples
 
 **Example 1:**
-Input: "build a pricing card component for uxuiprinciples — 3 tiers, free/pro/team, highlight pro as recommended"
+Input: "build a pricing card component for the product — 3 tiers, free/pro/team, highlight pro as recommended"
 Output: [React component with visual hierarchy (pro tier larger), brand colors, no AI clichés, accessible]
 ```
 
@@ -163,8 +169,9 @@ Use for proposals, contracts, SOWs, blog posts, LinkedIn content, case studies, 
 ```markdown
 ---
 name: [content-skill-name]
+description: [Action verb] + [content type] + [trigger contexts]. Example: "Draft client proposals with scope, timeline, pricing, and terms. Use when creating SOWs, proposals, contracts, or any formal business document for your business."
 metadata:
-  author: jose-hurtado
+  author: your-name
   version: "0.1"
   domain: content
 ---
@@ -175,7 +182,8 @@ metadata:
 
 ## Entity Context
 
-- Role: Senior UX/UI Design Director, independent contractor
+- Business: [your-business-entity]
+- Role: [your-role]
 - Services: UX/UI design, design systems, product strategy, AI-native development
 - Rates and terms: See references/pricing.md
 
@@ -198,6 +206,7 @@ metadata:
 
 **Example 1:**
 Input: "write a proposal for a UX audit of a fintech checkout flow — 3 week timeline, include the interface audit methodology"
+Output: [Branded proposal with scope, methodology, timeline, deliverables, pricing, terms]
 ```
 
 ---
@@ -211,7 +220,7 @@ Use for logistics, compliance, invoicing, sprint planning, and recurring adminis
 name: [ops-skill-name]
 description: [Action verb] + [operational task] + [trigger contexts]. Example: "Generate weekly sprint plans with task priorities, time estimates, and dependencies. Use when planning sprints, organizing tasks, or creating project timelines."
 metadata:
-  author: jose-hurtado
+  author: your-name
   version: "0.1"
   domain: ops
 ---

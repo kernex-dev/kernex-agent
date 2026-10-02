@@ -40,7 +40,7 @@ Why it works: Describes both the action and the automatic activation condition.
 |----------------|-------------|----------------|
 | "Handles documents" | Too vague, matches everything | "Convert uploaded docs to structured markdown with metadata extraction" |
 | "Advanced multi-modal enterprise pipeline" | Jargon, no trigger phrases | "Extract text and tables from PDFs, fill forms, merge documents" |
-| "AI-powered content creation tool" | Every skill is AI-powered | "Write blog posts for uxuiprinciples.com with SEO metadata and MDX formatting" |
+| "AI-powered content creation tool" | Every skill is AI-powered | "Write blog posts for the product site with SEO metadata and MDX formatting" |
 | "Useful for many things" | No specificity at all | Pick ONE primary use case and name it |
 
 ## Character Budget Strategy
