@@ -1,7 +1,7 @@
 # Skills Infrastructure Playbook
 ## A Complete Workflow for Building Agent Skills Across Claude.ai, Claude Code, Kernex/kx, and 26+ Platforms
 
-**Author:** Jose Hurtado · Visual Brands LLC  
+**Author:** Kernex Contributors  
 **Version:** 1.0 · April 2026  
 **Scope:** Claude.ai, Claude Code, Kernex/kx, Codex, Copilot, and any Agent Skills-compatible platform
 
@@ -87,7 +87,7 @@ name: skill-name
 description: What this skill does and when to use it. Max 200 chars.
 license: Apache-2.0                    # Optional
 metadata:                              # Optional
-  author: jose-hurtado
+  author: your-name
   version: "1.0"
   domain: design                       # Custom field for your taxonomy
 compatibility:                         # Optional — only if non-standard deps
@@ -188,7 +188,7 @@ Before writing anything, answer four questions:
 
 1. **What should this skill enable the agent to do?** Be specific. Not "help with design" but "generate a UX audit report with heuristic scores, annotated screenshots, and prioritized recommendations."
 
-2. **When should this skill trigger?** List the phrases, contexts, and task types. "When the user uploads screenshots and asks for a review." "When they mention 'audit', 'usability review', or 'interface analysis'." "When they reference interfaceaudit.com."
+2. **When should this skill trigger?** List the phrases, contexts, and task types. "When the user uploads screenshots and asks for a review." "When they mention 'audit', 'usability review', or 'interface analysis'."
 
 3. **What is the expected output format?** A markdown report? A .docx file? A React component? An email draft? Define this precisely — it's the skill's contract.
 
@@ -203,7 +203,7 @@ Before writing the SKILL.md, gather the domain knowledge:
 - What reference materials, templates, or scripts will the skill need?
 - Are there existing skills that overlap? Check installed skills and community repos.
 
-If building for a client domain (DXagency, Nestlé), pull in brand guidelines, style guides, technical constraints, and approval workflows.
+If building for a client domain, pull in brand guidelines, style guides, technical constraints, and approval workflows.
 
 ### Phase 3: Draft the SKILL.md
 
@@ -214,7 +214,7 @@ Write the first version following this template:
 name: [lowercase-hyphenated-name]
 description: [What it does + when to trigger. Max 200 chars. Be pushy.]
 metadata:
-  author: jose-hurtado
+  author: your-name
   version: "0.1"
   domain: [design|product|client|content]
 ---
@@ -340,14 +340,14 @@ This produces a `.skill` file ready for upload or sharing.
 
 ## 7. Domain-Specific Skill Templates
 
-### 7.1 Product Development (uxuiprinciples.com, interfaceaudit.com, geoautopilot.com)
+### 7.1 Product Development
 
 ```yaml
 ---
 name: product-feature-spec
-description: Generate feature specifications for product development. Use when planning new features, writing PRDs, creating user stories, or defining acceptance criteria for uxuiprinciples, interfaceaudit, or geoautopilot.
+description: Generate feature specifications for product development. Use when planning new features, writing PRDs, creating user stories, or defining acceptance criteria for your productopilot.
 metadata:
-  author: jose-hurtado
+  author: your-name
   version: "1.0"
   domain: product
 ---
@@ -359,16 +359,16 @@ metadata:
 - `product-feature-spec` — PRDs and user stories
 - `product-launch-checklist` — Pre-launch validation
 - `product-analytics-setup` — GA4/tracking implementation guides
-- `product-mdx-content` — MDX content creation for uxuiprinciples.com
+- `product-mdx-content` — MDX content creation for your product site
 
-### 7.2 Client Work (DXagency, Fortune 500)
+### 7.2 Client Work
 
 ```yaml
 ---
 name: client-deliverable
-description: Create client-facing deliverables with proper formatting, branding, and approval workflows. Use for reports, presentations, proposals, or any external-facing document for DXagency or client projects.
+description: Create client-facing deliverables with proper formatting, branding, and approval workflows. Use for reports, presentations, proposals, or any external-facing document for client projects.
 metadata:
-  author: jose-hurtado
+  author: your-name
   version: "1.0"
   domain: client
 ---
@@ -380,7 +380,7 @@ metadata:
 - `client-deliverable` — Reports, decks, proposals
 - `client-onboarding-checklist` — Vendor onboarding (GA4, tools access)
 - `client-brand-apply` — Apply specific client brand guidelines
-- `client-geo-strategy` — GEO/AI search strategy reports (like Vitaflo)
+- `client-geo-strategy` — GEO/AI search strategy reports
 
 ### 7.3 Design Systems & Code Generation
 
@@ -389,7 +389,7 @@ metadata:
 name: design-system-component
 description: Build design system components with Figma-to-code workflow. Use when creating React/Next.js components, design tokens, icon sets, or when converting Figma designs to production code. Triggers on mentions of design systems, component libraries, or Figma exports.
 metadata:
-  author: jose-hurtado
+  author: your-name
   version: "1.0"
   domain: design
 ---
@@ -409,9 +409,9 @@ metadata:
 ```yaml
 ---
 name: service-proposal
-description: Generate client proposals, contracts, SOWs, and service documentation. Use when creating proposals, writing contracts, building playbooks, or assembling Service OS documents for Visual Brands LLC or User Centric Studio.
+description: Generate client proposals, contracts, SOWs, and service documentation. Use when creating proposals, writing contracts, building playbooks, or assembling Service OS documents for your business.
 metadata:
-  author: jose-hurtado
+  author: your-name
   version: "1.0"
   domain: content
 ---
@@ -518,8 +518,8 @@ skills/
 │   ├── content-blog/
 │   └── content-case-study/
 └── ops/
-    ├── move-logistics/          # Austin relocation workflows
-    ├── llc-compliance/          # Florida LLC admin tasks
+    ├── move-logistics/          # Relocation workflows
+    ├── llc-compliance/          # LLC admin tasks
     ├── invoice-generator/       # Client billing
     └── sprint-planning/         # Weekly sprint structure
 ```
