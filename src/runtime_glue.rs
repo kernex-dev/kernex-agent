@@ -224,7 +224,7 @@ pub const PROVIDERS: &[ProviderSpec] = &[
     ProviderSpec {
         name: "gemini",
         api_key_env: Some("GEMINI_API_KEY"),
-        default_model: "gemini-2.0-flash",
+        default_model: "gemini-3.5-flash",
     },
     ProviderSpec {
         name: "openrouter",
@@ -234,7 +234,7 @@ pub const PROVIDERS: &[ProviderSpec] = &[
     ProviderSpec {
         name: "groq",
         api_key_env: Some("GROQ_API_KEY"),
-        default_model: "llama-3.3-70b-versatile",
+        default_model: "openai/gpt-oss-120b",
     },
     ProviderSpec {
         name: "mistral",
@@ -244,7 +244,7 @@ pub const PROVIDERS: &[ProviderSpec] = &[
     ProviderSpec {
         name: "deepseek",
         api_key_env: Some("DEEPSEEK_API_KEY"),
-        default_model: "deepseek-chat",
+        default_model: "deepseek-flash",
     },
     ProviderSpec {
         name: "fireworks",
@@ -254,7 +254,7 @@ pub const PROVIDERS: &[ProviderSpec] = &[
     ProviderSpec {
         name: "xai",
         api_key_env: Some("XAI_API_KEY"),
-        default_model: "grok-2-latest",
+        default_model: "grok-4.3",
     },
 ];
 

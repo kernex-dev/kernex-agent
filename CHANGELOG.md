@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Provider default models that their providers have retired now point at
+  current ones (checked 2026-10-03): gemini `gemini-2.0-flash` (shut down
+  2026-06-01) -> `gemini-3.5-flash`, groq `llama-3.3-70b-versatile` (dropped for
+  free tiers 2026-08-16) -> `openai/gpt-oss-120b`, deepseek `deepseek-chat`
+  (retired 2026-07-24) -> `deepseek-flash`, xai `grok-2-latest` (no longer
+  listed) -> `grok-4.3`. `--model`, `KERNEX_MODEL` and `provider.model` still
+  override them.
+
 ### Security
 
 - Bumped `anyhow` to 1.0.104, closing RUSTSEC-2026-0190 (unsoundness in
