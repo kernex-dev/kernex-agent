@@ -193,68 +193,61 @@ fn display_model(provider: &str, model: Option<&str>) -> String {
 
 /// Single source of truth for provider metadata. Each entry pairs the
 /// provider name (`--provider <name>`) with its API-key env var (or `None`
-/// if the provider does not need one) and a sensible default model.
+/// if the provider does not need one). Default models are not kept here:
+/// they come from `ProviderFactory::default_model` in the runtime.
 pub struct ProviderSpec {
     pub name: &'static str,
     pub api_key_env: Option<&'static str>,
-    pub default_model: &'static str,
 }
 
 pub const PROVIDERS: &[ProviderSpec] = &[
     ProviderSpec {
         name: "claude-code",
         api_key_env: None,
-        default_model: "claude-code",
+    },
+    ProviderSpec {
+        name: "opencode",
+        api_key_env: None,
     },
     ProviderSpec {
         name: "anthropic",
         api_key_env: Some("ANTHROPIC_API_KEY"),
-        default_model: "claude-sonnet-4-6",
     },
     ProviderSpec {
         name: "openai",
         api_key_env: Some("OPENAI_API_KEY"),
-        default_model: "gpt-4o",
     },
     ProviderSpec {
         name: "ollama",
         api_key_env: None,
-        default_model: "llama3.2",
     },
     ProviderSpec {
         name: "gemini",
         api_key_env: Some("GEMINI_API_KEY"),
-        default_model: "gemini-3.5-flash",
     },
     ProviderSpec {
         name: "openrouter",
         api_key_env: Some("OPENROUTER_API_KEY"),
-        default_model: "anthropic/claude-sonnet-4-6",
     },
     ProviderSpec {
         name: "groq",
         api_key_env: Some("GROQ_API_KEY"),
-        default_model: "openai/gpt-oss-120b",
     },
     ProviderSpec {
         name: "mistral",
         api_key_env: Some("MISTRAL_API_KEY"),
-        default_model: "mistral-large-latest",
     },
     ProviderSpec {
         name: "deepseek",
         api_key_env: Some("DEEPSEEK_API_KEY"),
-        default_model: "deepseek-flash",
     },
     ProviderSpec {
         name: "fireworks",
         api_key_env: Some("FIREWORKS_API_KEY"),
-        default_model: "accounts/fireworks/models/llama-v3p1-70b-instruct",
     },
     ProviderSpec {
         name: "xai",
         api_key_env: Some("XAI_API_KEY"),
-        default_model: "grok-4.3",
     },
 ];
 
@@ -262,10 +255,16 @@ fn provider_spec(name: &str) -> Option<&'static ProviderSpec> {
     PROVIDERS.iter().find(|p| p.name == name)
 }
 
+/// The model shown in the banner when the user sets none. It comes from the
+/// runtime's own table, so the label always names what the factory will
+/// send. CLI-backed providers (`claude-code`, `opencode`) choose their own
+/// model and have no entry; the label repeats the provider name for them.
 fn default_model(provider: &str) -> &'static str {
-    provider_spec(provider)
-        .map(|p| p.default_model)
-        .unwrap_or("claude-code")
+    ProviderFactory::default_model(provider).unwrap_or_else(|| {
+        provider_spec(provider)
+            .map(|p| p.name)
+            .unwrap_or("claude-code")
+    })
 }
 
 pub fn api_key_var(provider: &str) -> &'static str {
@@ -300,6 +299,21 @@ pub fn data_dir_for(project_name: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The banner must name the model the factory will send. kx once kept
+    /// its own table, and it drifted: the label said one model while the
+    /// runtime sent another.
+    #[test]
+    fn display_label_matches_the_runtime_default() {
+        for spec in PROVIDERS {
+            let label = display_model(spec.name, None);
+            match ProviderFactory::default_model(spec.name) {
+                Some(model) => assert_eq!(label, format!("{}/{model}", spec.name)),
+                None => assert_eq!(label, format!("{0}/{0}", spec.name)),
+            }
+        }
+        assert_eq!(display_model("deepseek", Some("custom")), "deepseek/custom");
+    }
 
     #[test]
     fn sandbox_profile_requires_os_enforcement() {

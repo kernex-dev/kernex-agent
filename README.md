@@ -8,7 +8,7 @@ CLI dev assistant powered by [Kernex](https://github.com/kernex-dev/kernex).
 
 ## Features
 
-- **11 LLM providers** - Claude Code (default), Anthropic, OpenAI, Gemini, Ollama, OpenRouter, Groq, Mistral, DeepSeek, Fireworks, xAI; AWS Bedrock available behind a Cargo feature
+- **12 LLM providers** - Claude Code (default), OpenCode, Anthropic, OpenAI, Gemini, Ollama, OpenRouter, Groq, Mistral, DeepSeek, Fireworks, xAI; AWS Bedrock available behind a Cargo feature
 - **Stack detection** - Automatically detects Rust, Node/TypeScript, Python, Flutter/Dart, PHP, Go, Java, and Swift projects
 - **Persistent memory** - Remembers decisions, patterns, and context across sessions per project, with FTS5 full-text search
 - **Cost telemetry** - `/cost` slash command surfaces cumulative tokens, estimated cost, and prompt-cache hit ratio
@@ -434,6 +434,7 @@ kx defaults to Claude Code CLI as its AI backend. The underlying `kernex-provide
 | Flag | Provider | Requires |
 |------|----------|---------|
 | `--provider claude-code` | Claude Code CLI (default) | Claude CLI installed |
+| `--provider opencode` | OpenCode CLI | OpenCode CLI installed and configured |
 | `--provider anthropic` | Anthropic API | `ANTHROPIC_API_KEY` |
 | `--provider openai` | OpenAI API | `OPENAI_API_KEY` |
 | `--provider ollama` | Ollama (local) | Ollama running at `localhost:11434` |
@@ -461,7 +462,7 @@ export KERNEX_MODEL=claude-opus-4-8
 kx is a thin CLI wrapper around the Kernex runtime:
 
 - **kernex-runtime** - Core engine: `Runtime::run()` drives the agentic loop, `RuntimeBuilder` wires all subsystems
-- **kernex-providers** - AI backends: Claude Code CLI, Anthropic, OpenAI, Ollama, Gemini, OpenRouter, Groq, Mistral, DeepSeek, Fireworks, xAI (11 built-in; AWS Bedrock optional)
+- **kernex-providers** - AI backends: Claude Code CLI, OpenCode CLI, Anthropic, OpenAI, Ollama, Gemini, OpenRouter, Groq, Mistral, DeepSeek, Fireworks, xAI (12 built-in; AWS Bedrock optional)
 - **kernex-core** - Shared types (`Request`, `Response`, `Context`), `HookRunner` trait for tool lifecycle events
 - **kernex-memory** - SQLite-backed persistent memory with conversation history and reward-based learning (transitive via kernex-runtime)
 - **kernex-skills** - Skill loader for `SKILL.md` files (Skills.sh compatible format)

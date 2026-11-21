@@ -9,13 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Provider default models that their providers have retired now point at
-  current ones (checked 2026-10-03): gemini `gemini-2.0-flash` (shut down
-  2026-06-01) -> `gemini-3.5-flash`, groq `llama-3.3-70b-versatile` (dropped for
-  free tiers 2026-08-16) -> `openai/gpt-oss-120b`, deepseek `deepseek-chat`
-  (retired 2026-07-24) -> `deepseek-flash`, xai `grok-2-latest` (no longer
-  listed) -> `grok-4.3`. `--model`, `KERNEX_MODEL` and `provider.model` still
-  override them.
+- Synced to kernex 0.11.0. Provider default models now come from the runtime
+  (`ProviderFactory::default_model`) instead of a table kept in `kx`. With the
+  0.10.0 pin the banner could name one model while another was sent; the two
+  can no longer differ. The 0.11.0 defaults replace models their providers
+  retired: gemini `gemini-3.6-flash`, groq `openai/gpt-oss-120b`, deepseek
+  `deepseek-flash`, xai `grok-4.3`, and OpenRouter IDs in the form OpenRouter
+  lists (`anthropic/claude-sonnet-4.6`). `--model`, `KERNEX_MODEL` and
+  `provider.model` still override them.
+
+### Added
+
+- `--provider opencode`: runs the local OpenCode CLI inside the kernex sandbox,
+  so sandboxed sessions work with any model OpenCode is configured for.
 
 ### Security
 

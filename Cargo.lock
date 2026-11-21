@@ -365,7 +365,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -653,7 +653,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -709,7 +709,7 @@ checksum = "0ce92ff622d6dadf7349484f42c93271a0d49b7cc4d466a936405bacbe10aa78"
 dependencies = [
  "cfg-if",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1300,9 +1300,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-adapter-core"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2374e400e21a116d435d40e2697c03f7cd2c29f0aaf80c8a6277620c2a90d58c"
+checksum = "0de8d2c0ca7deca5e5d47fe53289db56984f74de40268d0ef671032d240eec1c"
 dependencies = [
  "async-trait",
  "serde",
@@ -1357,9 +1357,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-core"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fe9486806db75b342dab7b0dca750e36ffcd4a2ec4b1b94371c9f52deef6207"
+checksum = "9b8e613b7131810b55a49192105361e52c339805bfdf89de326a35c45f77bfd3"
 dependencies = [
  "async-trait",
  "basic-toml",
@@ -1374,9 +1374,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-memory"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7802be127acda070ecf06de702868e96e721bd9cdc24bc457838d15991a92715"
+checksum = "6e979c30707635f5b193cd84b7f813c5e8207828ad6a1ba7becd3c9cec36bb26"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1392,9 +1392,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-pipelines"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06dde7a1037fd668c09ce87b9e7ac5d51bdb21fe0bb37f82cfc8690b14fab477"
+checksum = "60ee73ea6c2b05246a9de487d800d4fe3c712617d4f073694bdf2d6959ca89f8"
 dependencies = [
  "basic-toml",
  "kernex-core",
@@ -1404,9 +1404,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-providers"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22bf18b71df225a86acea28fbdb14dfb4b489fbe74bdaeb949a0fb3ff4b0a034"
+checksum = "f204db50329ae3cd18f4a957c424c09cad53b26cd76c86468e20472439f96635"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1428,9 +1428,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-runtime"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "462ac4e16f07bbf19b00bf871e030eff8d5659b2b244d9ac80123277bb8189fe"
+checksum = "be14931eb1f799fc6e2608c7789100a9b4c27b5d4b9a60fffd2d0cef76fb3d8e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1447,9 +1447,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-sandbox"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64f6742cf14197da7d1e78ffa71bb88c426d056f7d68290a7b6baa3eafc09d7f"
+checksum = "5e2152fe3a5d30a781e09106730807e3488503c6fd1675e50b13f0da7248d1e6"
 dependencies = [
  "anyhow",
  "landlock",
@@ -1459,9 +1459,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-skills"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f0c553dcba85131dc204af2663f4b2cffa6b7e72b5abdbea27fafbf00696b63"
+checksum = "a9abe3a1fc70a7c48bad01026cd7f36dd811a656457e40a9906bc50ae69e3bc3"
 dependencies = [
  "basic-toml",
  "kernex-core",
@@ -1918,7 +1918,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2174,7 +2174,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2187,7 +2187,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2808,7 +2808,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -6,7 +6,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// AI provider to use (claude-code, anthropic, openai, ollama, gemini, openrouter, groq, mistral, deepseek, fireworks, xai)
+    /// AI provider to use (claude-code, opencode, anthropic, openai, ollama, gemini, openrouter, groq, mistral, deepseek, fireworks, xai)
     #[arg(
         short = 'p',
         long,
