@@ -17,6 +17,23 @@ ignore = [
     # feature flag. No ratatui release that drops `paste` exists yet;
     # revisit on the next ratatui upgrade.
     "RUSTSEC-2024-0436",
+    # Reviewed 2026-11-20; next review 2027-02-20 or at the next kernex-*
+    # bump, whichever comes first. Remove each entry when its fix lands.
+    #
+    # RUSTSEC-2026-0459: SQLite before 3.54.0 can return uninitialized
+    # page-cache memory when it opens a database with a crafted sibling
+    # `-wal` file. Local vector only: kx opens the databases it creates
+    # itself (project memory via kernex-memory, `jobs.db` in `kx serve`).
+    # libsqlite3-sys is shared by rusqlite and sqlx through one `links`
+    # key, so the version is set by kernex-memory's sqlx 0.8; the fix
+    # needs sqlx 0.9 upstream.
+    "RUSTSEC-2026-0459",
+    # RUSTSEC-2026-0374: basic-toml is unmaintained, no patched release.
+    # Parse-only use on local config files; replacement under review.
+    "RUSTSEC-2026-0374",
+    # RUSTSEC-2026-0543: chrono is unmaintained, no patched release. Used
+    # for `--since` parsing in `kx mem` and by the kernex-* crates.
+    "RUSTSEC-2026-0543",
 ]
 
 [licenses]
