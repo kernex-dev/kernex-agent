@@ -75,11 +75,62 @@ pub struct ProviderFlags {
 /// or Landlock (Linux 5.13+) refuses to spawn agent tool subprocesses
 /// instead of silently running them unsandboxed. Embedders of the kernex
 /// crates choose their own posture; kx as a product chooses fail-closed.
+///
+/// `blocked_paths` covers the tools the OS sandbox does not: `read`,
+/// `write` and `edit` run inside the kx process, where only this list and
+/// the runtime's own data-dir check apply. Without it those tools could
+/// read `~/.ssh` or rewrite a shell startup file on the model's say-so.
 pub fn sandbox_profile() -> kernex_sandbox::SandboxProfile {
     kernex_sandbox::SandboxProfile {
         require_os_enforcement: true,
+        blocked_paths: dirs::home_dir()
+            .map(|home| blocked_home_paths(&home))
+            .unwrap_or_default(),
         ..Default::default()
     }
+}
+
+/// Credential stores beyond the runtime's own list, relative to `$HOME`.
+const EXTRA_CREDENTIAL_PATHS: &[&str] = &[
+    ".npmrc",
+    ".pypirc",
+    ".git-credentials",
+    ".cargo/credentials.toml",
+    ".cargo/credentials",
+    ".azure",
+    ".config/op",
+    ".terraform.d",
+    ".vault-token",
+    ".local/share/opencode/auth.json",
+];
+
+/// Files a shell or the login session executes on its own. Writing one is
+/// code execution outside the sandbox the next time a terminal opens.
+const STARTUP_PATHS: &[&str] = &[
+    ".zshenv",
+    ".zshrc",
+    ".zprofile",
+    ".zlogin",
+    ".bashrc",
+    ".bash_profile",
+    ".bash_login",
+    ".profile",
+    ".config/fish",
+    "Library/LaunchAgents",
+    ".config/autostart",
+    ".config/systemd/user",
+];
+
+/// Paths under `home` that no agent tool may read or write.
+fn blocked_home_paths(home: &std::path::Path) -> Vec<PathBuf> {
+    let mut paths = kernex_sandbox::credential_read_deny_dirs(home);
+    paths.extend(
+        EXTRA_CREDENTIAL_PATHS
+            .iter()
+            .chain(STARTUP_PATHS)
+            .map(|p| home.join(p)),
+    );
+    paths
 }
 
 /// What the runtime loads from the memory store into the prompt.
@@ -423,6 +474,64 @@ mod tests {
             basic_toml::from_str("[provider]\nmodel = \"m\"\n").unwrap();
         assert!(ignored_project_provider_fields(&config).is_empty());
         assert!(ignored_project_provider_fields(&config::ProjectConfig::default()).is_empty());
+    }
+
+    /// The in-process file tools consult only `blocked_paths` (plus the
+    /// runtime's data-dir check), so these assertions are what stands
+    /// between a prompt-injected `read` or `write` and the user's keys.
+    #[test]
+    fn file_tools_cannot_reach_credentials_or_startup_files() {
+        let home = std::path::Path::new("/home/someone");
+        let profile = kernex_sandbox::SandboxProfile {
+            blocked_paths: blocked_home_paths(home),
+            ..Default::default()
+        };
+        let data_dir = std::path::Path::new("/home/someone/code");
+        for secret in [
+            ".ssh/id_ed25519",
+            ".aws/credentials",
+            ".config/gh/hosts.yml",
+            ".npmrc",
+            ".cargo/credentials.toml",
+            ".git-credentials",
+        ] {
+            assert!(
+                kernex_sandbox::is_read_blocked(&home.join(secret), data_dir, None, Some(&profile)),
+                "{secret} must not be readable"
+            );
+        }
+        for startup in [
+            ".zshrc",
+            ".zshenv",
+            ".bashrc",
+            ".profile",
+            ".ssh/authorized_keys",
+        ] {
+            assert!(
+                kernex_sandbox::is_write_blocked(&home.join(startup), data_dir, Some(&profile)),
+                "{startup} must not be writable"
+            );
+        }
+        // The project itself stays usable.
+        let source = home.join("code/project/src/main.rs");
+        assert!(!kernex_sandbox::is_read_blocked(
+            &source,
+            data_dir,
+            None,
+            Some(&profile)
+        ));
+        assert!(!kernex_sandbox::is_write_blocked(
+            &source,
+            data_dir,
+            Some(&profile)
+        ));
+    }
+
+    #[test]
+    fn sandbox_profile_blocks_home_secrets_when_home_is_known() {
+        if dirs::home_dir().is_some() {
+            assert!(!sandbox_profile().blocked_paths.is_empty());
+        }
     }
 
     #[test]
