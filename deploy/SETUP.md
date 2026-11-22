@@ -16,7 +16,8 @@ No build step required — pull the pre-built image from GHCR.
 
 ## Pulling the Image from GHCR
 
-The image is published publicly at `ghcr.io/kernex-dev/kernex-agent:latest`. No authentication
+The image is published publicly at `ghcr.io/kernex-dev/kernex-agent`, tagged per release
+(`0.7.2`, `0.7`, `latest`). The compose files pin the release they shipped with. No authentication
 is required to pull it. If you receive a 401 or 403, check that:
 
 1. The package visibility is set to **Public** at
@@ -373,6 +374,14 @@ docker cp my-workflow.toml kx:/home/kx/.kx/workflows/
 
 ## Updating
 
+The compose files run a pinned release, so nothing changes until you ask for it.
+Set the release you want in `.env`, then pull and restart:
+
+```bash
+# .env
+KX_VERSION=0.7.2
+```
+
 ```bash
 docker compose -f docker-compose.local.yml pull
 docker compose -f docker-compose.local.yml up -d
@@ -417,7 +426,7 @@ The base `ghcr.io/kernex-dev/kernex-agent` image does not include it. If your sa
 `psql "$DATABASE_URL" -c "..."`, extend the image:
 
 ```dockerfile
-FROM ghcr.io/kernex-dev/kernex-agent:latest
+FROM ghcr.io/kernex-dev/kernex-agent:0.7.2
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
     && rm -rf /var/lib/apt/lists/*

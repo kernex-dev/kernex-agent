@@ -1,6 +1,10 @@
 # Local deployment — Mac Mini, home server, or LAN machine.
 # No TLS. Access at http://localhost:8080
 #
+# The port is published on 127.0.0.1 only. To reach kx from other machines on
+# the LAN, set KX_BIND=0.0.0.0 in .env. This file serves plain http, so the
+# bearer token then crosses the network unencrypted.
+#
 # Usage:
 #   cp .env.example .env   # fill in KERNEX_AUTH_TOKEN + CLAUDE_CREDENTIALS_PATH
 #   docker compose -f docker-compose.local.yml up -d
@@ -14,12 +18,12 @@ volumes:
 
 services:
   kx:
-    image: ghcr.io/kernex-dev/kernex-agent:latest
-    pull_policy: always
+    # Pinned to a release. To upgrade, set KX_VERSION in .env, then pull and restart.
+    image: ghcr.io/kernex-dev/kernex-agent:${KX_VERSION:-0.7.2}
     networks:
       - kx_net
     ports:
-      - "8080:8080"
+      - "${KX_BIND:-127.0.0.1}:8080:8080"
     env_file: .env
     # ── Provider selection ───────────────────────────────────────────────────────
     # Recommended for local: "claude-code" uses your Claude subscription (no API key needed).
