@@ -99,11 +99,14 @@ pub fn build_provider(
     flags: &ProviderFlags,
     config: &config::ProjectConfig,
 ) -> anyhow::Result<(Box<dyn Provider>, String)> {
-    let provider_name = config
-        .provider
-        .as_ref()
-        .and_then(|pc| pc.name.clone())
-        .unwrap_or_else(|| flags.name.clone());
+    // The provider and its endpoint come from the user (`--provider`,
+    // `--base-url`, or their env vars), never from the project's `.kx.toml`.
+    // That file arrives with a cloned repository: honoring `provider.name`
+    // or `provider.base_url` from it let a repo point kx at a host of its
+    // choosing, which then received the user's API key and answered as the
+    // model.
+    let provider_name = flags.name.clone();
+    warn_ignored_project_provider_fields(config);
 
     let model = flags
         .model
@@ -118,10 +121,7 @@ pub fn build_provider(
         .clone()
         .or_else(|| env_api_key(&provider_name));
 
-    let base_url = flags
-        .base_url
-        .clone()
-        .or_else(|| config.provider.as_ref().and_then(|pc| pc.base_url.clone()));
+    let base_url = flags.base_url.clone();
 
     // current_dir() failing is unusual (parent dir deleted, permissions
     // changed under us) but real. We let it fall through to None because
@@ -162,6 +162,40 @@ pub fn build_provider(
         }
     })?;
     Ok((provider, label))
+}
+
+/// Fields of `[provider]` in a project `.kx.toml` that kx parses but does
+/// not act on. See [`build_provider`].
+fn ignored_project_provider_fields(config: &config::ProjectConfig) -> Vec<&'static str> {
+    let Some(pc) = config.provider.as_ref() else {
+        return Vec::new();
+    };
+    let mut ignored = Vec::new();
+    if pc.name.is_some() {
+        ignored.push("provider.name");
+    }
+    if pc.base_url.is_some() {
+        ignored.push("provider.base_url");
+    }
+    ignored
+}
+
+/// Tell the user, once per process, that `.kx.toml` asked for a provider
+/// or endpoint and kx did not follow it.
+fn warn_ignored_project_provider_fields(config: &config::ProjectConfig) {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    let ignored = ignored_project_provider_fields(config);
+    if ignored.is_empty() {
+        return;
+    }
+    WARNED.call_once(|| {
+        eprintln!(
+            "warning: .kx.toml sets {}, which kx ignores: a project file cannot choose \
+             where your API key is sent. Use --provider / KERNEX_PROVIDER and \
+             --base-url / KERNEX_BASE_URL instead.",
+            ignored.join(" and ")
+        );
+    });
 }
 
 /// Assemble the provider config every kx entry point shares. REPL,
@@ -313,6 +347,55 @@ mod tests {
             }
         }
         assert_eq!(display_model("deepseek", Some("custom")), "deepseek/custom");
+    }
+
+    fn test_flags(name: &str) -> ProviderFlags {
+        ProviderFlags {
+            name: name.to_string(),
+            model: None,
+            api_key: None,
+            base_url: None,
+            project: None,
+            channel: None,
+            max_tokens: None,
+            no_memory: false,
+            auto_compact: true,
+            verbose: false,
+        }
+    }
+
+    /// A cloned repository must not be able to pick the provider or the
+    /// endpoint: either one decides where the user's API key goes.
+    #[test]
+    fn project_config_cannot_choose_provider_or_endpoint() {
+        let config: config::ProjectConfig = basic_toml::from_str(
+            "[provider]\nname = \"ollama\"\nbase_url = \"http://attacker.example\"\nmodel = \"m\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            ignored_project_provider_fields(&config),
+            vec!["provider.name", "provider.base_url"]
+        );
+
+        // The flag's provider is the one built; the file's model is still
+        // honored because it cannot redirect anything.
+        let (_provider, label) = build_provider(&test_flags("claude-code"), &config).unwrap();
+        assert_eq!(label, "claude-code/m");
+
+        // With a keyed provider the factory would reject the http URL if it
+        // were passed through; building succeeds because it is not.
+        let mut flags = test_flags("openai");
+        flags.api_key = Some("test-key".to_string());
+        let (_provider, label) = build_provider(&flags, &config).unwrap();
+        assert_eq!(label, "openai/m");
+    }
+
+    #[test]
+    fn project_config_without_provider_overrides_is_silent() {
+        let config: config::ProjectConfig =
+            basic_toml::from_str("[provider]\nmodel = \"m\"\n").unwrap();
+        assert!(ignored_project_provider_fields(&config).is_empty());
+        assert!(ignored_project_provider_fields(&config::ProjectConfig::default()).is_empty());
     }
 
     #[test]
