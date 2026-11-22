@@ -89,7 +89,7 @@ Use `cargo install kernex-agent --features agent-codex` (or any combination) to 
 | **Linux** (x86_64, aarch64) | Fully supported | Sandbox via Landlock; partial enforcement on kernel 5.13+, full enforcement on 6.x+ |
 | **Windows** | Experimental | No sandbox support; requires WSL2 for best experience |
 
-The sandbox layer comes from `kernex-sandbox` and is used by the runtime to isolate AI subprocesses. On platforms without sandbox support, kx still works but without process isolation.
+The sandbox layer comes from `kernex-sandbox` and is used by the runtime to isolate AI subprocesses. On platforms without sandbox support, kx refuses to spawn agent tool subprocesses instead of running them unsandboxed.
 
 ## Installation
 
