@@ -154,6 +154,12 @@ async fn run() -> anyhow::Result<()> {
         }
         #[cfg(feature = "mcp")]
         Some(Command::Mcp) => kernex_agent::mcp::serve().await,
+        // Without the feature the subcommand still parses, so `kx mcp`
+        // fails here instead of being sent to the provider as a prompt.
+        #[cfg(not(feature = "mcp"))]
+        Some(Command::Mcp) => anyhow::bail!(
+            "this kx build does not include the MCP server; rebuild with `--features mcp`"
+        ),
         #[cfg(feature = "memory-cli")]
         Some(Command::Mem {
             action,

@@ -127,7 +127,7 @@ pub enum Command {
         verify_deep: bool,
     },
     /// Run kx as a stdio MCP server exposing the project's memory tools
-    #[cfg(feature = "mcp")]
+    /// (needs a build with the `mcp` feature)
     Mcp,
     /// Read, write, and search the local memory store from outside the REPL
     #[cfg(feature = "memory-cli")]
@@ -155,7 +155,6 @@ pub enum Command {
 // test below asserts every variant carries the required sections so
 // future variants cannot drift away from the contract silently.
 
-#[cfg(feature = "memory-cli")]
 #[derive(Subcommand)]
 pub enum MemAction {
     /// Full-text search across observations and messages
@@ -285,7 +284,6 @@ Try: kx mem save --help # see all required fields
     Save(SaveArgs),
 }
 
-#[cfg(feature = "memory-cli")]
 #[derive(Subcommand)]
 pub enum FactsAction {
     /// List every fact for the current project
@@ -367,7 +365,6 @@ Try: kx mem facts list # confirm key exists, then kx mem facts delete <key>
     },
 }
 
-#[cfg(feature = "memory-cli")]
 #[derive(clap::Args)]
 pub struct SaveArgs {
     /// Observation type (bugfix, decision, pattern, config, discovery, learning, architecture)
@@ -471,6 +468,13 @@ mod tests {
         assert!(cli.command.is_none());
         assert!(cli.message.is_none());
         assert_eq!(cli.provider, "claude-code");
+    }
+
+    #[test]
+    fn cli_parses_mcp_as_a_subcommand_in_every_build() {
+        let cli = Cli::try_parse_from(["kx", "mcp"]).unwrap();
+        assert!(matches!(cli.command, Some(Command::Mcp)));
+        assert!(cli.message.is_none());
     }
 
     #[test]
