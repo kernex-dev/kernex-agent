@@ -82,9 +82,22 @@ pub fn sandbox_profile() -> kernex_sandbox::SandboxProfile {
     }
 }
 
+/// What the runtime loads from the memory store into the prompt.
+///
+/// `no_memory` turns every load off. `ContextNeeds::default()` is the
+/// opposite (everything on), so the fields are spelled out here. The
+/// runtime still writes the exchange to the store afterwards; it has no
+/// switch for that.
 pub fn context_needs(no_memory: bool) -> ContextNeeds {
     if no_memory {
-        ContextNeeds::default()
+        ContextNeeds {
+            recall: false,
+            pending_tasks: false,
+            profile: false,
+            summaries: false,
+            outcomes: false,
+            ..Default::default()
+        }
     } else {
         ContextNeeds {
             recall: true,
@@ -388,6 +401,20 @@ mod tests {
         flags.api_key = Some("test-key".to_string());
         let (_provider, label) = build_provider(&flags, &config).unwrap();
         assert_eq!(label, "openai/m");
+    }
+
+    /// `--no-memory` once returned the default needs, which load everything.
+    #[test]
+    fn no_memory_loads_nothing_from_the_store() {
+        let needs = context_needs(true);
+        assert!(!needs.recall);
+        assert!(!needs.pending_tasks);
+        assert!(!needs.profile);
+        assert!(!needs.summaries);
+        assert!(!needs.outcomes);
+
+        let needs = context_needs(false);
+        assert!(needs.recall && needs.profile && needs.summaries);
     }
 
     #[test]
