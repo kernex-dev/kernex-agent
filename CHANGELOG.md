@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--provider opencode`: runs the local OpenCode CLI inside the kernex sandbox,
   so sandboxed sessions work with any model OpenCode is configured for.
 
+### Fixed
+
+- `cargo build --no-default-features` (alone or with `--features serve`)
+  compiles again. The REPL's `/search`, `/history`, `/facts` and `/memory`
+  commands use the memory module, which was compiled only with the
+  `memory-cli` feature; the module is now always built and the feature gates
+  just the `kx mem` subcommand.
+- `kx mcp` on a build without the `mcp` feature (the default) now exits with
+  an error naming the feature. It used to be read as the one-shot prompt
+  "mcp" and sent to the provider.
+
 ### Security
 
 - Bumped `anyhow` to 1.0.104, closing RUSTSEC-2026-0190 (unsoundness in

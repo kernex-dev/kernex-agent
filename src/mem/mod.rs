@@ -18,8 +18,6 @@
 //! shape (`query_len`, `result_count`) and typed `kernex.error_kind` cross
 //! the span boundary.
 
-#![cfg(feature = "memory-cli")]
-
 pub mod cli;
 pub mod errors;
 pub mod render;
