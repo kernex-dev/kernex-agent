@@ -28,11 +28,16 @@ What follows describes enforced behavior, not aspirations. Platform limits
 and deliberate trade-offs are stated below so operators do not assume
 stronger guarantees than the implementation provides.
 
-### Tool execution is sandboxed, fail-closed
+### Tool subprocesses are sandboxed, fail-closed
 
 kx builds every provider with OS-level sandbox enforcement REQUIRED: on a
 host that cannot apply Seatbelt (macOS) or Landlock (Linux 5.13+), agent
 tool subprocesses are refused rather than silently run unsandboxed.
+
+This covers subprocesses: shell commands, `grep`, `glob`, toolboxes, and
+the `claude` and `opencode` CLIs. It does not cover the `read`, `write`
+and `edit` tools or `web_fetch`, which run inside the kx process (see
+"Outside the sandbox" below), nor MCP servers declared by skills.
 Inside the sandbox (enforced by the kernex crates):
 
 - Subprocesses start from a cleared environment plus a minimal base
@@ -45,6 +50,30 @@ Inside the sandbox (enforced by the kernex crates):
   6.7+ (older kernels cannot restrict the network and the gap is logged
   at spawn time). UDP and non-TCP sockets are never restricted on Linux.
 
+### Outside the sandbox
+
+- **File tools** (`read`, `write`, `edit`) are checked against a deny
+  list, not confined to the workspace. kx denies credential stores
+  (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.npmrc`,
+  `~/.cargo/credentials.toml`, `~/.git-credentials` and similar), shell
+  startup files and login-item directories. Any other file the user can
+  read or write is reachable.
+- **`web_fetch`** accepts any public https host. Private and loopback
+  addresses are refused; there is no host allow-list.
+- **MCP servers** declared by skills start with a cleared environment
+  and no filesystem or network sandbox.
+
+Together these mean an agent that reads untrusted text can be steered
+into reading files and sending them to a host of the attacker's choice.
+kx has no per-call approval prompt yet.
+
+### Project files do not choose the endpoint
+
+`provider.name` and `provider.base_url` in a project's `.kx.toml` are
+ignored with a warning. A repository you cloned cannot decide which
+provider kx talks to or where your API key is sent; only `--provider`,
+`--base-url` and their environment variables can.
+
 ### Skills
 
 - **Ref pinning** — `kx skills add owner/repo@<sha|tag>` installs that
@@ -53,6 +82,13 @@ Inside the sandbox (enforced by the kernex crates):
 - **Integrity** — SHA-256 verified on install; `kx skills verify` detects
   post-install tampering. Install/remove/verify operations are logged to
   the audit log.
+- **Commands need explicit trust** — a skill that declares an MCP server
+  or a toolbox is refused by `kx skills add` unless installed with
+  `--trust trusted`, which prints the command lines first. At startup kx
+  asks the runtime what each installed skill would launch and refuses to
+  run if such a skill is below `trusted`, missing from the manifest,
+  changed since install, or carries an `mcp.json` / `toolbox.json`
+  sidecar.
 - **Enforced runtime permissions** — the `[permissions]` a skill declares
   in its frontmatter are enforced by the runtime, not advisory: the
   command allow-list is checked at load time and re-checked by the tool

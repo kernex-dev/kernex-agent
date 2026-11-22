@@ -12,7 +12,7 @@ CLI dev assistant powered by [Kernex](https://github.com/kernex-dev/kernex).
 - **Stack detection** - Automatically detects Rust, Node/TypeScript, Python, Flutter/Dart, PHP, Go, Java, and Swift projects
 - **Persistent memory** - Remembers decisions, patterns, and context across sessions per project, with FTS5 full-text search
 - **Cost telemetry** - `/cost` slash command surfaces cumulative tokens, estimated cost, and prompt-cache hit ratio
-- **OS sandbox** - Tool execution runs under Seatbelt (macOS) or Landlock (Linux) for filesystem and network isolation
+- **OS sandbox** - Shell commands and other tool subprocesses run under Seatbelt (macOS) or Landlock (Linux) for filesystem and network isolation; see [Security](#security) for what runs outside it
 - **Skills system** - Install reusable behavior packages (`kx skills add owner/repo`) with SHA-256 integrity verification and trust levels
 - **MCP integration** - Connects to MCP servers per skill or project for extra tool surface
 - **Headless server** - `kx serve` exposes an authenticated HTTP API for job submission, webhooks, and multi-step workflows
@@ -34,11 +34,11 @@ kx is your AI coding assistant. It can:
 
 **Limitations:**
 - File and shell tools run under sandbox; outside that surface kx suggests changes rather than applying them.
-- An LLM provider must be available (default: Claude Code CLI; alternatives use API keys via env or `.kx.toml`).
+- An LLM provider must be available (default: Claude Code CLI; alternatives use API keys from environment variables).
 
 ## Requirements
 
-kx needs at least one LLM provider configured. The default is the Claude Code CLI; any other provider can be selected via `--provider` or `.kx.toml`.
+kx needs at least one LLM provider configured. The default is the Claude Code CLI; any other provider can be selected via `--provider` or `KERNEX_PROVIDER`.
 
 | Dependency | Minimum Version | When required |
 |---|---|---|
@@ -507,7 +507,17 @@ Only one kx session per project can run at a time. Close other sessions or wait 
 
 ## Security
 
-The runtime executes LLM tool calls (file reads/writes, shell commands, MCP tools, custom toolboxes) inside an OS sandbox: Seatbelt on macOS, Landlock on Linux. Skills installed via `kx skills add` are pinned by SHA-256 in `~/.kx/projects/<name>/skills.toml` and verified on every load; tampering causes the skill to be refused and an audit-log entry written.
+Tool subprocesses (shell commands, `grep`, `glob`, custom toolboxes) run inside an OS sandbox: Seatbelt on macOS, Landlock on Linux. Three things run outside it, and you should know which:
+
+- The `read`, `write` and `edit` tools run inside the kx process. kx denies them credential stores (`~/.ssh`, `~/.aws`, registry tokens such as `~/.npmrc`) and shell startup files, but they are not confined to the project directory.
+- `web_fetch` can reach any public https host.
+- MCP servers declared by a skill start with a cleared environment and no filesystem sandbox.
+
+So a session that reads untrusted content (a web page, a file from someone else) can be steered into reading other files you can read and sending them out. Use the `claude-code` provider or a container when that matters.
+
+Skills installed via `kx skills add` are pinned by SHA-256 in `~/.kx/projects/<name>/skills.toml`. A skill may declare an MCP server or a toolbox only when installed with `--trust trusted`, and kx refuses to start while a skill that declares one is untrusted, unlisted, or changed since install.
+
+A project's `.kx.toml` cannot choose the provider or its endpoint: `provider.name` and `provider.base_url` in that file are ignored with a warning. Set them with `--provider` / `KERNEX_PROVIDER` and `--base-url` / `KERNEX_BASE_URL`.
 
 If you find a vulnerability, please open a private security advisory at [github.com/kernex-dev/kernex-agent/security/advisories/new](https://github.com/kernex-dev/kernex-agent/security/advisories/new) rather than a public issue. We rotate token-bound auth and ship sandbox fixes as patch releases.
 
