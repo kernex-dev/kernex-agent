@@ -137,6 +137,63 @@ jobs:
             --title "${GITHUB_REF_NAME}" \
             --generate-notes
 
+  # Publish the crate so `cargo install kernex-agent` matches the tag.
+  # crates.io accepts trusted publishing only for this crate: the token is
+  # minted from this job's OIDC identity and lives for the job. The
+  # trusted-publisher entry on crates.io must name this workflow file and
+  # the `release` environment, and that environment should require a
+  # reviewer and allow only `v*.*.*` tags.
+  crates:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    # Tag pushes only: a workflow_dispatch dry run must not publish.
+    if: github.ref_type == 'tag'
+    needs: [ci, security, binaries]
+    environment: release
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Required for the OIDC token exchange with crates.io
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Check the tag matches Cargo.toml
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 --locked | jq -r '.packages[0].version')"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo.toml version ${version}"
+            exit 1
+          fi
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+
+      - name: Skip if this version is already on crates.io
+        run: |
+          code="$(curl -s -o /dev/null -w '%{http_code}' -A 'kernex-agent-release' \
+            "https://crates.io/api/v1/crates/kernex-agent/${VERSION}")"
+          if [ "${code}" = "200" ]; then
+            echo "kernex-agent ${VERSION} is already published; nothing to do."
+            echo "ALREADY_PUBLISHED=1" >> "$GITHUB_ENV"
+          fi
+
+      # Build and verify the package before any credential exists, so a
+      # dependency's build script never runs next to the registry token.
+      - name: Package and verify
+        if: env.ALREADY_PUBLISHED != '1'
+        run: cargo package --locked
+
+      - name: Mint crates.io OIDC token
+        if: env.ALREADY_PUBLISHED != '1'
+        id: auth
+        uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1.0.4
+
+      - name: Publish
+        if: env.ALREADY_PUBLISHED != '1'
+        run: cargo publish --locked --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
   docker:
     name: Build and Push
     runs-on: ubuntu-latest
