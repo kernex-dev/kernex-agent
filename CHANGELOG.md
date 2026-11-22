@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-22
+
+### Changed
+
+- **`cargo install kernex-agent` installs the current release again.**
+  crates.io had served 0.5.0 since May 2026: 0.6.0 through 0.7.1 were tagged
+  and shipped as binaries and a container image, but nothing published the
+  crate. The release workflow now publishes it from the tag through
+  crates.io trusted publishing, after the same gate as the binaries. No
+  source changes since 0.7.1.
+- The published crate no longer carries deployment files, design notes, CI
+  and editor configuration: 100 files instead of 174. They remain in the
+  repository.
+- `Cargo.lock` moved off three yanked releases (`chacha20`, `clipboard-win`,
+  `spin`), which `cargo install --locked` warned about.
+
 ## [0.7.1] - 2026-11-22
 
 ### Security
