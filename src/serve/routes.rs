@@ -233,6 +233,19 @@ pub async fn handle_run(
     State(state): State<AppState>,
     Json(body): Json<RunBody>,
 ) -> Result<Json<JobIdResponse>, (StatusCode, Json<ErrorResponse>)> {
+    // A caller that names a channel is asking to continue that conversation.
+    // Every other job starts with an empty history.
+    let isolated = body.channel.is_none();
+    submit_run(state, body, isolated).await
+}
+
+/// Validate a run request and queue it. `isolated` decides whether the job
+/// sees the history of earlier jobs on its channel; see `job_sender`.
+async fn submit_run(
+    state: AppState,
+    body: RunBody,
+    isolated: bool,
+) -> Result<Json<JobIdResponse>, (StatusCode, Json<ErrorResponse>)> {
     if body.message.len() > MAX_MESSAGE_BYTES {
         return Err((
             StatusCode::PAYLOAD_TOO_LARGE,
@@ -314,6 +327,8 @@ pub async fn handle_run(
         skills: body.skills,
         mode: body.mode,
         workflow: body.workflow,
+        tools: state.tools,
+        isolated,
     };
 
     state.tx.send(req).await.map_err(|_| {
@@ -404,9 +419,11 @@ pub async fn handle_webhook(
         .message
         .unwrap_or_else(|| format!("Webhook event triggered: {event}"));
 
-    handle_run(
-        State(state),
-        Json(RunBody {
+    // The payload of a webhook is written by whoever can trigger the event,
+    // so these jobs never share history: `isolated` is always true here.
+    submit_run(
+        state,
+        RunBody {
             message,
             provider: None,
             model: None,
@@ -421,7 +438,8 @@ pub async fn handle_webhook(
             skills: None,
             mode: None,
             workflow: None,
-        }),
+        },
+        true,
     )
     .await
 }

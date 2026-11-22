@@ -2,6 +2,7 @@ pub mod db;
 pub mod jobs;
 pub mod routes;
 pub mod skills;
+pub mod tools;
 pub mod workflow;
 
 use std::sync::Arc;
@@ -21,7 +22,7 @@ use tokio::sync::Semaphore;
 use tower_http::trace::TraceLayer;
 
 use crate::config::ProjectConfig;
-use crate::{build_provider, context_needs, data_dir_for, CliHookRunner, ProviderFlags};
+use crate::{build_provider_with_tools, context_needs, data_dir_for, ProviderFlags};
 
 use jobs::{JobRequest, JobStatus, JobStore};
 
@@ -32,6 +33,8 @@ pub struct AppState {
     pub default_flags: Arc<ProviderFlags>,
     pub auth_token: String,
     pub db: Option<Arc<db::JobDb>>,
+    /// Tool profile applied to every job this server runs.
+    pub tools: tools::ToolProfile,
 }
 
 pub async fn cmd_serve(
@@ -39,6 +42,7 @@ pub async fn cmd_serve(
     port: u16,
     auth_token: Option<String>,
     workers: usize,
+    tools: tools::ToolProfile,
     flags: &ProviderFlags,
 ) -> anyhow::Result<()> {
     // Tracing subscriber is now initialised once in `main::run` for every
@@ -107,7 +111,18 @@ pub async fn cmd_serve(
         default_flags: Arc::new(flags.clone()),
         auth_token: token,
         db: db_arc.clone(),
+        tools,
     };
+
+    match tools {
+        tools::ToolProfile::ReadOnly => tracing::info!(
+            "tool profile: read-only (jobs can read and search files; no shell, writes or network)"
+        ),
+        tools::ToolProfile::Full => tracing::warn!(
+            "tool profile: full. Every job can run commands, write files and reach the network, \
+             steered by whatever text it reads. Only use this where each job's input is trusted."
+        ),
+    }
 
     let semaphore = Arc::new(Semaphore::new(workers));
     let worker_handle = tokio::spawn(run_worker(rx, job_store, db_arc, semaphore));
@@ -370,6 +385,8 @@ async fn run_workflow(req: JobRequest, wf: workflow::Workflow) -> Result<(String
             verbose: req.verbose,
             skills: Some(vec![step.skill.clone()]),
             mode: step.mode.clone(),
+            tools: req.tools,
+            isolated: req.isolated,
             workflow: None,
         };
 
@@ -412,6 +429,8 @@ async fn run_workflow(req: JobRequest, wf: workflow::Workflow) -> Result<(String
         skills: Some(vec!["reality-checker".to_string()]),
         mode: Some("task".to_string()),
         workflow: None,
+        tools: req.tools,
+        isolated: req.isolated,
     };
 
     tracing::info!(job_id = %req.job_id, "workflow validation gate: running reality-checker");
@@ -551,7 +570,24 @@ fn known_verdict(raw: &str) -> Option<&'static str> {
     }
 }
 
+/// Sender id the runtime files a job's conversation under.
+///
+/// The runtime keys history on channel, sender and project, and always loads
+/// it. With one fixed sender, every job on a channel read the prompts and
+/// answers of the jobs before it: text planted by one request steered the
+/// next, and one caller's data reached another's job. A sender per job gives
+/// each job an empty history. Only a caller that names a channel keeps the
+/// shared conversation it asked for.
+fn job_sender(req: &JobRequest) -> String {
+    if req.isolated {
+        format!("job-{}", req.job_id)
+    } else {
+        "user".to_string()
+    }
+}
+
 async fn run_agent(req: JobRequest) -> Result<String, String> {
+    let sender = job_sender(&req);
     let flags = ProviderFlags {
         name: req.provider,
         model: req.model,
@@ -571,7 +607,9 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
     };
 
     let config = ProjectConfig::default();
-    let (provider, _label) = build_provider(&flags, &config).map_err(|e| e.to_string())?;
+    let cli_tools = req.tools.cli_tool_allowlist();
+    let (provider, _label) = build_provider_with_tools(&flags, &config, cli_tools.as_deref())
+        .map_err(|e| e.to_string())?;
 
     let project_name = req.project.as_deref().unwrap_or("serve");
     let data_dir = data_dir_for(project_name);
@@ -589,7 +627,8 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
         .channel(channel)
         .project(project_name)
         .auto_compact(flags.auto_compact)
-        .hook_runner(Arc::new(CliHookRunner {
+        .hook_runner(Arc::new(tools::ServeHookRunner {
+            profile: req.tools,
             verbose: req.verbose,
         }))
         .build()
@@ -597,7 +636,7 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
 
     let needs = context_needs(true);
-    let request = KxRequest::text("user", &req.message);
+    let request = KxRequest::text(&sender, &req.message);
 
     let response = runtime
         .complete_with_needs(provider.as_ref(), &request, &needs)
@@ -661,6 +700,39 @@ async fn set_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn job_request(job_id: &str, isolated: bool) -> JobRequest {
+        JobRequest {
+            job_id: job_id.to_string(),
+            message: "m".to_string(),
+            provider: "claude-code".to_string(),
+            model: None,
+            api_key: None,
+            base_url: None,
+            project: None,
+            channel: None,
+            max_tokens: None,
+            verbose: false,
+            skills: None,
+            mode: None,
+            workflow: None,
+            tools: Default::default(),
+            isolated,
+        }
+    }
+
+    /// Two jobs must not land in one conversation unless the caller asked.
+    #[test]
+    fn isolated_jobs_get_a_sender_of_their_own() {
+        let a = job_sender(&job_request("a", true));
+        let b = job_sender(&job_request("b", true));
+        assert_ne!(a, b);
+        assert_eq!(a, "job-a");
+
+        // A named channel keeps the shared conversation.
+        assert_eq!(job_sender(&job_request("a", false)), "user");
+        assert_eq!(job_sender(&job_request("b", false)), "user");
+    }
 
     #[tokio::test]
     async fn set_status_updates_job() {
@@ -902,6 +974,7 @@ mod tests {
             default_flags: flags,
             auth_token: token.to_string(),
             db: None,
+            tools: Default::default(),
         };
         (state, rx)
     }
