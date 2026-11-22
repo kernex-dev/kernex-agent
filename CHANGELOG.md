@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`deploy/docker-compose.local.yml` publishes the port on 127.0.0.1 only.**
+  It published 8080 on every interface over plain http, although the file
+  described itself as localhost access. Set `KX_BIND=0.0.0.0` in `.env` to
+  serve the LAN again.
+- **The compose files run a pinned release instead of `latest`.** They
+  tracked `latest` with `pull_policy: always`, so every restart could run a
+  new image. Set `KX_VERSION` in `.env` to upgrade. A test keeps the default
+  on the crate version.
+- The Caddy container receives `DOMAIN` and `ACME_EMAIL` only. It used to
+  receive the whole `.env`, including the auth token and provider keys.
+- Base images are pinned by digest and the Caddy rate-limit plugin by
+  commit. Dependabot now proposes image updates for `deploy/`.
+
 ## [0.7.2] - 2026-11-22
 
 ### Changed

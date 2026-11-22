@@ -30,8 +30,8 @@ services:
 
   # ── kx serve ────────────────────────────────────────────────────────────────
   kx:
-    image: ghcr.io/kernex-dev/kernex-agent:latest
-    pull_policy: always
+    # Pinned to a release. To upgrade, set KX_VERSION in .env, then pull and restart.
+    image: ghcr.io/kernex-dev/kernex-agent:${KX_VERSION:-0.7.2}
     container_name: kx
     networks:
       - kx_net

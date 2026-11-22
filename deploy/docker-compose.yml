@@ -99,7 +99,10 @@ services:
       - "80:80"    # HTTP redirect to HTTPS
       - "443:443"  # HTTPS
       - "443:443/udp"  # HTTP/3
-    env_file: .env
+    # Only what the Caddyfile reads. The rest of .env (auth token, provider keys) stays out.
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
