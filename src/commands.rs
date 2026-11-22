@@ -411,7 +411,10 @@ fn print_config(runtime: &Runtime, detected_stack: Stack, config: &ProjectConfig
     }
     if let Some(pc) = &config.provider {
         if let Some(name) = &pc.name {
-            println!("  {} {name}", "Provider:".dimmed());
+            println!(
+                "  {} {name} (ignored; set --provider or KERNEX_PROVIDER)",
+                "Provider:".dimmed()
+            );
         }
         if let Some(model) = &pc.model {
             println!("  {} {model}", "Model:".dimmed());
