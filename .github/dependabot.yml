@@ -17,3 +17,10 @@ updates:
       interval: "weekly"
     labels:
       - "dependencies"
+
+  - package-ecosystem: "docker"
+    directory: "/deploy"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"

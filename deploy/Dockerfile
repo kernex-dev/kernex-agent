@@ -1,5 +1,6 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
-FROM rust:1-slim-bookworm AS builder
+# Base images are pinned by digest; Dependabot (docker ecosystem) proposes updates.
+FROM rust:1-slim-bookworm@sha256:7c7d4eb4d05b7781187a327809466cfddf29753f6defdc3d19a0e291951b7a37 AS builder
 
 WORKDIR /build
 
@@ -20,7 +21,7 @@ COPY templates ./templates
 RUN touch src/main.rs && cargo build --release --locked
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
-FROM debian:bookworm-slim AS runtime
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS runtime
 
 # Runtime deps only: TLS certs + curl for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
