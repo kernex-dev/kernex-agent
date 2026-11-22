@@ -40,7 +40,8 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub max_tokens: Option<u32>,
 
-    /// Disable persistent memory for this session
+    /// Do not load anything from persistent memory into this session
+    /// (recall, facts, summaries). The exchange is still saved.
     #[arg(long, global = true)]
     pub no_memory: bool,
 
