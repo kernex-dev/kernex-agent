@@ -133,7 +133,8 @@ async fn run() -> anyhow::Result<()> {
             port,
             auth_token,
             workers,
-        }) => cmd_serve(host, port, auth_token, workers, &provider_flags).await,
+            tools,
+        }) => cmd_serve(host, port, auth_token, workers, tools, &provider_flags).await,
         #[cfg(feature = "agent-claude")]
         Some(Command::Install {
             agent,

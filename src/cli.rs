@@ -107,6 +107,11 @@ pub enum Command {
         /// Max concurrent agent jobs
         #[arg(long, default_value_t = 4)]
         workers: usize,
+        /// Tools a job may use. `read-only`: read and search files, no
+        /// shell, writes or network. `full`: every tool; only where the
+        /// input of every job is trusted
+        #[arg(long, value_enum, env = "KX_SERVE_TOOLS", default_value = "read-only")]
+        tools: crate::serve::tools::ToolProfile,
     },
     /// Install kernex bindings into a supported agent host (Claude Code, etc.)
     #[cfg(feature = "agent-claude")]
@@ -774,15 +779,31 @@ mod tests {
             port,
             auth_token,
             workers,
+            tools,
         }) = cli.command
         {
             assert_eq!(host, "127.0.0.1");
             assert_eq!(port, 8080);
             assert_eq!(auth_token, Some("secret".to_string()));
             assert_eq!(workers, 4);
+            assert_eq!(tools, crate::serve::tools::ToolProfile::ReadOnly);
         } else {
             panic!("Expected Serve command");
         }
+    }
+
+    #[test]
+    #[cfg(feature = "serve")]
+    fn cli_parses_serve_tools_full() {
+        let cli = Cli::try_parse_from(["kx", "serve", "--auth-token", "secret", "--tools", "full"])
+            .unwrap();
+        match cli.command {
+            Some(Command::Serve { tools, .. }) => {
+                assert_eq!(tools, crate::serve::tools::ToolProfile::Full);
+            }
+            _ => panic!("Expected Serve command"),
+        }
+        assert!(Cli::try_parse_from(["kx", "serve", "--tools", "everything"]).is_err());
     }
 
     #[test]

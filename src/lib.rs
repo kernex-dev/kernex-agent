@@ -41,8 +41,8 @@ pub mod utils;
 // without sub-module qualifiers. This is the seam that lets `serve`
 // continue compiling unchanged after the bin -> lib extraction.
 pub use runtime_glue::{
-    api_key_var, build_provider, context_needs, data_dir_for, CliHookRunner, ProviderFlags,
-    ProviderSpec, PROVIDERS,
+    api_key_var, build_provider, build_provider_with_tools, context_needs, data_dir_for,
+    CliHookRunner, ProviderFlags, ProviderSpec, PROVIDERS,
 };
 
 #[cfg(any(

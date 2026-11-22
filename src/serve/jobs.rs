@@ -51,6 +51,11 @@ pub struct JobRequest {
     /// Named workflow to execute. If set, `message` is used as the workflow input and
     /// each step is dispatched as a separate agent call.
     pub workflow: Option<String>,
+    /// Tools this job may use. Set by the server, never by the caller.
+    pub tools: super::tools::ToolProfile,
+    /// When true the job starts without the conversation history of earlier
+    /// jobs. False only when the caller named a channel to continue.
+    pub isolated: bool,
 }
 
 impl std::fmt::Debug for JobRequest {
@@ -69,6 +74,8 @@ impl std::fmt::Debug for JobRequest {
             .field("skills", &self.skills)
             .field("mode", &self.mode)
             .field("workflow", &self.workflow)
+            .field("tools", &self.tools)
+            .field("isolated", &self.isolated)
             .finish()
     }
 }
@@ -128,6 +135,8 @@ mod tests {
             skills: None,
             mode: None,
             workflow: None,
+            tools: Default::default(),
+            isolated: true,
         };
         let dbg = format!("{req:?}");
         assert!(!dbg.contains("sk-ant-secret-value"), "key leaked: {dbg}");

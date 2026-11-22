@@ -163,6 +163,16 @@ pub fn build_provider(
     flags: &ProviderFlags,
     config: &config::ProjectConfig,
 ) -> anyhow::Result<(Box<dyn Provider>, String)> {
+    build_provider_with_tools(flags, config, None)
+}
+
+/// [`build_provider`], with an optional tool allowlist for providers that
+/// run their own tools in a child process. `None` leaves them unrestricted.
+pub fn build_provider_with_tools(
+    flags: &ProviderFlags,
+    config: &config::ProjectConfig,
+    cli_tools: Option<&[String]>,
+) -> anyhow::Result<(Box<dyn Provider>, String)> {
     // The provider and its endpoint come from the user (`--provider`,
     // `--base-url`, or their env vars), never from the project's `.kx.toml`.
     // That file arrives with a cloned repository: honoring `provider.name`
@@ -212,6 +222,10 @@ pub fn build_provider(
         cwd,
     );
 
+    if let Some(tools) = cli_tools {
+        return restricted_cli_provider(&provider_name, kx_config, tools).map(|p| (p, label));
+    }
+
     let provider = ProviderFactory::create(&provider_name, kx_config).map_err(|e| {
         let msg = e.to_string();
         if msg.contains("unknown") || msg.contains("unsupported") || msg.contains("not found") {
@@ -226,6 +240,41 @@ pub fn build_provider(
         }
     })?;
     Ok((provider, label))
+}
+
+/// Build a CLI-backed provider limited to `tools`.
+///
+/// Providers that call an HTTP API run tools inside kx, where the caller's
+/// hook sees every call, so they need nothing here. `claude-code` runs its
+/// own tools in a child process: the only control is the allowlist it is
+/// started with, and the runtime's factory always starts it with permission
+/// checks off. `opencode` has no allowlist at all, so it is refused rather
+/// than run unrestricted under a profile that promises a restriction.
+fn restricted_cli_provider(
+    provider_name: &str,
+    config: KxProviderConfig,
+    tools: &[String],
+) -> anyhow::Result<Box<dyn Provider>> {
+    match provider_name {
+        "claude-code" => Ok(Box::new(
+            kernex_providers::claude_code::ClaudeCodeProvider::from_config(
+                25,
+                tools.to_vec(),
+                3600,
+                config.workspace_path,
+                5,
+                config.model.unwrap_or_default(),
+                None,
+            )
+            .with_sandbox_profile(config.sandbox_profile.unwrap_or_default()),
+        )),
+        "opencode" => anyhow::bail!(
+            "the opencode provider cannot run with a restricted tool profile: it has no \
+             tool allowlist. Use another provider, or start the server with `--tools full`."
+        ),
+        _ => ProviderFactory::create(provider_name, config)
+            .map_err(|e| anyhow::anyhow!(e.to_string())),
+    }
 }
 
 /// Fields of `[provider]` in a project `.kx.toml` that kx parses but does
@@ -452,6 +501,37 @@ mod tests {
         flags.api_key = Some("test-key".to_string());
         let (_provider, label) = build_provider(&flags, &config).unwrap();
         assert_eq!(label, "openai/m");
+    }
+
+    /// A restricted tool profile must never fall back to an unrestricted
+    /// provider: `opencode` has no allowlist, so it is refused.
+    #[test]
+    fn restricted_tools_refuse_a_provider_without_an_allowlist() {
+        let config = config::ProjectConfig::default();
+        let tools = vec!["Read".to_string()];
+
+        let Err(err) = build_provider_with_tools(&test_flags("opencode"), &config, Some(&tools))
+        else {
+            panic!("opencode must be refused under a restricted profile");
+        };
+        assert!(err.to_string().contains("--tools full"), "{err}");
+
+        // Unrestricted, it still builds.
+        assert!(build_provider_with_tools(&test_flags("opencode"), &config, None).is_ok());
+    }
+
+    #[test]
+    fn restricted_tools_still_build_claude_code_and_api_providers() {
+        let config = config::ProjectConfig::default();
+        let tools = vec!["Read".to_string(), "Grep".to_string()];
+
+        let (provider, _) =
+            build_provider_with_tools(&test_flags("claude-code"), &config, Some(&tools)).unwrap();
+        assert_eq!(provider.name(), "claude-code");
+
+        let mut flags = test_flags("openai");
+        flags.api_key = Some("test-key".to_string());
+        assert!(build_provider_with_tools(&flags, &config, Some(&tools)).is_ok());
     }
 
     /// `--no-memory` once returned the default needs, which load everything.
