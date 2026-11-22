@@ -201,6 +201,26 @@ pub async fn add_skill(
 
     let skill_manifest = parse_skill_md(&content_str).map_err(|e| e.to_string())?;
 
+    // A skill can make the runtime start MCP servers and toolbox commands.
+    // That is code execution on this machine, so it needs the explicit
+    // `--trust trusted`, and the user sees the command lines either way.
+    let commands = super::guard::commands_declared_by(&body)?;
+    if !commands.is_empty() {
+        if trust != TrustLevel::Trusted {
+            return Err(format!(
+                "skill '{}' declares commands that kx would run on this machine:\n    {}\n\
+                 Skills at trust level '{trust}' may not do that. If you have read what it \
+                 runs and want it, install with `--trust trusted`.",
+                skill_manifest.name,
+                commands.join("\n    ")
+            ));
+        }
+        println!("  {}", "This skill runs commands on this machine:".yellow());
+        for command in &commands {
+            println!("    {command}");
+        }
+    }
+
     if policy.is_blocked(&skill_manifest.name) {
         return Err(format!(
             "skill '{}' is blocked by project config",

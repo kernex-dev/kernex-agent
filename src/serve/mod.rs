@@ -581,6 +581,8 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
     let system_prompt =
         skills::build_serve_system_prompt(skill_names, &data_dir, req.mode.as_deref());
 
+    // The runtime starts whatever commands installed skills declare.
+    crate::skills::guard::check_installed(&data_dir)?;
     let runtime = RuntimeBuilder::new()
         .data_dir(&data_dir.to_string_lossy())
         .system_prompt(&system_prompt)
