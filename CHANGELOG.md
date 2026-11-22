@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking: `kx serve` jobs run with read-only tools by default.** A job
+  could run shell commands, write files and fetch URLs with nobody
+  watching, steered by whatever text it read. Jobs can now read and search
+  files only. Start the server with `--tools full` (or `KX_SERVE_TOOLS=full`)
+  to get the previous behavior; do that only where you control the input of
+  every job. Workflows that fetch pages or run commands need `full`. Under
+  `read-only` the `claude-code` provider is started with an allowlist
+  instead of `--dangerously-skip-permissions`, and the `opencode` provider
+  is refused because it has no allowlist.
+- **Breaking: `kx serve` jobs no longer share conversation history.** Every
+  job on a channel read the prompts and answers of the jobs before it. Each
+  job now starts empty. A `/run` request that names a `channel` keeps a
+  shared conversation; webhook jobs never do.
+
 - **`deploy/docker-compose.local.yml` publishes the port on 127.0.0.1 only.**
   It published 8080 on every interface over plain http, although the file
   described itself as localhost access. Set `KX_BIND=0.0.0.0` in `.env` to

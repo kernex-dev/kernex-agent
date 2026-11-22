@@ -127,6 +127,25 @@ to disk.
   proxy (Caddy, nginx) that terminates TLS and enforces rate limits, and
   always set `--auth-token`. Never expose a bare `kx serve` port to an
   untrusted network.
+- **Jobs run with read-only tools unless you start the server with
+  `--tools full`.** A job reads text nobody vetted (a webhook payload, a
+  file under review, a fetched page), and that text can try to steer the
+  model. Under `read-only` a job can read and search files and nothing
+  else: no shell, no file writes, no `web_fetch`, no MCP or toolbox calls,
+  so a steered job cannot change the host or send data anywhere but its
+  own output. Under `full` it can do all of that with whatever the process
+  can reach, including the provider credentials. Use `full` only where you
+  control the input of every job, and keep the bearer token as secret as
+  those credentials. Two limits: with the `claude-code` provider the
+  restriction is the allowlist the `claude` CLI is started with, and MCP
+  servers declared by a skill you installed as `trusted` stay available
+  to it; the `opencode` provider has no allowlist and is refused under
+  `read-only`. A read-only job can still read any file the process can,
+  outside the blocked credential paths, and return it to the caller.
+- **Jobs do not see each other's conversation.** Each job starts with an
+  empty history. A `/run` request that names a `channel` opts into a
+  conversation shared by every request on that channel; webhook jobs
+  never share one.
 - **Job results are stored in plaintext at rest** (`jobs.db` under the kx
   data directory). Anything an agent reads or produces during a serve job
   lands there unencrypted; rely on full-disk encryption and filesystem
@@ -159,7 +178,8 @@ kx's `HookRunner` logs tool calls (with `--verbose`) and allows them; it
 is not where permissions are enforced. Enforcement lives below it: the
 skill loader's validation chain, the executor's pre-spawn allow-list
 re-check, and the OS sandbox. A skill cannot bypass those layers by the
-hook saying yes.
+hook saying yes. The one exception is `kx serve`, whose hook refuses
+tool calls outside the server's tool profile (see Deployment Warnings).
 
 ### Builtin skills are auto-trusted
 

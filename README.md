@@ -239,6 +239,7 @@ kx serve
 |------|---------|-------------|
 | `--host` | `127.0.0.1` | Bind address |
 | `--port` | `8080` | Listen port |
+| `--tools` | `read-only` | Tools a job may use: `read-only` (read and search files) or `full` (shell, file writes, `web_fetch`, MCP). Also `KX_SERVE_TOOLS` |
 | `--auth-token` | (required) | Bearer token for API authentication |
 | `--workers` | `4` | Max concurrent agent jobs |
 
