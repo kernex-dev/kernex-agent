@@ -19,8 +19,8 @@ recommended remediation; backports are not provided.
 
 | Version | Supported |
 |---------|-----------|
-| 0.6.x   | Yes       |
-| < 0.6   | No        |
+| 0.7.x   | Yes       |
+| < 0.7   | No        |
 
 ## Security Model
 
