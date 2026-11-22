@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-22
+
+### Security
+
+- **A project `.kx.toml` can no longer choose the provider or its endpoint.**
+  `provider.name` overrode `--provider`, and `provider.base_url` was honored,
+  so running `kx` (or just `kx doctor`) inside a cloned repository could send
+  your API key to a host named by that repository, which then answered as the
+  model and drove kx's tools. Both fields are now ignored with a warning; use
+  `--provider` / `KERNEX_PROVIDER` and `--base-url` / `KERNEX_BASE_URL`.
+  `provider.model`, `max_tokens` and `timeout_secs` still work. Upgrade if you
+  run kx in repositories you did not write.
+- **Skills that start commands need `--trust trusted`.** A skill installed at
+  the default `sandboxed` trust could declare an MCP server or a toolbox, and
+  the runtime started it without consulting kx's trust level or hash.
+  `kx skills add` now refuses such a skill below `trusted` and prints the
+  command lines when it accepts one. At startup kx refuses to run while an
+  installed skill would launch a command and is untrusted, unlisted in the
+  manifest, edited since install, or has an `mcp.json` / `toolbox.json`
+  sidecar. If this blocks you, the message names the skill and both ways out.
+- **File tools can no longer read credential stores or write shell startup
+  files.** `read`, `write` and `edit` run inside the kx process, outside the OS
+  sandbox, and were limited only by the runtime's data-directory check. They
+  are now denied `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.npmrc`,
+  `~/.cargo/credentials.toml`, `~/.git-credentials` and similar stores, plus
+  `~/.zshrc`, `~/.zshenv`, `~/.bashrc`, `~/.profile`, `~/Library/LaunchAgents`
+  and other files a login runs. The same paths are denied to sandboxed
+  subprocesses. This is a deny list: the tools are still not confined to the
+  project directory.
+
+### Fixed
+
+- `--no-memory` now does what it says for reads. It returned the runtime's
+  default settings, which load recall, facts, summaries, pending tasks and
+  outcomes; it now loads none of them. `kx serve` jobs use the same switch.
+  The exchange is still written to the store afterwards.
+- README and SECURITY.md stated that every tool call runs inside the OS
+  sandbox. They now say which tools do and which do not.
+
 ## [0.7.0] - 2026-11-21
 
 ### Changed
