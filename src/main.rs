@@ -264,6 +264,8 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
 
     check_provider(provider.as_ref()).await?;
 
+    // The runtime starts whatever commands installed skills declare.
+    skills::guard::check_installed(&data_dir).map_err(|e| anyhow::anyhow!(e))?;
     let runtime = Arc::new(
         RuntimeBuilder::new()
             .data_dir(&data_dir.to_string_lossy())
@@ -899,6 +901,8 @@ async fn run_oneshot_command(
 
     let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
 
+    // The runtime starts whatever commands installed skills declare.
+    skills::guard::check_installed(&data_dir).map_err(|e| anyhow::anyhow!(e))?;
     let runtime = RuntimeBuilder::new()
         .data_dir(&data_dir.to_string_lossy())
         .system_prompt(&system_prompt)
@@ -946,6 +950,8 @@ async fn cmd_cron(action: CronAction) -> anyhow::Result<()> {
     let project_name = stack::project_name(&cwd);
     let data_dir = data_dir_for(&project_name);
 
+    // The runtime starts whatever commands installed skills declare.
+    skills::guard::check_installed(&data_dir).map_err(|e| anyhow::anyhow!(e))?;
     let runtime = RuntimeBuilder::new()
         .data_dir(&data_dir.to_string_lossy())
         .system_prompt("")
@@ -1132,6 +1138,9 @@ async fn build_agent_runtime(
         return Ok(());
     }
     let content = loaded.agent_content(agent_name)?;
+    // The runtime starts whatever commands installed skills declare.
+    skills::guard::check_installed(std::path::Path::new(data_str))
+        .map_err(|e| anyhow::anyhow!(e))?;
     let runtime = RuntimeBuilder::new()
         .data_dir(data_str)
         .system_prompt(content)

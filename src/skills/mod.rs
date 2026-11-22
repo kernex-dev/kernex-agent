@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod cli_handler;
+pub mod guard;
 pub mod manifest;
 pub mod parser;
 pub mod permissions;
