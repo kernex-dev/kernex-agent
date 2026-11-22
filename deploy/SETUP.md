@@ -372,6 +372,25 @@ docker cp my-workflow.toml kx:/home/kx/.kx/workflows/
 
 ---
 
+## Tool profile
+
+Jobs run with read-only tools by default: they can read and search files, and
+cannot run commands, write files or reach the network. That is the safe setting
+for jobs whose input you do not fully control, such as webhook payloads or
+content under review.
+
+Workflows that fetch pages or run commands (the bundled GEO audit, pipelines
+that call `psql`) need every tool. Add this to `.env` and restart:
+
+```bash
+KX_SERVE_TOOLS=full
+```
+
+With `full`, a job can do anything the container can, including reading the
+provider credentials. Use it only where you control the input of every job.
+
+---
+
 ## Updating
 
 The compose files run a pinned release, so nothing changes until you ask for it.
