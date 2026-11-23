@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0] - 2026-11-23
 
+### Security
+
+- `Cargo.lock` moves `url` to 2.5.9 (RUSTSEC-2026-0592, a stack overflow in
+  `Url::origin()` on nested `blob:` URLs).
+
 ### Changed
 
 - **Breaking: `kx serve` jobs run with read-only tools by default.** A job
