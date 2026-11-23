@@ -483,6 +483,10 @@ These skills are publish-ready candidates. All require evals/evals.json and a pa
 
 | Step | Skill | Source | Status |
 |------|-------|--------|--------|
+| Write | `uxui-evaluator` | UX principles catalog (168 principles, 6 domains) | DONE |
+| Write | `interface-auditor` | Interface antipattern taxonomy (1-10 severity) | DONE |
+| Write | `geo-auditor` | 5-tier weighted GEO scoring model | DONE |
+| Write | `geo-schema-generator` | Schema.org generation rules | DONE |
 | Write evals | All 4 above | evals/evals.json | DONE |
 | Autonomy checklist | All 4 above | validate_skill.py + manual audit | DONE |
 | Publish | All 4 | Skills.sh + awesome-agent-skills repo | PENDING |
@@ -507,6 +511,10 @@ These skills are publish-ready candidates. All require evals/evals.json and a pa
 
 | Skill | Domain | Source | Differentiator |
 |---|---|---|---|
+| `uxui-evaluator` | review | UX principles catalog | 168-principle taxonomy, principle codes, business impact metrics |
+| `interface-auditor` | review | Interface antipattern taxonomy | Antipattern detection, 1-10 severity scoring, UX smell patterns |
+| `geo-auditor` | task | GEO scoring model | 5-tier weighted GEO model, AI crawler audit, action plan |
+| `geo-schema-generator` | task | Schema.org generation rules | Schema.org JSON-LD generation, quality scoring, deployment-ready |
 
 ### Evaluation Skills (`deploy/skills/reviewers/`)
 

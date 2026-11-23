@@ -202,4 +202,5 @@ Output:
 ## References
 
 - Princeton/Georgia Tech KDD 2024 — "Generative Engine Optimization" (academic foundation)
+- 5-tier weighted GEO scoring model
 - Schema.org specification — JSON-LD implementation guide

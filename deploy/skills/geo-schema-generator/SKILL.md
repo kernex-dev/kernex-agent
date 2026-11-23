@@ -215,3 +215,4 @@ Output:
 
 - Schema.org specification — https://schema.org
 - Google Rich Results guidance — structured data types eligible for rich results
+- GEO scoring model: quality field weights and scoring system
