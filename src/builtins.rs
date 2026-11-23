@@ -31,12 +31,32 @@ const BUILTIN_SKILLS: &[BuiltinSkill] = &[
         content: include_str!("../builtins/backend-architect/SKILL.md"),
     },
     BuiltinSkill {
+        name: "data-engineer",
+        content: include_str!("../builtins/data-engineer/SKILL.md"),
+    },
+    BuiltinSkill {
+        name: "database-engineer",
+        content: include_str!("../builtins/database-engineer/SKILL.md"),
+    },
+    BuiltinSkill {
+        name: "debugger",
+        content: include_str!("../builtins/debugger/SKILL.md"),
+    },
+    BuiltinSkill {
         name: "devops-automator",
         content: include_str!("../builtins/devops-automator/SKILL.md"),
     },
     BuiltinSkill {
         name: "frontend-developer",
         content: include_str!("../builtins/frontend-developer/SKILL.md"),
+    },
+    BuiltinSkill {
+        name: "incident-responder",
+        content: include_str!("../builtins/incident-responder/SKILL.md"),
+    },
+    BuiltinSkill {
+        name: "mobile-developer",
+        content: include_str!("../builtins/mobile-developer/SKILL.md"),
     },
     BuiltinSkill {
         name: "performance-benchmarker",
@@ -51,6 +71,10 @@ const BUILTIN_SKILLS: &[BuiltinSkill] = &[
         content: include_str!("../builtins/reality-checker/SKILL.md"),
     },
     BuiltinSkill {
+        name: "release-manager",
+        content: include_str!("../builtins/release-manager/SKILL.md"),
+    },
+    BuiltinSkill {
         name: "security-engineer",
         content: include_str!("../builtins/security-engineer/SKILL.md"),
     },
@@ -61,6 +85,14 @@ const BUILTIN_SKILLS: &[BuiltinSkill] = &[
     BuiltinSkill {
         name: "skill-factory",
         content: include_str!("../builtins/skill-factory/SKILL.md"),
+    },
+    BuiltinSkill {
+        name: "technical-writer",
+        content: include_str!("../builtins/technical-writer/SKILL.md"),
+    },
+    BuiltinSkill {
+        name: "test-engineer",
+        content: include_str!("../builtins/test-engineer/SKILL.md"),
     },
 ];
 
@@ -135,8 +167,8 @@ mod tests {
     }
 
     #[test]
-    fn builtin_count_is_13() {
-        assert_eq!(builtin_count(), 13);
+    fn builtin_count_is_21() {
+        assert_eq!(builtin_count(), 21);
     }
 
     #[test]
@@ -154,7 +186,7 @@ mod tests {
         let tmp = dir.path();
 
         let count = install_builtin_skills(tmp).unwrap();
-        assert_eq!(count, 13);
+        assert_eq!(count, 21);
 
         for skill in BUILTIN_SKILLS {
             let path = tmp.join("skills").join(skill.name).join("SKILL.md");
@@ -162,13 +194,77 @@ mod tests {
         }
 
         let manifest = SkillsManifest::load(tmp);
-        assert_eq!(manifest.list().len(), 13);
+        assert_eq!(manifest.list().len(), 21);
 
         let senior = manifest.find("senior-developer");
         assert!(senior.is_some());
         let senior = senior.unwrap();
         assert_eq!(senior.trust, TrustLevel::Trusted);
         assert!(senior.source.starts_with("builtin/"));
+    }
+
+    #[test]
+    fn builtins_parse_with_kx_parser() {
+        for skill in BUILTIN_SKILLS {
+            let manifest = crate::skills::parser::parse_skill_md(skill.content)
+                .unwrap_or_else(|e| panic!("Skill '{}' failed to parse: {e}", skill.name));
+            assert_eq!(manifest.name, skill.name);
+            assert!(
+                !manifest.description.is_empty(),
+                "Skill '{}' has no description",
+                skill.name
+            );
+            assert!(
+                !manifest.content.is_empty(),
+                "Skill '{}' has no body",
+                skill.name
+            );
+        }
+    }
+
+    #[test]
+    fn builtins_load_with_runtime_loader() {
+        let dir = tempfile::tempdir().unwrap();
+        install_builtin_skills(dir.path()).unwrap();
+
+        let loaded = kernex_runtime::skills::load_skills(&dir.path().to_string_lossy());
+        for skill in BUILTIN_SKILLS {
+            let found = loaded.iter().find(|s| s.name == skill.name);
+            assert!(
+                found.is_some(),
+                "Skill '{}' was not loaded by the runtime",
+                skill.name
+            );
+        }
+        assert_eq!(loaded.len(), builtin_count());
+
+        // (name, toolbox count, network hosts) for the skills whose
+        // declarations the runtime acts on. A toolbox the loader rejects is
+        // dropped silently, so the count is what proves it was accepted.
+        let expected: [(&str, usize, usize); 8] = [
+            ("data-engineer", 0, 0),
+            ("database-engineer", 0, 1),
+            ("debugger", 2, 0),
+            ("incident-responder", 1, 0),
+            ("mobile-developer", 0, 0),
+            ("release-manager", 2, 0),
+            ("technical-writer", 0, 0),
+            ("test-engineer", 0, 0),
+        ];
+        for (name, toolboxes, hosts) in expected {
+            let skill = loaded.iter().find(|s| s.name == name).unwrap();
+            assert_eq!(skill.toolboxes.len(), toolboxes, "{name} toolboxes");
+            assert_eq!(skill.permissions.network.len(), hosts, "{name} network");
+            // An empty command list means "no restriction" to the runtime.
+            assert!(!skill.permissions.commands.is_empty(), "{name} commands");
+            assert!(!skill.permissions.files.is_empty(), "{name} files");
+            assert!(skill.trigger.is_some(), "{name} trigger");
+            assert!(skill.mcp_servers.is_empty(), "{name} mcp servers");
+            for toolbox in &skill.toolboxes {
+                assert_eq!(toolbox.command, "git", "{name} toolbox command");
+                assert!(!toolbox.network, "{name} toolbox network");
+            }
+        }
     }
 
     #[test]

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Eight more builtin skills.** `kx init` now installs 21 skills instead of
+  13. The new ones are `test-engineer`, `debugger`, `technical-writer`,
+  `database-engineer`, `release-manager`, `data-engineer`,
+  `mobile-developer` and `incident-responder`. `debugger`,
+  `release-manager` and `incident-responder` declare read-only `git`
+  toolbox commands (`git log`, `git status`, `git tag --list`); the other
+  five declare none.
+
 ## [0.8.0] - 2026-11-23
 
 ### Security
