@@ -83,6 +83,28 @@ pub fn spawn(
     }
 }
 
+/// Spawn the scheduler for a `kx dev` session, or nothing when the session
+/// keeps no memory (`--no-memory`): due tasks are read from the memory
+/// database and their completion is written back to it.
+pub fn spawn_for_session(
+    runtime: &Arc<Runtime>,
+    provider: &Arc<dyn Provider>,
+    session: &ContextNeeds,
+    poll_secs: u64,
+) -> Option<SchedulerHandle> {
+    session.store.then(|| {
+        let needs = crate::runtime_glue::context_needs(false);
+        spawn(runtime.clone(), provider.clone(), needs, poll_secs)
+    })
+}
+
+/// Stop the scheduler [`spawn_for_session`] started, if it started one.
+pub async fn shutdown(handle: Option<SchedulerHandle>) {
+    if let Some(handle) = handle {
+        handle.shutdown().await;
+    }
+}
+
 async fn run_due_tasks(runtime: &Runtime, provider: &dyn Provider, needs: &ContextNeeds) {
     let tasks = match runtime.store.get_due_tasks().await {
         Ok(t) => t,
@@ -137,6 +159,48 @@ mod tests {
     fn context_needs_is_send() {
         fn assert_send<T: Send>() {}
         assert_send::<ContextNeeds>();
+    }
+
+    struct NoProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for NoProvider {
+        fn name(&self) -> &str {
+            "none"
+        }
+        fn requires_api_key(&self) -> bool {
+            false
+        }
+        async fn complete(
+            &self,
+            _ctx: &kernex_core::context::Context,
+        ) -> Result<kernex_core::message::Response, kernex_core::error::KernexError> {
+            Err(kernex_core::error::KernexError::Config("not called".into()))
+        }
+        async fn is_available(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn a_session_without_memory_runs_no_scheduler() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(
+            kernex_runtime::RuntimeBuilder::new()
+                .data_dir(dir.path().to_str().unwrap())
+                .project("demo")
+                .build()
+                .await
+                .unwrap(),
+        );
+        let provider: Arc<dyn Provider> = Arc::new(NoProvider);
+        let no_memory = crate::runtime_glue::context_needs(true);
+        assert!(spawn_for_session(&runtime, &provider, &no_memory, 60).is_none());
+
+        let with_memory = crate::runtime_glue::context_needs(false);
+        let handle = spawn_for_session(&runtime, &provider, &with_memory, 60);
+        assert!(handle.is_some());
+        shutdown(handle).await;
     }
 
     #[test]

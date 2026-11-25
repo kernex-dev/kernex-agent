@@ -109,7 +109,7 @@ fn build_backup(
     // write, refuse the stage with a transient error so the orchestrator
     // can surface exit 7.
     let data_dir = opts.home.join(".kx");
-    if kernex_sandbox::is_write_blocked(&tarball_path, &data_dir, None) {
+    if super::write_probe::install_write_blocked(&tarball_path, &data_dir) {
         return Err(InstallError::SandboxRefused { path: tarball_path });
     }
 

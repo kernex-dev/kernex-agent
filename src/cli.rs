@@ -40,10 +40,12 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub max_tokens: Option<u32>,
 
-    /// Do not load anything from persistent memory into this session
-    /// (recall, facts, summaries). The exchange is still saved.
+    /// Do not read or write persistent memory; each message is answered without the earlier ones
     #[arg(long, global = true)]
     pub no_memory: bool,
+
+    #[command(flatten)]
+    pub access: crate::agent_sandbox::AccessArgs,
 
     /// Disable automatic conversation summarization on overflow.
     /// kx defaults to summarizing the oldest messages when a session
@@ -965,5 +967,31 @@ mod tests {
         assert!(cli.project.is_none());
         assert!(cli.channel.is_none());
         assert!(cli.max_tokens.is_none());
+    }
+
+    #[test]
+    fn cli_parses_web_fetch_and_read_path() {
+        let cli = Cli::try_parse_from([
+            "kx",
+            "--web-fetch",
+            "docs.rs,crates.io",
+            "--web-fetch",
+            "*.example.com",
+            "dev",
+            "--read-path",
+            "/opt/docs",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.access.web_fetch,
+            vec!["docs.rs", "crates.io", "*.example.com"]
+        );
+        assert_eq!(
+            cli.access.read_paths,
+            vec![std::path::PathBuf::from("/opt/docs")]
+        );
+
+        let cli = Cli::try_parse_from(["kx", "doctor", "--web-fetch", "all"]).unwrap();
+        assert_eq!(cli.access.web_fetch, vec!["all"]);
     }
 }

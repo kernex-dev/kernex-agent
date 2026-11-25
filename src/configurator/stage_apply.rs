@@ -116,7 +116,7 @@ pub async fn run(
                 Err(error) => return Err(ApplyFailure::new(receipts, error)),
             }
         } else {
-            if kernex_sandbox::is_write_blocked(path, &data_dir, None) {
+            if super::write_probe::install_write_blocked(path, &data_dir) {
                 if let Err(e) = audit.emit(AuditEvent {
                     event: "stage.apply.error".to_string(),
                     stage: Stage::Apply,

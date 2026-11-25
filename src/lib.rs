@@ -15,6 +15,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod agent_sandbox;
 pub mod builtins;
 pub mod cli;
 pub mod commands;
@@ -28,10 +29,12 @@ pub mod loader;
 pub mod mcp;
 pub mod mem;
 pub mod prompts;
+pub mod provider_check;
 pub mod runtime_glue;
 pub mod scheduler;
 #[cfg(feature = "serve")]
 pub mod serve;
+pub mod session;
 pub mod skills;
 pub mod stack;
 pub mod utils;
@@ -42,7 +45,7 @@ pub mod utils;
 // continue compiling unchanged after the bin -> lib extraction.
 pub use runtime_glue::{
     api_key_var, build_provider, build_provider_with_tools, context_needs, data_dir_for,
-    CliHookRunner, ProviderFlags, ProviderSpec, PROVIDERS,
+    job_context_needs, CliHookRunner, ProviderFlags, ProviderSetup, ProviderSpec, PROVIDERS,
 };
 
 #[cfg(any(

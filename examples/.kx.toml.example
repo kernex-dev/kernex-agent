@@ -35,6 +35,17 @@
 # """
 
 # ------------------------------------------------------------------------------
+# Tool Access
+# ------------------------------------------------------------------------------
+# The agent's tools work inside the project directory. A project file cannot
+# widen that, because it arrives with the repository: set web_fetch and
+# read_paths in ~/.kx/config.toml or with --web-fetch / --read-path instead.
+# kx ignores either key here with a warning, with one exception: this file
+# may turn web_fetch off for the project even when your config turns it on.
+#
+# web_fetch = "none"
+
+# ------------------------------------------------------------------------------
 # Provider Configuration
 # ------------------------------------------------------------------------------
 # Customize how kx interacts with the AI provider.

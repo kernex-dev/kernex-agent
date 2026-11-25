@@ -300,8 +300,8 @@ mod tests {
             let env: BTreeMap<_, _> = m.env.iter().collect();
             let _ = writeln!(
                 out,
-                "mcp {} = {:?} {:?} env={:?}",
-                m.name, m.command, m.args, env
+                "mcp {} = {:?} {:?} env={:?} network={} allowed_commands={:?}",
+                m.name, m.command, m.args, env, m.network, m.allowed_commands
             );
         }
         out.push('\n');

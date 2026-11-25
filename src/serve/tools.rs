@@ -6,10 +6,21 @@
 //! available, a successful attempt can run commands, rewrite files and send
 //! data out. With read-only tools the worst outcome is a wrong answer in the
 //! job output, which only the caller sees.
+//!
+//! The profile decides which tools a job may call; the runtime decides
+//! where they reach. The in-process file tools refuse every path outside
+//! the server's working directory, `--read-path` directories and the
+//! project's skills, and never open the memory database or the user's
+//! config, whatever the profile.
+
+use std::path::Path;
 
 use async_trait::async_trait;
 use kernex_core::hooks::{HookOutcome, HookRunner};
 use serde_json::Value;
+
+use crate::agent_sandbox::{AccessArgs, ToolAccess};
+use crate::runtime_glue::ProviderSetup;
 
 /// Tool profile for every job of one `kx serve` process.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
@@ -59,6 +70,46 @@ impl ToolProfile {
         match self {
             ToolProfile::ReadOnly => "read-only",
             ToolProfile::Full => "full",
+        }
+    }
+}
+
+/// What every job of one `kx serve` process may use: the tool profile, and
+/// where `web_fetch` and the file tools may reach (`--web-fetch`,
+/// `--read-path` and `~/.kx/config.toml`; serve reads no `.kx.toml`).
+#[derive(Clone, Debug, Default)]
+pub struct JobTools {
+    pub profile: ToolProfile,
+    pub access: ToolAccess,
+}
+
+impl JobTools {
+    /// Resolve the access for `profile`. A read-only job has no network,
+    /// so `web_fetch` stays off under it whatever the flags say.
+    pub fn new(profile: ToolProfile, args: &AccessArgs) -> anyhow::Result<Self> {
+        Ok(Self::with_access(
+            profile,
+            ToolAccess::without_project(args)?,
+        ))
+    }
+
+    fn with_access(profile: ToolProfile, mut access: ToolAccess) -> Self {
+        if profile == ToolProfile::ReadOnly && access.web_fetch.is_enabled() {
+            tracing::warn!(
+                "web_fetch stays off under the read-only tool profile; start the server \
+                 with `--tools full` to use it"
+            );
+            access.web_fetch = Default::default();
+        }
+        Self { profile, access }
+    }
+
+    /// The provider setup for a job that keeps its state in `data_dir`.
+    pub fn provider_setup(&self, data_dir: &Path) -> ProviderSetup {
+        ProviderSetup {
+            data_dir: data_dir.to_path_buf(),
+            access: self.access.clone(),
+            cli_tools: self.profile.cli_tool_allowlist(),
         }
     }
 }
@@ -144,6 +195,61 @@ mod tests {
                 "Glob".to_string()
             ])
         );
+    }
+
+    fn access_with_fetch() -> ToolAccess {
+        ToolAccess {
+            web_fetch: kernex_providers::WebFetchPolicy::AllowAll,
+            read_paths: vec![std::path::PathBuf::from("/opt/docs")],
+        }
+    }
+
+    #[test]
+    fn read_only_jobs_never_get_web_fetch() {
+        let tools = JobTools::with_access(ToolProfile::ReadOnly, access_with_fetch());
+        assert!(!tools.access.web_fetch.is_enabled());
+        assert_eq!(tools.access.read_paths, access_with_fetch().read_paths);
+
+        let tools = JobTools::with_access(ToolProfile::Full, access_with_fetch());
+        assert_eq!(tools.access, access_with_fetch());
+    }
+
+    #[test]
+    fn provider_setup_carries_the_profile_allowlist_and_data_dir() {
+        let data_dir = Path::new("/srv/kx/.kx/projects/serve");
+        let setup = JobTools::default().provider_setup(data_dir);
+        assert_eq!(setup.data_dir, data_dir);
+        assert_eq!(setup.cli_tools, ToolProfile::ReadOnly.cli_tool_allowlist());
+        assert!(!setup.access.web_fetch.is_enabled());
+
+        let full = JobTools::with_access(ToolProfile::Full, ToolAccess::default());
+        assert_eq!(full.provider_setup(data_dir).cli_tools, None);
+    }
+
+    /// The read tools a read-only job keeps are confined by the runtime:
+    /// they reach the working directory and the skills, never the rest of
+    /// the disk or the memory database.
+    #[test]
+    fn read_only_file_tools_stay_inside_the_scope() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("work");
+        let data_dir = root.path().join(".kx/projects/serve");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(data_dir.join("skills/demo")).unwrap();
+        std::fs::write(workspace.join("notes.md"), "x").unwrap();
+        std::fs::write(data_dir.join("memory.db"), "x").unwrap();
+        std::fs::write(data_dir.join("skills/demo/SKILL.md"), "x").unwrap();
+        std::fs::write(root.path().join("outside.txt"), "x").unwrap();
+
+        let scope = kernex_sandbox::SandboxScope::new(&workspace, &data_dir)
+            .with_db_path(data_dir.join("memory.db"));
+        let profile = crate::agent_sandbox::sandbox_profile(Vec::new(), &data_dir);
+        let read = |p: &Path| kernex_sandbox::tool_read_path(p, &scope, &profile).is_ok();
+
+        assert!(read(&workspace.join("notes.md")));
+        assert!(read(&data_dir.join("skills/demo/SKILL.md")));
+        assert!(!read(&data_dir.join("memory.db")));
+        assert!(!read(&root.path().join("outside.txt")));
     }
 
     #[tokio::test]

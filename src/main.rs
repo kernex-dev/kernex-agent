@@ -10,11 +10,10 @@
 #[cfg(feature = "memory-cli")]
 use kernex_agent::mem;
 use kernex_agent::{
-    api_key_var, build_provider, builtins, cli, commands, config, context_needs, data_dir_for,
-    loader, prompts, scheduler, skills, stack, CliHookRunner, ProviderFlags, PROVIDERS,
+    build_provider, builtins, cli, commands, config, context_needs, data_dir_for, loader, prompts,
+    provider_check, scheduler, session, skills, stack, CliHookRunner, ProviderFlags, PROVIDERS,
 };
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context as _;
@@ -116,6 +115,7 @@ async fn run() -> anyhow::Result<()> {
         no_memory: cli.no_memory,
         auto_compact: !cli.no_auto_compact,
         verbose: cli.verbose,
+        access: cli.access.clone(),
     };
 
     match cli.command {
@@ -260,10 +260,10 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
     let skills_section = skills::prompt::build_skills_prompt(&loaded_skills);
     system_prompt.push_str(&skills_section);
 
-    let (raw_provider, model_label) = build_provider(flags, &project_config)?;
+    let (raw_provider, model_label) = build_provider(flags, &project_config, &data_dir)?;
     let provider: Arc<dyn Provider> = Arc::from(raw_provider);
 
-    check_provider(provider.as_ref()).await?;
+    provider_check::check_provider(provider.as_ref()).await?;
 
     // The runtime starts whatever commands installed skills declare.
     skills::guard::check_installed(&data_dir).map_err(|e| anyhow::anyhow!(e))?;
@@ -294,14 +294,22 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
         let request = Request::text("user", &msg);
         let response = runtime
             .complete_with_needs(provider.as_ref(), &request, &needs)
-            .await?;
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(provider_check::explain_error(
+                    provider.name(),
+                    &data_dir,
+                    &e
+                ))
+            })?;
         println!("{}", response.text);
-        commands::close_conversation(&runtime, "One-shot command completed.").await;
+        if needs.store {
+            commands::close_conversation(&runtime).await;
+        }
         return Ok(());
     }
 
-    let scheduler_handle =
-        scheduler::spawn(runtime.clone(), provider.clone(), context_needs(false), 60);
+    let scheduler_handle = scheduler::spawn_for_session(&runtime, &provider, &needs, 60);
 
     let is_first_run = !data_dir.exists();
     if is_first_run {
@@ -325,8 +333,10 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
         );
     }
 
-    let history_path = data_dir.join("history.txt");
-    let editor = Arc::new(tokio::sync::Mutex::new(create_editor(&history_path)?));
+    let history_path = session::history_path(&data_dir, &needs);
+    let editor = Arc::new(tokio::sync::Mutex::new(session::create_editor(
+        &history_path,
+    )?));
     let mut last_input: Option<String> = None;
 
     loop {
@@ -335,13 +345,13 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
             match tokio::task::spawn_blocking(move || ed.blocking_lock().readline("> ")).await? {
                 Ok(line) => line,
                 Err(ReadlineError::Interrupted) => {
-                    graceful_shutdown(&runtime).await;
-                    save_history(&editor, &history_path).await;
+                    graceful_shutdown(&runtime, &needs).await;
+                    session::save_history(&editor, &history_path).await;
                     break;
                 }
                 Err(ReadlineError::Eof) => {
-                    graceful_shutdown(&runtime).await;
-                    save_history(&editor, &history_path).await;
+                    graceful_shutdown(&runtime, &needs).await;
+                    session::save_history(&editor, &history_path).await;
                     break;
                 }
                 Err(e) => {
@@ -407,10 +417,11 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
         }
 
         if trimmed.starts_with('/') {
-            match commands::handle(trimmed, &runtime, detected_stack, &project_config).await {
+            match commands::handle(trimmed, &runtime, detected_stack, &project_config, &needs).await
+            {
                 CommandResult::Quit => {
-                    graceful_shutdown(&runtime).await;
-                    save_history(&editor, &history_path).await;
+                    graceful_shutdown(&runtime, &needs).await;
+                    session::save_history(&editor, &history_path).await;
                     break;
                 }
                 CommandResult::Continue => continue,
@@ -432,7 +443,7 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
     // Stop the scheduler so any in-flight task batch settles before the
     // tokio runtime drops; without this, the loop runs until the runtime
     // tears down and KAIROS tasks may be cancelled mid-completion.
-    scheduler_handle.shutdown().await;
+    scheduler::shutdown(scheduler_handle).await;
 
     Ok(())
 }
@@ -456,7 +467,9 @@ async fn send_message(
             true
         }
         Err(e) => {
-            eprintln!("{} {e}\n", "error:".red().bold());
+            let data_dir = std::path::Path::new(&runtime.data_dir);
+            let text = provider_check::explain_error(provider.name(), data_dir, &e);
+            eprintln!("{} {text}\n", "error:".red().bold());
             false
         }
     }
@@ -503,80 +516,12 @@ async fn read_multiline(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>) -> Opti
     Some(lines.join("\n"))
 }
 
-fn create_editor(history_path: &PathBuf) -> anyhow::Result<DefaultEditor> {
-    let mut rl = DefaultEditor::new()?;
-    let _ = rl.load_history(history_path);
-    Ok(rl)
-}
-
-async fn save_history(editor: &Arc<tokio::sync::Mutex<DefaultEditor>>, history_path: &PathBuf) {
-    if let Some(parent) = history_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+/// End the session. Closing the conversation writes to memory, so a
+/// session without memory (`needs.store` off) skips it.
+async fn graceful_shutdown(runtime: &Runtime, needs: &ContextNeeds) {
+    if needs.store {
+        commands::close_conversation(runtime).await;
     }
-    let _ = editor.lock().await.save_history(history_path);
-}
-
-fn check_claude_cli() -> anyhow::Result<()> {
-    let output = std::process::Command::new("claude")
-        .arg("--version")
-        .output();
-
-    match output {
-        Ok(out) if out.status.success() => {
-            let version_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            let parts: Vec<&str> = version_str.split(|c: char| !c.is_ascii_digit()).collect();
-            let major = parts.first().and_then(|s| s.parse::<u32>().ok());
-            let minor = parts.get(1).and_then(|s| s.parse::<u32>().ok());
-
-            if let (Some(maj), Some(min)) = (major, minor) {
-                if (maj, min) < MIN_CLAUDE_VERSION {
-                    eprintln!(
-                        "{} Claude CLI {version_str} is below minimum {}.{}. Please update.",
-                        "warn:".yellow().bold(),
-                        MIN_CLAUDE_VERSION.0,
-                        MIN_CLAUDE_VERSION.1,
-                    );
-                }
-            }
-            Ok(())
-        }
-        _ => {
-            eprintln!("{}", "error: Claude CLI not found".red().bold());
-            eprintln!();
-            eprintln!("  To fix this:");
-            eprintln!("    1. Install Claude Code: https://claude.ai/download");
-            eprintln!("    2. Verify installation: which claude");
-            eprintln!("    3. If installed, add to PATH: export PATH=\"$PATH:/path/to/claude\"");
-            eprintln!();
-            anyhow::bail!("claude CLI not available")
-        }
-    }
-}
-
-async fn check_provider(provider: &dyn Provider) -> anyhow::Result<()> {
-    if provider.name() == "claude-code" {
-        return check_claude_cli();
-    }
-
-    if !provider.is_available().await {
-        let msg = if provider.name() == "ollama" {
-            "Ollama server not reachable. Start it with: ollama serve".to_string()
-        } else if provider.requires_api_key() {
-            let var = api_key_var(provider.name());
-            format!(
-                "Provider '{}' unavailable. Set {var} or pass --api-key.",
-                provider.name()
-            )
-        } else {
-            format!("Provider '{}' is not available.", provider.name())
-        };
-        return Err(anyhow::anyhow!(msg));
-    }
-    Ok(())
-}
-
-async fn graceful_shutdown(runtime: &Runtime) {
-    commands::close_conversation(runtime, "User exited session.").await;
     println!("{}", "Bye.".dimmed());
 }
 
@@ -596,8 +541,6 @@ fn show_first_run_welcome(stack: &str) {
     println!("Type {} for all commands.", "/help".cyan());
     println!();
 }
-
-const MIN_CLAUDE_VERSION: (u32, u32) = (2, 0);
 
 async fn cmd_init() -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
@@ -685,10 +628,14 @@ async fn cmd_doctor(flags: &ProviderFlags) -> anyhow::Result<()> {
 
     println!("\n  {}", "Active provider check".bold());
     let project_config = config::ProjectConfig::load(&cwd).unwrap_or_default();
-    match build_provider(flags, &project_config) {
+    match build_provider(flags, &project_config, &data_dir) {
         Ok((provider, label)) => {
             println!("  {} {label}", "selected:".dimmed());
-            match check_provider(provider.as_ref()).await {
+            if provider.name() == "claude-code" {
+                let status = provider_check::claude_login_status(&data_dir);
+                println!("  {} {status}", "claude-code".dimmed());
+            }
+            match provider_check::check_provider(provider.as_ref()).await {
                 Ok(()) => {
                     println!("  {} provider is reachable", "OK".green().bold());
                 }
@@ -735,8 +682,8 @@ async fn cmd_pipeline(action: PipelineAction, flags: &ProviderFlags) -> anyhow::
                 loaded.agents.len()
             );
 
-            let (provider, _model_label) = build_provider(flags, &project_config)?;
-            check_provider(provider.as_ref()).await?;
+            let (provider, _model_label) = build_provider(flags, &project_config, &data_dir)?;
+            provider_check::check_provider(provider.as_ref()).await?;
 
             // Pre-build one Runtime per unique agent so each runs with its own system prompt.
             let mut agent_runtimes: std::collections::HashMap<String, Runtime> =
@@ -897,8 +844,8 @@ async fn run_oneshot_command(
     let project_name = stack::project_name(&cwd);
     let data_dir = data_dir_for(&project_name);
 
-    let (provider, _model_label) = build_provider(flags, &project_config)?;
-    check_provider(provider.as_ref()).await?;
+    let (provider, _model_label) = build_provider(flags, &project_config, &data_dir)?;
+    provider_check::check_provider(provider.as_ref()).await?;
 
     let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
 
@@ -938,11 +885,14 @@ async fn run_oneshot_command(
             println!("{}\n", response.text);
         }
         Err(e) => {
-            eprintln!("{} {channel} failed: {e}", "error:".red().bold());
+            let text = provider_check::explain_error(provider.name(), &data_dir, &e);
+            eprintln!("{} {channel} failed: {text}", "error:".red().bold());
         }
     }
 
-    commands::close_conversation(&runtime, &format!("{label} completed.")).await;
+    if needs.store {
+        commands::close_conversation(&runtime).await;
+    }
     Ok(())
 }
 

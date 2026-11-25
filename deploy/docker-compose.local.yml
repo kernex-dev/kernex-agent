@@ -6,7 +6,7 @@
 # bearer token then crosses the network unencrypted.
 #
 # Usage:
-#   cp .env.example .env   # fill in KERNEX_AUTH_TOKEN + CLAUDE_CREDENTIALS_PATH
+#   cp .env.example .env   # fill in KERNEX_AUTH_TOKEN, and CLAUDE_CODE_OAUTH_TOKEN for claude-code
 #   docker compose -f docker-compose.local.yml up -d
 
 networks:
@@ -26,7 +26,9 @@ services:
       - "${KX_BIND:-127.0.0.1}:8080:8080"
     env_file: .env
     # ── Provider selection ───────────────────────────────────────────────────────
-    # Recommended for local: "claude-code" uses your Claude subscription (no API key needed).
+    # Recommended for local: "claude-code" uses your Claude subscription. Put
+    # CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY in .env;
+    # kx runs the Claude CLI with its own login, never a mounted ~/.claude.
     # To switch, set KERNEX_PROVIDER in .env and add the matching key:
     #   groq        ->  GROQ_API_KEY        (fast, low-cost)
     #   deepseek    ->  DEEPSEEK_API_KEY    (very low-cost)
@@ -55,11 +57,6 @@ services:
     volumes:
       # Persistent data directory — skills and workflows are bootstrapped here on first run
       - kx_data:/home/kx/.kx
-      # Claude subscription credentials (required when KERNEX_PROVIDER=claude-code)
-      - type: bind
-        source: ${CLAUDE_CREDENTIALS_PATH:-/dev/null}
-        target: /home/kx/.claude/.credentials.json
-        read_only: true
       # Optional: override bundled skills with your own directory
       # - type: bind
       #   source: ./my-skills

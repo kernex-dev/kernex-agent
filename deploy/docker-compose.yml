@@ -48,13 +48,8 @@ services:
         read_only: true
         bind:
           create_host_path: false
-      # Claude subscription credentials — read-only, never modified by container
-      - type: bind
-        source: ${CLAUDE_CREDENTIALS_PATH}
-        target: /home/kx/.claude/.credentials.json
-        read_only: true
-        bind:
-          create_host_path: false
+      # KERNEX_PROVIDER=claude-code needs CLAUDE_CODE_OAUTH_TOKEN (from
+      # `claude setup-token`) or ANTHROPIC_API_KEY in .env; no ~/.claude mount.
     restart: unless-stopped
 
     # ── Container hardening ──────────────────────────────────────────────────

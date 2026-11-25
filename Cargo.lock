@@ -1379,9 +1379,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-adapter-core"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0de8d2c0ca7deca5e5d47fe53289db56984f74de40268d0ef671032d240eec1c"
+checksum = "dd939967295b0a551224b5f0e95bea3f04cbb2081a5ff457c5c687306bd90889"
 dependencies = [
  "async-trait",
  "serde",
@@ -1436,9 +1436,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-core"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b8e613b7131810b55a49192105361e52c339805bfdf89de326a35c45f77bfd3"
+checksum = "ef95145d654e1f06dc30ad0d184e08475bd5a6da8e71ea312f08be7d4d776ec1"
 dependencies = [
  "async-trait",
  "basic-toml",
@@ -1453,9 +1453,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-memory"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e979c30707635f5b193cd84b7f813c5e8207828ad6a1ba7becd3c9cec36bb26"
+checksum = "e3501d8a8e9945fc3c53309f2dbf99ede0b8e14dc941064dfde4aeb877601e2e"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1471,9 +1471,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-pipelines"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60ee73ea6c2b05246a9de487d800d4fe3c712617d4f073694bdf2d6959ca89f8"
+checksum = "5f4ccc75b8e1f8b9af6e4c01a888a8db7f9ae17a0bbba96148dfde4b62597b72"
 dependencies = [
  "basic-toml",
  "kernex-core",
@@ -1483,9 +1483,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-providers"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f204db50329ae3cd18f4a957c424c09cad53b26cd76c86468e20472439f96635"
+checksum = "0173862caa523ab4a10c0303ad68626acf5813ea98762c83513809e55bc83290"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1499,6 +1499,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -1507,9 +1508,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-runtime"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be14931eb1f799fc6e2608c7789100a9b4c27b5d4b9a60fffd2d0cef76fb3d8e"
+checksum = "f42ec9ac2619a1f951d6dcfba1e2d502c72c71897de235eb0ade4235647c3adc"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1526,21 +1527,22 @@ dependencies = [
 
 [[package]]
 name = "kernex-sandbox"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e2152fe3a5d30a781e09106730807e3488503c6fd1675e50b13f0da7248d1e6"
+checksum = "881c64c0c9bee5d69f9dc74ec4b2c959fcb8919bad63c3ab5b9507259d07ee3d"
 dependencies = [
  "anyhow",
  "landlock",
+ "libc",
  "tokio",
  "tracing",
 ]
 
 [[package]]
 name = "kernex-skills"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9abe3a1fc70a7c48bad01026cd7f36dd811a656457e40a9906bc50ae69e3bc3"
+checksum = "7504d242699edd3b47f532b099041f39954bba17856cf93e20dff019aede9190"
 dependencies = [
  "basic-toml",
  "kernex-core",

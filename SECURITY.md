@@ -31,41 +31,79 @@ stronger guarantees than the implementation provides.
 ### Tool subprocesses are sandboxed, fail-closed
 
 kx builds every provider with OS-level sandbox enforcement REQUIRED: on a
-host that cannot apply Seatbelt (macOS) or Landlock (Linux 5.13+), agent
-tool subprocesses are refused rather than silently run unsandboxed.
+host that cannot apply Seatbelt (macOS) or Landlock (Linux 6.2+, Landlock
+ABI 3), agent tool subprocesses are refused rather than silently run
+unsandboxed.
 
-This covers subprocesses: shell commands, `grep`, `glob`, toolboxes, and
-the `claude` and `opencode` CLIs. It does not cover the `read`, `write`
-and `edit` tools or `web_fetch`, which run inside the kx process (see
-"Outside the sandbox" below), nor MCP servers declared by skills.
-Inside the sandbox (enforced by the kernex crates):
+This covers shell commands, toolboxes, MCP servers declared by skills, and
+the `claude` and `opencode` CLIs. Inside the sandbox (enforced by the
+kernex crates):
 
 - Subprocesses start from a cleared environment plus a minimal base
-  allowlist; provider API keys never reach them implicitly.
-- Writes inside `$HOME` are denied outside the workspace/data, temp, and
-  toolchain cache dirs; credential stores (`~/.ssh`, `~/.aws`,
-  `~/.gnupg`, and friends) are read-denied.
-- Network egress is denied by default; a tool gets it only by declaring
-  `network = true`. Full socket coverage on macOS; TCP-only on Linux
-  6.7+ (older kernels cannot restrict the network and the gap is logged
-  at spawn time). UDP and non-TCP sockets are never restricted on Linux.
+  allowlist; provider API keys never reach them implicitly. The one
+  exception is the claude-code CLI, which is given its login token
+  (`CLAUDE_CODE_OAUTH_TOKEN`, when set), and the commands it runs inherit
+  it.
+- Writes are allowed only under the project directory, the temp
+  directories and the toolchain cache directories. The kx data directory
+  (`~/.kx/projects/<name>`, with its memory database, skills and the
+  Claude CLI's login) and `~/.kx/config.toml` cannot be written.
+- Credential stores (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.npmrc`,
+  `~/.git-credentials`, agent CLI state such as `~/.claude`, and friends),
+  shell startup files, the memory database, `~/.kx/config.toml` and every
+  other project's data directory under `~/.kx/projects/` (its memory,
+  skills and job history) are read-denied and write-denied. The list of
+  other projects is read when the provider is built and grows by one path
+  per project.
+- Network egress is denied by default for shell commands, toolboxes and
+  MCP servers; a tool gets it only by declaring `network = true`. The
+  agent CLIs are the exception (see below). Full socket coverage on
+  macOS; TCP-only on Linux 6.7+ (older kernels cannot restrict the network
+  and the gap is logged at spawn time). UDP and non-TCP sockets are never
+  restricted on Linux.
+- An MCP server starts only when its skill lists the server's command in
+  `permissions.commands`, and has no network unless the skill declares
+  `permissions.network` (or `network = true` on the server entry).
+- The `claude` and `opencode` CLIs always have the network: they are the
+  provider. claude-code also gets the macOS keychain for its login. With
+  no tool list (`kx dev`, one-shot runs, pipelines, `kx serve --tools
+  full`) each CLI runs its tools without asking, inside this sandbox; a
+  tool list never runs with the permission checks off. Every command the
+  CLI runs shares its sandbox, so it has the network and, for
+  claude-code, the keychain and the login token. With either CLI as the
+  provider (claude-code is the default), a steered session can send what
+  it can read to any host, whatever `web_fetch` says.
 
-### Outside the sandbox
+### File tools and `web_fetch`
 
-- **File tools** (`read`, `write`, `edit`) are checked against a deny
-  list, not confined to the workspace. kx denies credential stores
-  (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.npmrc`,
-  `~/.cargo/credentials.toml`, `~/.git-credentials` and similar), shell
-  startup files and login-item directories. Any other file the user can
-  read or write is reachable.
-- **`web_fetch`** accepts any public https host. Private and loopback
-  addresses are refused; there is no host allow-list.
-- **MCP servers** declared by skills start with a cleared environment
-  and no filesystem or network sandbox.
+The `read`, `write`, `edit`, `grep` and `glob` tools run inside the kx
+process, so the runtime checks every path they are given: writes only
+under the project directory, reads only under the project directory, the
+data directory's skills, and directories you add with `--read-path` or
+`read_paths` in `~/.kx/config.toml`. The deny list above applies inside
+those roots too.
 
-Together these mean an agent that reads untrusted text can be steered
-into reading files and sending them to a host of the attacker's choice.
-kx has no per-call approval prompt yet.
+`web_fetch` is off by default and not offered to the model. The setting
+governs kx's own tool; it does not take the network away from the
+`claude` and `opencode` CLIs (see above). Turn it on with
+`--web-fetch <host>` or `web_fetch = [...]` in `~/.kx/config.toml` for a
+host list, or with `all` for any public host. Private and loopback addresses are
+refused, and every redirect hop is checked like the first URL. The
+claude-code and opencode CLIs get their own fetch and search tools only
+under `all`, because they cannot be held to a host list.
+
+An agent that reads untrusted text can still be steered within those
+limits; with `web_fetch` on, it can send what it can read to an allowed
+host, and with an agent CLI as the provider, to any host. kx has no per-call approval prompt yet.
+
+### Memory
+
+`--no-memory` neither loads from nor writes to the project's memory
+database, and `/clear` in such a session writes nothing. The REPL then
+also skips its input history file and does not run scheduled tasks.
+`kx serve` jobs
+load nothing from it, and a job that does not name a channel stores nothing
+in it either.
 
 ### Project files do not choose the endpoint
 
@@ -73,6 +111,11 @@ kx has no per-call approval prompt yet.
 ignored with a warning. A repository you cloned cannot decide which
 provider kx talks to or where your API key is sent; only `--provider`,
 `--base-url` and their environment variables can.
+
+Nor can it widen what the tools reach. `web_fetch` and `read_paths` come
+only from `~/.kx/config.toml` and the command line. A project's `.kx.toml`
+may set `web_fetch = "none"`, which only narrows; any other `web_fetch` or
+`read_paths` there is ignored with a warning.
 
 ### Skills
 
@@ -82,6 +125,15 @@ provider kx talks to or where your API key is sent; only `--provider`,
 - **Integrity** — SHA-256 verified on install; `kx skills verify` detects
   post-install tampering. Install/remove/verify operations are logged to
   the audit log.
+- **MCP servers need declared commands.** The runtime starts a skill's
+  MCP server only when the skill lists the server's command in
+  `permissions.commands`, and gives it the network only when the skill
+  declares `permissions.network`. A server that downloads itself
+  (`npx -y ...`) needs both.
+- **Names and descriptions are plain text.** kx refuses to start while an
+  installed skill's name or description, as the runtime reads it, holds a
+  control character (a newline, or an escape that decodes to one), since
+  the runtime lists both in the prompt.
 - **Commands need explicit trust** — a skill that declares an MCP server
   or a toolbox is refused by `kx skills add` unless installed with
   `--trust trusted`, which prints the command lines first. At startup kx
@@ -120,6 +172,13 @@ verifiable with `cosign verify-attestation`).
 API keys are read from environment variables only; kx never writes them
 to disk.
 
+The claude-code provider runs the Claude CLI with its own config
+directory, `cli/claude` inside the project's kx data directory, never the
+user's `~/.claude`. A tool call cannot add a hook or an MCP server that the
+user's next interactive Claude session would run outside the sandbox. The
+cost is a separate login: `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`,
+or a one-time `CLAUDE_CONFIG_DIR=<that directory> claude` login.
+
 ## Deployment Warnings (read before exposing kx serve)
 
 - **`kx serve` has no TLS and no rate limiting.** It speaks plain HTTP
@@ -140,8 +199,11 @@ to disk.
   restriction is the allowlist the `claude` CLI is started with, and MCP
   servers declared by a skill you installed as `trusted` stay available
   to it; the `opencode` provider has no allowlist and is refused under
-  `read-only`. A read-only job can still read any file the process can,
-  outside the blocked credential paths, and return it to the caller.
+  `read-only`. A read-only job can still read any file under the server's
+  working directory, its `--read-path` directories and the project's
+  skills, outside the blocked credential paths, and return it to the
+  caller. `web_fetch` stays off under `read-only` whatever `--web-fetch`
+  says.
 - **Jobs do not see each other's conversation.** Each job starts with an
   empty history. A `/run` request that names a `channel` opts into a
   conversation shared by every request on that channel; webhook jobs

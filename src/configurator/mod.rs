@@ -25,6 +25,7 @@ pub mod stage_review;
 
 use mcp_registrar::{ClaudeCliRegistrar, McpRegistrar};
 pub mod stage_verify;
+mod write_probe;
 
 /// User-supplied options parsed from the `kx install` CLI surface.
 ///

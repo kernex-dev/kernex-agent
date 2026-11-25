@@ -7,7 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: kx runs on the kernex 0.12 crates.** The sandbox, the file
+  tools, MCP servers and the agent CLIs now share one path policy, and kx
+  hands it the real directories: the project as the workspace,
+  `~/.kx/projects/<name>` as the data directory, its `memory.db`, and
+  `~/.kx/config.toml`. Tool subprocesses write only in the project and the
+  temp and toolchain cache directories, and cannot read or write the
+  memory database, the skills or the config. The `read`, `write`, `edit`,
+  `grep` and `glob` tools are now confined to the project too (reads also
+  reach the installed skills). On Linux, tool subprocesses need kernel 6.2
+  or later (Landlock ABI 3); older kernels no longer count as enforcing,
+  and kx refuses rather than run unsandboxed. Every other project's data
+  directory under `~/.kx/projects/` is also closed to the tools, one
+  blocked path per project. With no tool list (`kx dev`, one-shot runs,
+  pipelines, `kx serve --tools full`) the `claude-code` and `opencode`
+  CLIs run their tools without asking, inside the sandbox; a tool list
+  never skips their permission checks. That sandbox has the network, and
+  for claude-code the keychain and the login token, so the commands the
+  CLI runs have them too. See the
+  [kernex 0.12.0 changelog](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md)
+  for the full list.
+- **Breaking: `web_fetch` is off by default** in `kx dev`, one-shot runs,
+  pipelines and `kx serve`, and is not offered to the model. Turn it on
+  for a host list with `--web-fetch docs.rs,crates.io` or
+  `web_fetch = ["docs.rs"]` in `~/.kx/config.toml`, or for any public host
+  with `all`. A project's `.kx.toml` cannot turn it on; it may only set
+  `web_fetch = "none"`. The
+  `claude-code` and `opencode` providers get their own WebFetch and
+  WebSearch only with `all`, but their shell keeps the network, so for
+  them the setting does not limit egress. Under `kx serve --tools
+  read-only` it stays off.
+- **Breaking: the claude-code provider has its own login.** kx runs the
+  Claude CLI with `CLAUDE_CONFIG_DIR` set to `cli/claude` in the project's
+  data directory, so the login in `~/.claude` no longer applies. The
+  compose files under `deploy/` no longer mount `.credentials.json`; put
+  the token in `.env` instead. Export
+  `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) or
+  `ANTHROPIC_API_KEY`, or log in once per project with
+  `CLAUDE_CONFIG_DIR=<that directory> claude`. kx prints these options when
+  the CLI reports it is not logged in, and `kx doctor` shows which login it
+  will use.
+- **Breaking: `--no-memory` also stops storing.** A session without memory
+  leaves the memory database as it found it, so each message is answered
+  without the earlier ones, `/clear` writes nothing, the REPL neither
+  loads nor saves its input history, and `kx dev` runs no scheduled tasks
+  (their completion is written to that database). `kx serve` jobs
+  that do not name a channel no
+  longer store their exchange either.
+- **Breaking: a skill's MCP server needs its command in
+  `permissions.commands`.** The runtime does not start it otherwise, and
+  gives it the network only when the skill declares `permissions.network`
+  (a server started with `npx -y` needs both). No builtin skill declares
+  an MCP server. The startup gate now says whether each server it lists
+  gets the network.
+- **Breaking: kx refuses to start while a skill's name or description
+  holds a control character.** The runtime decodes escapes such as `\n`
+  in a TOML frontmatter and lists every skill in the prompt, so such a
+  field could print a forged heading or trust line there. The error names
+  the skill; fix its frontmatter or remove it.
+
 ### Added
+
+- **`--web-fetch` and `--read-path` flags, `web_fetch` and `read_paths`
+  config keys.** The keys go in the new `~/.kx/config.toml`, which applies
+  to every project. `read_paths` names extra directories the file tools may
+  read. In a project's `.kx.toml` both keys are ignored with a warning,
+  except `web_fetch = "none"`, which turns the tool off.
 
 - **Eight more builtin skills.** `kx init` now installs 21 skills instead of
   13. The new ones are `test-engineer`, `debugger`, `technical-writer`,

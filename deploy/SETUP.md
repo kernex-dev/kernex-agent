@@ -34,12 +34,13 @@ is required to pull it. If you receive a 401 or 403, check that:
   (recommended for server deployments — see security note below)
 - For VPS path: a domain with an A record pointing to your server
 
-> **Security note for server deployments:** The `claude-code` provider uses OAuth credentials
-> tied to your personal Claude subscription. These credentials are stored in
-> `~/.claude/.credentials.json` and are intended for interactive desktop sessions.
-> Mounting them into a server container means a credential leak would expose your personal
-> account. For any server or VPS deployment, use an API key provider (`anthropic`, `openai`,
-> `groq`, etc.) with a scoped key that can be rotated independently.
+> **Security note for server deployments:** The `claude-code` provider uses an OAuth token
+> tied to your personal Claude subscription. kx runs the Claude CLI with its own login inside
+> the kx data volume and never reads a mounted `~/.claude`, so pass the token instead:
+> `CLAUDE_CODE_OAUTH_TOKEN` in `.env` (create it with `claude setup-token`), or
+> `ANTHROPIC_API_KEY`. A leaked token exposes your personal account. For any server or VPS
+> deployment, prefer an API key provider (`anthropic`, `openai`, `groq`, etc.) with a scoped
+> key that can be rotated independently.
 
 ---
 
@@ -63,24 +64,24 @@ Open `.env` and set:
 # Required: strong random token for API auth
 KERNEX_AUTH_TOKEN=<output of: openssl rand -hex 32>
 
-# Required if using Claude subscription:
-CLAUDE_CREDENTIALS_PATH=/Users/yourname/.claude/.credentials.json
+# Required if using Claude subscription (KERNEX_PROVIDER=claude-code):
+CLAUDE_CODE_OAUTH_TOKEN=<output of: claude setup-token>
 
 # Required if using an API key instead:
 # KERNEX_PROVIDER=anthropic
 # ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Leave `DOMAIN` and `ACME_EMAIL` blank — not used for local.
+Leave `DOMAIN` and `ACME_EMAIL` blank (not used for local).
 
-### 3. Authenticate Claude (skip if using API key)
+### 3. Create the Claude token (skip if using API key)
 
 ```bash
 # Install Claude CLI if you haven't already
 npm install -g @anthropic-ai/claude-code
 
-# Log in once — saves credentials to ~/.claude/.credentials.json
-claude auth login
+# Prints a long-lived OAuth token for your subscription; put it in .env
+claude setup-token
 ```
 
 ### 4. Start
@@ -131,18 +132,18 @@ cp .env.example .env
 
 ```bash
 KERNEX_AUTH_TOKEN=<output of: openssl rand -hex 32>
-CLAUDE_CREDENTIALS_PATH=/home/deploy/.claude/.credentials.json
+CLAUDE_CODE_OAUTH_TOKEN=<output of: claude setup-token>
 DOMAIN=api.yourdomain.com
 ACME_EMAIL=admin@yourdomain.com
 ```
 
-### 4. Authenticate Claude on the VPS (skip if using API key)
+### 4. Create the Claude token (skip if using API key)
 
 ```bash
-# On the VPS:
+# On any machine with the Claude CLI:
 npm install -g @anthropic-ai/claude-code
-claude auth login
-# Credentials saved to ~/.claude/.credentials.json
+claude setup-token
+# Put the printed token in .env as CLAUDE_CODE_OAUTH_TOKEN
 ```
 
 ### 5. Open firewall ports
@@ -490,7 +491,7 @@ Only use columns that exist in the schema. Store additional fields in the notes 
 
 | Provider | `KERNEX_PROVIDER` value | Env var needed |
 |---|---|---|
-| Claude subscription | `claude-code` | `CLAUDE_CREDENTIALS_PATH` |
+| Claude subscription | `claude-code` | `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) or `ANTHROPIC_API_KEY` |
 | Anthropic API | `anthropic` | `ANTHROPIC_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
 | Groq | `groq` | `GROQ_API_KEY` |

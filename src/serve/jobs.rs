@@ -52,7 +52,7 @@ pub struct JobRequest {
     /// each step is dispatched as a separate agent call.
     pub workflow: Option<String>,
     /// Tools this job may use. Set by the server, never by the caller.
-    pub tools: super::tools::ToolProfile,
+    pub tools: super::tools::JobTools,
     /// When true the job starts without the conversation history of earlier
     /// jobs. False only when the caller named a channel to continue.
     pub isolated: bool,

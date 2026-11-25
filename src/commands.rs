@@ -113,6 +113,7 @@ pub async fn handle(
     runtime: &Runtime,
     detected_stack: Stack,
     project_config: &ProjectConfig,
+    needs: &kernex_core::context::ContextNeeds,
 ) -> CommandResult {
     match parse(input) {
         SlashCommand::Search(query) => {
@@ -183,8 +184,7 @@ pub async fn handle(
             CommandResult::Continue
         }
         SlashCommand::Clear => {
-            close_conversation(runtime, "Conversation cleared by user.").await;
-            println!("{}", "Conversation cleared.\n".dimmed());
+            crate::session::clear(runtime, needs).await;
             CommandResult::Continue
         }
         SlashCommand::Cost => {
@@ -195,11 +195,11 @@ pub async fn handle(
     }
 }
 
-pub async fn close_conversation(runtime: &Runtime, summary: &str) {
+pub async fn close_conversation(runtime: &Runtime) {
     let project = runtime.project.as_deref().unwrap_or("default");
     if let Err(e) = runtime
         .store
-        .close_current_conversation("user", project, summary)
+        .close_current_conversation(&runtime.channel, "user", project)
         .await
     {
         if !e.to_string().contains("no active") {

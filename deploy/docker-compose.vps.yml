@@ -29,7 +29,8 @@ services:
     # No host port — only Caddy can reach kx
     env_file: .env
     # ── Provider selection ───────────────────────────────────────────────────────
-    # Default: "claude-code" uses subscription credentials (bind-mounted below).
+    # Default: "claude-code" uses your subscription through CLAUDE_CODE_OAUTH_TOKEN
+    # (from `claude setup-token`) or ANTHROPIC_API_KEY in .env; no ~/.claude mount.
     # For production VPS, API key providers are more reliable (no OAuth session to renew).
     # Set KERNEX_PROVIDER and KERNEX_API_KEY (or provider-specific key) in .env:
     #   groq        ->  GROQ_API_KEY        (fast, low-cost)
@@ -58,11 +59,6 @@ services:
     volumes:
       # Persistent data directory — skills and workflows are bootstrapped here on first run
       - kx_data:/home/kx/.kx
-      # Claude subscription credentials (required when KERNEX_PROVIDER=claude-code)
-      - type: bind
-        source: ${CLAUDE_CREDENTIALS_PATH}
-        target: /home/kx/.claude/.credentials.json
-        read_only: true
       # Optional: override bundled skills with your own directory
       # - type: bind
       #   source: ./my-skills

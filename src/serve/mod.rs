@@ -22,7 +22,7 @@ use tokio::sync::Semaphore;
 use tower_http::trace::TraceLayer;
 
 use crate::config::ProjectConfig;
-use crate::{build_provider_with_tools, context_needs, data_dir_for, ProviderFlags};
+use crate::{build_provider_with_tools, data_dir_for, job_context_needs, ProviderFlags};
 
 use jobs::{JobRequest, JobStatus, JobStore};
 
@@ -33,8 +33,8 @@ pub struct AppState {
     pub default_flags: Arc<ProviderFlags>,
     pub auth_token: String,
     pub db: Option<Arc<db::JobDb>>,
-    /// Tool profile applied to every job this server runs.
-    pub tools: tools::ToolProfile,
+    /// Tool profile and tool access applied to every job this server runs.
+    pub tools: tools::JobTools,
 }
 
 pub async fn cmd_serve(
@@ -111,7 +111,7 @@ pub async fn cmd_serve(
         default_flags: Arc::new(flags.clone()),
         auth_token: token,
         db: db_arc.clone(),
-        tools,
+        tools: tools::JobTools::new(tools, &flags.access)?,
     };
 
     match tools {
@@ -385,7 +385,7 @@ async fn run_workflow(req: JobRequest, wf: workflow::Workflow) -> Result<(String
             verbose: req.verbose,
             skills: Some(vec![step.skill.clone()]),
             mode: step.mode.clone(),
-            tools: req.tools,
+            tools: req.tools.clone(),
             isolated: req.isolated,
             workflow: None,
         };
@@ -429,7 +429,7 @@ async fn run_workflow(req: JobRequest, wf: workflow::Workflow) -> Result<(String
         skills: Some(vec!["reality-checker".to_string()]),
         mode: Some("task".to_string()),
         workflow: None,
-        tools: req.tools,
+        tools: req.tools.clone(),
         isolated: req.isolated,
     };
 
@@ -597,22 +597,22 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
         channel: req.channel.clone(),
         max_tokens: req.max_tokens,
         no_memory: true,
-        // Serve jobs get auto-compact unconditionally — they tend to be
-        // long-running and we don't yet expose a per-request override on
-        // JobRequest. Operators who want to disable it can pass
-        // `--no-auto-compact` to `kx serve`; that intent is checked by
-        // the server-level guard further up the call stack.
+        // Serve jobs get auto-compact unconditionally; they tend to be long-running and we
+        // don't yet expose a per-request override on JobRequest. Operators who want to disable
+        // it can pass `--no-auto-compact` to `kx serve`; that intent is checked by the
+        // server-level guard further up the call stack.
         auto_compact: true,
         verbose: req.verbose,
+        access: Default::default(),
     };
 
     let config = ProjectConfig::default();
-    let cli_tools = req.tools.cli_tool_allowlist();
-    let (provider, _label) = build_provider_with_tools(&flags, &config, cli_tools.as_deref())
-        .map_err(|e| e.to_string())?;
-
     let project_name = req.project.as_deref().unwrap_or("serve");
     let data_dir = data_dir_for(project_name);
+    let setup = req.tools.provider_setup(&data_dir);
+    let (provider, _label) =
+        build_provider_with_tools(&flags, &config, setup).map_err(|e| e.to_string())?;
+
     let channel = req.channel.as_deref().unwrap_or("serve");
 
     let skill_names = req.skills.as_deref().unwrap_or(&[]);
@@ -628,14 +628,14 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
         .project(project_name)
         .auto_compact(flags.auto_compact)
         .hook_runner(Arc::new(tools::ServeHookRunner {
-            profile: req.tools,
+            profile: req.tools.profile,
             verbose: req.verbose,
         }))
         .build()
         .await
         .map_err(|e| e.to_string())?;
 
-    let needs = context_needs(true);
+    let needs = job_context_needs(req.isolated);
     let request = KxRequest::text(&sender, &req.message);
 
     let response = runtime
@@ -967,6 +967,7 @@ mod tests {
             no_memory: false,
             auto_compact: true,
             verbose: false,
+            access: Default::default(),
         });
         let state = AppState {
             jobs: jobs::new_store(),

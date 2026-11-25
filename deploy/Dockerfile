@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Non-root user — UID/GID 1001
 RUN groupadd --gid 1001 kx \
     && useradd --uid 1001 --gid 1001 --no-create-home --shell /bin/false kx \
-    && mkdir -p /home/kx/.kx /home/kx/.claude \
+    && mkdir -p /home/kx/.kx \
     && chown -R kx:kx /home/kx
 
 COPY --from=builder --chown=kx:kx /build/target/release/kx /usr/local/bin/kx

@@ -23,6 +23,13 @@ pub struct ProjectConfig {
     pub system_prompt: Option<String>,
     pub provider: Option<ProviderConfig>,
     pub skills: Option<SkillsConfig>,
+    /// Only `"none"` is honored here: it turns `web_fetch` off. Any other
+    /// value is ignored with a warning, since a cloned repository ships this
+    /// file. See [`crate::agent_sandbox::ToolAccess::resolve`].
+    pub web_fetch: Option<crate::agent_sandbox::WebFetchSetting>,
+    /// Ignored with a warning, for the same reason. Parsed so the file
+    /// still loads.
+    pub read_paths: Option<Vec<std::path::PathBuf>>,
 }
 
 #[derive(Debug, Default, Deserialize)]

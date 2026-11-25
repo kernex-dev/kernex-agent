@@ -327,7 +327,7 @@ async fn submit_run(
         skills: body.skills,
         mode: body.mode,
         workflow: body.workflow,
-        tools: state.tools,
+        tools: state.tools.clone(),
         isolated,
     };
 

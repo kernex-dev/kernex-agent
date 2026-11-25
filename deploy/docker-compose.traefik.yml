@@ -68,12 +68,8 @@ services:
       - "${KX_WORKERS:-4}"
     volumes:
       - kx_data:/home/kx/.kx
-      # Claude credentials (only needed when KERNEX_PROVIDER=claude-code)
-      # Uncomment if using Claude subscription (not recommended for servers):
-      # - type: bind
-      #   source: ${CLAUDE_CREDENTIALS_PATH}
-      #   target: /home/kx/.claude/.credentials.json
-      #   read_only: true
+      # KERNEX_PROVIDER=claude-code needs CLAUDE_CODE_OAUTH_TOKEN (from
+      # `claude setup-token`) or ANTHROPIC_API_KEY in .env; no ~/.claude mount.
       # Optional: override bundled skills with your own directory
       # - type: bind
       #   source: ./my-skills

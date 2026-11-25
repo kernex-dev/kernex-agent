@@ -20,7 +20,7 @@
 //! the list adds a new `--provider` choice plus its default model and
 //! API-key env var.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use kernex_core::context::ContextNeeds;
@@ -29,6 +29,7 @@ use kernex_core::traits::Provider;
 use kernex_providers::factory::{ProviderConfig as KxProviderConfig, ProviderFactory};
 use serde_json::Value;
 
+use crate::agent_sandbox::{sandbox_profile, AccessArgs, ToolAccess, UserConfig};
 use crate::config;
 
 pub struct CliHookRunner {
@@ -68,77 +69,18 @@ pub struct ProviderFlags {
     /// `--no-auto-compact`.
     pub auto_compact: bool,
     pub verbose: bool,
+    /// `--web-fetch` and `--read-path`, resolved against config by
+    /// [`build_provider`].
+    pub access: AccessArgs,
 }
 
-/// Sandbox posture for every provider kx builds: OS-level enforcement is
-/// required, never best-effort. A host that cannot apply Seatbelt (macOS)
-/// or Landlock (Linux 5.13+) refuses to spawn agent tool subprocesses
-/// instead of silently running them unsandboxed. Embedders of the kernex
-/// crates choose their own posture; kx as a product chooses fail-closed.
+/// What the runtime loads from the memory store into the prompt, and
+/// whether it writes to it.
 ///
-/// `blocked_paths` covers the tools the OS sandbox does not: `read`,
-/// `write` and `edit` run inside the kx process, where only this list and
-/// the runtime's own data-dir check apply. Without it those tools could
-/// read `~/.ssh` or rewrite a shell startup file on the model's say-so.
-pub fn sandbox_profile() -> kernex_sandbox::SandboxProfile {
-    kernex_sandbox::SandboxProfile {
-        require_os_enforcement: true,
-        blocked_paths: dirs::home_dir()
-            .map(|home| blocked_home_paths(&home))
-            .unwrap_or_default(),
-        ..Default::default()
-    }
-}
-
-/// Credential stores beyond the runtime's own list, relative to `$HOME`.
-const EXTRA_CREDENTIAL_PATHS: &[&str] = &[
-    ".npmrc",
-    ".pypirc",
-    ".git-credentials",
-    ".cargo/credentials.toml",
-    ".cargo/credentials",
-    ".azure",
-    ".config/op",
-    ".terraform.d",
-    ".vault-token",
-    ".local/share/opencode/auth.json",
-];
-
-/// Files a shell or the login session executes on its own. Writing one is
-/// code execution outside the sandbox the next time a terminal opens.
-const STARTUP_PATHS: &[&str] = &[
-    ".zshenv",
-    ".zshrc",
-    ".zprofile",
-    ".zlogin",
-    ".bashrc",
-    ".bash_profile",
-    ".bash_login",
-    ".profile",
-    ".config/fish",
-    "Library/LaunchAgents",
-    ".config/autostart",
-    ".config/systemd/user",
-];
-
-/// Paths under `home` that no agent tool may read or write.
-fn blocked_home_paths(home: &std::path::Path) -> Vec<PathBuf> {
-    let mut paths = kernex_sandbox::credential_read_deny_dirs(home);
-    paths.extend(
-        EXTRA_CREDENTIAL_PATHS
-            .iter()
-            .chain(STARTUP_PATHS)
-            .map(|p| home.join(p)),
-    );
-    paths
-}
-
-/// What the runtime loads from the memory store into the prompt.
-///
-/// `no_memory` turns every load off. `ContextNeeds::default()` is the
-/// opposite (everything on), so the fields are spelled out here. The
-/// runtime still writes the exchange to the store afterwards; it has no
-/// switch for that.
+/// `no_memory` turns every load off and stops the runtime from storing
+/// the exchange, so the session leaves the store as it found it.
+/// `ContextNeeds::default()` is the opposite (everything on), so the
+/// fields are spelled out here.
 pub fn context_needs(no_memory: bool) -> ContextNeeds {
     if no_memory {
         ContextNeeds {
@@ -147,6 +89,7 @@ pub fn context_needs(no_memory: bool) -> ContextNeeds {
             profile: false,
             summaries: false,
             outcomes: false,
+            store: false,
             ..Default::default()
         }
     } else {
@@ -154,24 +97,58 @@ pub fn context_needs(no_memory: bool) -> ContextNeeds {
             recall: true,
             summaries: true,
             profile: true,
+            store: true,
             ..Default::default()
         }
     }
 }
 
+/// Context needs for a `kx serve` job: nothing is loaded from memory. An
+/// isolated job also stores nothing, since no later job can read its
+/// conversation; a job on a named channel stores its exchange so the next
+/// job on that channel continues it.
+pub fn job_context_needs(isolated: bool) -> ContextNeeds {
+    ContextNeeds {
+        store: !isolated,
+        ..context_needs(true)
+    }
+}
+
+/// Where a provider's tools run and what they may reach.
+pub struct ProviderSetup {
+    /// The kx data directory of the run (`~/.kx/projects/<name>`). Tools
+    /// cannot write it; its memory database stays unreadable.
+    pub data_dir: PathBuf,
+    /// `web_fetch` hosts and extra read-only directories.
+    pub access: ToolAccess,
+    /// Tool allowlist for providers that run their own tools in a child
+    /// process. `None` leaves them unrestricted.
+    pub cli_tools: Option<Vec<String>>,
+}
+
+/// Build the provider for a run in the current directory that keeps its
+/// state in `data_dir`, reading `--web-fetch` / `--read-path`, the
+/// project's `.kx.toml` and `~/.kx/config.toml` for the tool access.
 pub fn build_provider(
     flags: &ProviderFlags,
     config: &config::ProjectConfig,
+    data_dir: &Path,
 ) -> anyhow::Result<(Box<dyn Provider>, String)> {
-    build_provider_with_tools(flags, config, None)
+    let cwd = std::env::current_dir()?;
+    let access = ToolAccess::resolve(&flags.access, Some(config), &UserConfig::load()?, &cwd)?;
+    let setup = ProviderSetup {
+        data_dir: data_dir.to_path_buf(),
+        access,
+        cli_tools: None,
+    };
+    build_provider_with_tools(flags, config, setup)
 }
 
-/// [`build_provider`], with an optional tool allowlist for providers that
-/// run their own tools in a child process. `None` leaves them unrestricted.
+/// [`build_provider`] with the setup given in full.
 pub fn build_provider_with_tools(
     flags: &ProviderFlags,
     config: &config::ProjectConfig,
-    cli_tools: Option<&[String]>,
+    setup: ProviderSetup,
 ) -> anyhow::Result<(Box<dyn Provider>, String)> {
     // The provider and its endpoint come from the user (`--provider`,
     // `--base-url`, or their env vars), never from the project's `.kx.toml`.
@@ -212,18 +189,20 @@ pub fn build_provider_with_tools(
 
     let label = display_model(&provider_name, model.as_deref());
 
-    let kx_config = base_provider_config(
+    let kx_config = KxProviderConfig {
         base_url,
         api_key,
         model,
-        flags
+        max_tokens: flags
             .max_tokens
             .or_else(|| config.provider.as_ref().and_then(|pc| pc.max_tokens)),
-        cwd,
-    );
+        workspace_path: cwd,
+        ..base_provider_config(&setup.data_dir, &setup.access)
+    };
 
-    if let Some(tools) = cli_tools {
-        return restricted_cli_provider(&provider_name, kx_config, tools).map(|p| (p, label));
+    if matches!(provider_name.as_str(), "claude-code" | "opencode") {
+        return cli_provider(&provider_name, kx_config, setup.cli_tools.as_deref())
+            .map(|p| (p, label));
     }
 
     let provider = ProviderFactory::create(&provider_name, kx_config).map_err(|e| {
@@ -242,39 +221,83 @@ pub fn build_provider_with_tools(
     Ok((provider, label))
 }
 
-/// Build a CLI-backed provider limited to `tools`.
+/// Build a provider that is an agent CLI (`claude-code`, `opencode`).
 ///
 /// Providers that call an HTTP API run tools inside kx, where the caller's
-/// hook sees every call, so they need nothing here. `claude-code` runs its
-/// own tools in a child process: the only control is the allowlist it is
-/// started with, and the runtime's factory always starts it with permission
-/// checks off. `opencode` has no allowlist at all, so it is refused rather
-/// than run unrestricted under a profile that promises a restriction.
-fn restricted_cli_provider(
+/// hook sees every call. An agent CLI runs its own tools in a child process
+/// inside the OS sandbox: the only other control is the allowlist it is
+/// started with. With `tools` set, the CLI may use exactly those (and never
+/// runs with its permission checks off). Without, it runs with them off,
+/// as an interactive coding assistant needs, still inside the sandbox.
+/// `opencode` has no allowlist at all, so a restricted profile refuses it
+/// rather than run it unrestricted.
+///
+/// claude-code is built here rather than by the runtime's factory so that
+/// `CLAUDE_CODE_OAUTH_TOKEN` reaches the CLI: the sandbox clears the
+/// environment, and the CLI no longer reads the login in `~/.claude`.
+fn cli_provider(
     provider_name: &str,
     config: KxProviderConfig,
-    tools: &[String],
+    tools: Option<&[String]>,
 ) -> anyhow::Result<Box<dyn Provider>> {
-    match provider_name {
-        "claude-code" => Ok(Box::new(
-            kernex_providers::claude_code::ClaudeCodeProvider::from_config(
-                25,
-                tools.to_vec(),
-                3600,
-                config.workspace_path,
-                5,
-                config.model.unwrap_or_default(),
-                None,
-            )
-            .with_sandbox_profile(config.sandbox_profile.unwrap_or_default()),
-        )),
-        "opencode" => anyhow::bail!(
+    use kernex_providers::claude_code::ClaudeCodeProvider;
+    match (provider_name, tools) {
+        ("claude-code", _) => {
+            let dirs = sandbox_dirs(&config);
+            let oauth_token = std::env::var(CLAUDE_OAUTH_TOKEN_ENV)
+                .ok()
+                .filter(|t| !t.is_empty());
+            Ok(Box::new(
+                ClaudeCodeProvider::from_config(
+                    25,
+                    tools.map(<[String]>::to_vec).unwrap_or_default(),
+                    3600,
+                    config.workspace_path,
+                    5,
+                    config.model.unwrap_or_default(),
+                    oauth_token,
+                )
+                .with_sandbox_profile(config.sandbox_profile.unwrap_or_default())
+                .with_sandbox_dirs(dirs)
+                .with_permission_bypass(config.cli_permission_bypass && tools.is_none())
+                .with_web_fetch_policy(config.web_fetch),
+            ))
+        }
+        ("opencode", Some(_)) => anyhow::bail!(
             "the opencode provider cannot run with a restricted tool profile: it has no \
              tool allowlist. Use another provider, or start the server with `--tools full`."
         ),
         _ => ProviderFactory::create(provider_name, config)
             .map_err(|e| anyhow::anyhow!(e.to_string())),
     }
+}
+
+/// The environment variable the Claude CLI reads its OAuth token from
+/// (`claude setup-token` prints one).
+pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
+
+/// The directories `config` asks the sandbox to protect.
+fn sandbox_dirs(config: &KxProviderConfig) -> kernex_providers::SandboxDirs {
+    let mut dirs = kernex_providers::SandboxDirs::new();
+    if let Some(dir) = &config.data_dir {
+        dirs = dirs.with_data_dir(dir);
+    }
+    if let Some(path) = &config.config_path {
+        dirs = dirs.with_config_path(path);
+    }
+    if let Some(path) = &config.db_path {
+        dirs = dirs.with_db_path(path);
+    }
+    dirs
+}
+
+/// Where the Claude CLI keeps its login when kx runs it with `data_dir`.
+/// Logging in once with `CLAUDE_CONFIG_DIR` set to this directory makes
+/// the claude-code provider work for that project.
+pub fn claude_login_dir(data_dir: &Path) -> PathBuf {
+    kernex_providers::claude_code::ClaudeCodeProvider::new()
+        .with_sandbox_dirs(kernex_providers::SandboxDirs::new().with_data_dir(data_dir))
+        .cli_config_dir()
 }
 
 /// Fields of `[provider]` in a project `.kx.toml` that kx parses but does
@@ -311,24 +334,23 @@ fn warn_ignored_project_provider_fields(config: &config::ProjectConfig) {
     });
 }
 
-/// Assemble the provider config every kx entry point shares. REPL,
-/// one-shot, and serve all construct providers through [`build_provider`],
-/// so this is the single place the fail-closed sandbox posture is
-/// attached; the test below pins that it cannot be dropped silently.
-fn base_provider_config(
-    base_url: Option<String>,
-    api_key: Option<String>,
-    model: Option<String>,
-    max_tokens: Option<u32>,
-    workspace_path: Option<PathBuf>,
-) -> KxProviderConfig {
+/// The sandbox half of the provider config every kx entry point shares.
+/// REPL, one-shot, pipelines and serve all construct providers through
+/// [`build_provider_with_tools`], so this is the single place the
+/// fail-closed sandbox posture and the protected directories are attached;
+/// the tests below pin that they cannot be dropped silently.
+///
+/// The memory database and `~/.kx/config.toml` are named explicitly: the
+/// first is where the runtime keeps it (`memory.db` in the data
+/// directory), the second lives outside the data directory.
+fn base_provider_config(data_dir: &Path, access: &ToolAccess) -> KxProviderConfig {
     KxProviderConfig {
-        base_url,
-        api_key,
-        model,
-        max_tokens,
-        workspace_path,
-        sandbox_profile: Some(sandbox_profile()),
+        sandbox_profile: Some(sandbox_profile(access.read_paths.clone(), data_dir)),
+        data_dir: Some(data_dir.to_path_buf()),
+        db_path: Some(data_dir.join("memory.db")),
+        config_path: Some(UserConfig::path()),
+        web_fetch: access.web_fetch.clone(),
+        cli_permission_bypass: true,
         ..Default::default()
     }
 }
@@ -426,6 +448,11 @@ fn env_api_key(provider: &str) -> Option<String> {
 }
 
 pub fn data_dir_for(project_name: &str) -> PathBuf {
+    kx_root().join("projects").join(project_name)
+}
+
+/// The directory kx keeps its state in: `~/.kx`.
+pub fn kx_root() -> PathBuf {
     let base = match dirs::home_dir() {
         Some(home) => home,
         None => {
@@ -440,7 +467,7 @@ pub fn data_dir_for(project_name: &str) -> PathBuf {
             PathBuf::from("/tmp")
         }
     };
-    base.join(".kx").join("projects").join(project_name)
+    base.join(".kx")
 }
 
 #[cfg(test)]
@@ -474,6 +501,15 @@ mod tests {
             no_memory: false,
             auto_compact: true,
             verbose: false,
+            access: AccessArgs::default(),
+        }
+    }
+
+    fn setup(cli_tools: Option<&[String]>) -> ProviderSetup {
+        ProviderSetup {
+            data_dir: PathBuf::from("/home/someone/.kx/projects/demo"),
+            access: ToolAccess::default(),
+            cli_tools: cli_tools.map(<[String]>::to_vec),
         }
     }
 
@@ -492,14 +528,15 @@ mod tests {
 
         // The flag's provider is the one built; the file's model is still
         // honored because it cannot redirect anything.
-        let (_provider, label) = build_provider(&test_flags("claude-code"), &config).unwrap();
+        let (_provider, label) =
+            build_provider_with_tools(&test_flags("claude-code"), &config, setup(None)).unwrap();
         assert_eq!(label, "claude-code/m");
 
         // With a keyed provider the factory would reject the http URL if it
         // were passed through; building succeeds because it is not.
         let mut flags = test_flags("openai");
         flags.api_key = Some("test-key".to_string());
-        let (_provider, label) = build_provider(&flags, &config).unwrap();
+        let (_provider, label) = build_provider_with_tools(&flags, &config, setup(None)).unwrap();
         assert_eq!(label, "openai/m");
     }
 
@@ -510,14 +547,15 @@ mod tests {
         let config = config::ProjectConfig::default();
         let tools = vec!["Read".to_string()];
 
-        let Err(err) = build_provider_with_tools(&test_flags("opencode"), &config, Some(&tools))
+        let Err(err) =
+            build_provider_with_tools(&test_flags("opencode"), &config, setup(Some(&tools)))
         else {
             panic!("opencode must be refused under a restricted profile");
         };
         assert!(err.to_string().contains("--tools full"), "{err}");
 
         // Unrestricted, it still builds.
-        assert!(build_provider_with_tools(&test_flags("opencode"), &config, None).is_ok());
+        assert!(build_provider_with_tools(&test_flags("opencode"), &config, setup(None)).is_ok());
     }
 
     #[test]
@@ -526,26 +564,119 @@ mod tests {
         let tools = vec!["Read".to_string(), "Grep".to_string()];
 
         let (provider, _) =
-            build_provider_with_tools(&test_flags("claude-code"), &config, Some(&tools)).unwrap();
+            build_provider_with_tools(&test_flags("claude-code"), &config, setup(Some(&tools)))
+                .unwrap();
         assert_eq!(provider.name(), "claude-code");
 
         let mut flags = test_flags("openai");
         flags.api_key = Some("test-key".to_string());
-        assert!(build_provider_with_tools(&flags, &config, Some(&tools)).is_ok());
+        assert!(build_provider_with_tools(&flags, &config, setup(Some(&tools))).is_ok());
     }
 
-    /// `--no-memory` once returned the default needs, which load everything.
+    /// `--no-memory` once returned the default needs, which load everything,
+    /// and then still stored every exchange.
     #[test]
-    fn no_memory_loads_nothing_from_the_store() {
+    fn no_memory_loads_and_stores_nothing() {
         let needs = context_needs(true);
         assert!(!needs.recall);
         assert!(!needs.pending_tasks);
         assert!(!needs.profile);
         assert!(!needs.summaries);
         assert!(!needs.outcomes);
+        assert!(!needs.store);
 
         let needs = context_needs(false);
         assert!(needs.recall && needs.profile && needs.summaries);
+        assert!(needs.store);
+    }
+
+    /// An isolated serve job leaves memory as it found it; a job on a named
+    /// channel stores its exchange so the next job on it can continue.
+    #[test]
+    fn serve_jobs_store_only_on_a_named_channel() {
+        let isolated = job_context_needs(true);
+        assert!(!isolated.store);
+        assert!(!isolated.recall && !isolated.profile && !isolated.summaries);
+
+        let shared = job_context_needs(false);
+        assert!(shared.store);
+        assert!(!shared.recall && !shared.profile && !shared.summaries);
+    }
+
+    /// A provider that answers without calling anything.
+    struct FakeProvider;
+
+    #[async_trait]
+    impl Provider for FakeProvider {
+        fn name(&self) -> &str {
+            "fake"
+        }
+        fn requires_api_key(&self) -> bool {
+            false
+        }
+        async fn complete(
+            &self,
+            _ctx: &kernex_core::context::Context,
+        ) -> Result<kernex_core::message::Response, kernex_core::error::KernexError> {
+            Ok(kernex_core::message::Response {
+                text: "done".to_string(),
+                metadata: kernex_core::message::CompletionMeta {
+                    tokens_used: Some(42),
+                    ..Default::default()
+                },
+            })
+        }
+        async fn is_available(&self) -> bool {
+            true
+        }
+    }
+
+    /// Conversations, messages and facts stored for `sender`, plus the
+    /// number of recorded requests.
+    async fn stored_rows(runtime: &kernex_runtime::Runtime, sender: &str) -> (i64, i64, i64, u64) {
+        let (conversations, messages, _, facts) =
+            runtime.store.get_memory_stats(sender).await.unwrap();
+        let requests = runtime.store.get_total_usage().await.unwrap().request_count;
+        (conversations, messages, facts, requests as u64)
+    }
+
+    /// `--no-memory` runs a real runtime against a real memory database and
+    /// leaves it as it found it; the same call without the flag stores.
+    #[tokio::test]
+    async fn no_memory_session_adds_no_rows_to_the_memory_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = kernex_runtime::RuntimeBuilder::new()
+            .data_dir(dir.path().to_str().unwrap())
+            .project("demo")
+            .channel("cli")
+            .build()
+            .await
+            .unwrap();
+        let request = kernex_core::message::Request::text("user", "remember this");
+
+        let before = stored_rows(&runtime, "user").await;
+        runtime
+            .complete_with_needs(&FakeProvider, &request, &context_needs(true))
+            .await
+            .unwrap();
+        assert_eq!(stored_rows(&runtime, "user").await, before);
+
+        runtime
+            .complete_with_needs(&FakeProvider, &request, &context_needs(false))
+            .await
+            .unwrap();
+        let after = stored_rows(&runtime, "user").await;
+        assert!(after.1 > before.1, "a normal session stores its messages");
+        assert!(after.3 > before.3, "a normal session records usage");
+    }
+
+    #[test]
+    fn claude_login_dir_is_inside_the_project_data_dir() {
+        let data_dir = Path::new("/home/someone/.kx/projects/demo");
+        assert_eq!(
+            claude_login_dir(data_dir),
+            PathBuf::from("/home/someone/.kx/projects/demo/cli/claude")
+        );
     }
 
     #[test]
@@ -556,81 +687,43 @@ mod tests {
         assert!(ignored_project_provider_fields(&config::ProjectConfig::default()).is_empty());
     }
 
-    /// The in-process file tools consult only `blocked_paths` (plus the
-    /// runtime's data-dir check), so these assertions are what stands
-    /// between a prompt-injected `read` or `write` and the user's keys.
-    #[test]
-    fn file_tools_cannot_reach_credentials_or_startup_files() {
-        let home = std::path::Path::new("/home/someone");
-        let profile = kernex_sandbox::SandboxProfile {
-            blocked_paths: blocked_home_paths(home),
-            ..Default::default()
-        };
-        let data_dir = std::path::Path::new("/home/someone/code");
-        for secret in [
-            ".ssh/id_ed25519",
-            ".aws/credentials",
-            ".config/gh/hosts.yml",
-            ".npmrc",
-            ".cargo/credentials.toml",
-            ".git-credentials",
-        ] {
-            assert!(
-                kernex_sandbox::is_read_blocked(&home.join(secret), data_dir, None, Some(&profile)),
-                "{secret} must not be readable"
-            );
-        }
-        for startup in [
-            ".zshrc",
-            ".zshenv",
-            ".bashrc",
-            ".profile",
-            ".ssh/authorized_keys",
-        ] {
-            assert!(
-                kernex_sandbox::is_write_blocked(&home.join(startup), data_dir, Some(&profile)),
-                "{startup} must not be writable"
-            );
-        }
-        // The project itself stays usable.
-        let source = home.join("code/project/src/main.rs");
-        assert!(!kernex_sandbox::is_read_blocked(
-            &source,
-            data_dir,
-            None,
-            Some(&profile)
-        ));
-        assert!(!kernex_sandbox::is_write_blocked(
-            &source,
-            data_dir,
-            Some(&profile)
-        ));
-    }
-
-    #[test]
-    fn sandbox_profile_blocks_home_secrets_when_home_is_known() {
-        if dirs::home_dir().is_some() {
-            assert!(!sandbox_profile().blocked_paths.is_empty());
-        }
-    }
-
-    #[test]
-    fn sandbox_profile_requires_os_enforcement() {
-        // kx's fail-closed posture: every provider gets a profile that
-        // refuses unsandboxed tool subprocesses. If this flag ever flips
-        // back to best-effort it must be a deliberate, reviewed change.
-        assert!(sandbox_profile().require_os_enforcement);
-    }
-
     #[test]
     fn every_provider_config_carries_the_fail_closed_profile() {
-        // REPL, one-shot, AND serve construct providers through
-        // build_provider -> base_provider_config, so this seam is the
-        // serve path's sandbox threading. The profile must be present
+        // REPL, one-shot, pipelines AND serve construct providers through
+        // build_provider_with_tools -> base_provider_config, so this seam is
+        // the sandbox threading for all of them. The profile must be present
         // and fail-closed; egress stays deny-by-default.
-        let cfg = base_provider_config(None, None, None, None, None);
+        let data_dir = Path::new("/home/someone/.kx/projects/demo");
+        let cfg = base_provider_config(data_dir, &ToolAccess::default());
         let profile = cfg.sandbox_profile.expect("sandbox profile missing");
         assert!(profile.require_os_enforcement);
         assert!(!profile.allow_network, "egress must default to deny");
+        assert!(profile.read_paths.is_empty());
+    }
+
+    /// The sandbox must protect the directories kx really uses, not the
+    /// runtime's default `~/.kernex`.
+    #[test]
+    fn every_provider_config_names_the_kx_data_dir_database_and_config() {
+        let data_dir = Path::new("/home/someone/.kx/projects/demo");
+        let cfg = base_provider_config(data_dir, &ToolAccess::default());
+        assert_eq!(cfg.data_dir.as_deref(), Some(data_dir));
+        assert_eq!(cfg.db_path, Some(data_dir.join("memory.db")));
+        assert_eq!(cfg.config_path, Some(UserConfig::path()));
+        assert_eq!(cfg.web_fetch, kernex_providers::WebFetchPolicy::Disabled);
+    }
+
+    #[test]
+    fn provider_config_carries_the_resolved_access() {
+        let access = ToolAccess {
+            web_fetch: kernex_providers::WebFetchPolicy::AllowHosts(vec!["docs.rs".to_string()]),
+            read_paths: vec![PathBuf::from("/opt/docs")],
+        };
+        let cfg = base_provider_config(Path::new("/d"), &access);
+        assert_eq!(cfg.web_fetch, access.web_fetch);
+        assert_eq!(
+            cfg.sandbox_profile.unwrap().read_paths,
+            vec![PathBuf::from("/opt/docs")]
+        );
     }
 }
