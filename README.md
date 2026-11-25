@@ -42,7 +42,7 @@ kx needs at least one LLM provider configured. The default is the Claude Code CL
 
 | Dependency | Minimum Version | When required |
 |---|---|---|
-| **Rust toolchain** | 1.74+ | For `cargo install kernex-agent` (not needed if using Docker) |
+| **Rust toolchain** | 1.89+ | For `cargo install kernex-agent` (not needed if using Docker) |
 | **Claude CLI** | 2.0+ | Only when using the default `claude-code` provider |
 | **Docker + Compose v2** | 24+ | Only for the Docker deployment path |
 
