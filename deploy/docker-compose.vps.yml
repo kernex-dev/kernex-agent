@@ -23,7 +23,7 @@ services:
   # ── kx serve ────────────────────────────────────────────────────────────────
   kx:
     # Pinned to a release. To upgrade, set KX_VERSION in .env, then pull and restart.
-    image: ghcr.io/kernex-dev/kernex-agent:${KX_VERSION:-0.8.0}
+    image: ghcr.io/kernex-dev/kernex-agent:${KX_VERSION:-0.9.0}
     networks:
       - kx_net
     # No host port — only Caddy can reach kx
