@@ -257,9 +257,10 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
 
     let skills_manifest = skills::manifest::SkillsManifest::load(&data_dir);
     let loaded_skills = skills::prompt::load_skills(&data_dir, skills_manifest.list());
-    // `kx dev` builds its provider with no tool allowlist (`build_provider`),
-    // so the model has `read` and can open each skill's file when it needs it.
-    let mode = skills::prompt::SkillsPromptMode::for_tools(None);
+    // With a read tool the model opens each skill's file when it needs it;
+    // an agent CLI has one only when its tool list names `Read`.
+    let cli_tools = kernex_agent::cli_tools::for_flags(flags)?;
+    let mode = skills::prompt::SkillsPromptMode::for_tools(cli_tools.as_deref());
     let skills_section = skills::prompt::build_skills_prompt(&loaded_skills, mode);
     system_prompt.push_str(&skills_section);
 

@@ -18,6 +18,7 @@
 pub mod agent_sandbox;
 pub mod builtins;
 pub mod cli;
+pub mod cli_tools;
 pub mod commands;
 pub mod config;
 #[cfg(feature = "agent-claude")]

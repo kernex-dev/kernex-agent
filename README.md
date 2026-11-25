@@ -89,20 +89,31 @@ When the CLI reports that it is not logged in, kx prints these options.
 #### How the agent CLIs run their tools
 
 The `claude-code` and `opencode` providers are agent CLIs that run their own
-tools. With no tool list (`kx dev`, one-shot runs, pipelines and
-`kx serve --tools full`), kx starts the CLI with its permission checks off:
-the CLI runs its tools without asking you, inside the OS sandbox. Under
-`kx serve --tools read-only`, claude-code gets a tool list and never skips
-its checks, and opencode is refused because it has no tool list.
+tools. kx starts claude-code with a tool list: by default `Read`, `Glob`,
+`Grep`, `Edit`, `Write`, `NotebookEdit` and `TodoWrite`, plus `WebFetch`
+and `WebSearch` under `web_fetch = "all"`. The CLI may use those and no
+others, and never skips its permission checks. The list has no shell and
+names no MCP server. Under `kx serve --tools read-only` the list is
+`Read`, `Grep` and `Glob`.
 
-That sandbox always has the network, because the CLI needs it to reach its
-provider. claude-code also gets the macOS keychain and, when you set it,
-`CLAUDE_CODE_OAUTH_TOKEN` in its environment. A shell command the CLI runs
-shares all of that: it can reach any host and read the login token. So
-with these providers `web_fetch` being off does not stop network access;
-it only governs kx's own `web_fetch` tool. To keep a session off the
-network, use an API provider (such as `anthropic`), whose tools kx runs
-under its own rules.
+The CLI's sandbox always has the network, because the CLI needs it to
+reach its provider. claude-code also gets the macOS keychain and, when you
+set it, `CLAUDE_CODE_OAUTH_TOKEN` in its environment. A shell command the
+CLI runs shares all of that: it can reach any host and read the login
+token. The default list keeps the shell out for that reason.
+
+To give the CLI more, set `cli_tools` in `~/.kx/config.toml` or pass
+`--cli-tools` (see [Tool access](#tool-access)). With `all` (and under
+`kx serve --tools full`) the CLI runs every tool without asking you, inside
+the OS sandbox. A list such as `["Read", "Edit", "Bash(cargo test *)"]`
+offers and pre-approves those entries; a `Bash` entry gives the commands
+it matches the network and the login token. Each entry is one of the
+CLI's tool names, optionally with one pattern in parentheses at its end,
+or an MCP rule (`mcp__server__*`). kx refuses a list that is empty or
+names an unknown tool or a malformed rule. While `web_fetch` is not
+`"all"` it leaves `WebFetch` and `WebSearch` out with a warning, and
+refuses the run when the list names nothing else. opencode has no tool
+list, so kx runs it only with `all`.
 
 ### Agent adapters
 
@@ -288,7 +299,7 @@ kx serve
 | `--auth-token` | (required) | Bearer token for API authentication |
 | `--workers` | `4` | Max concurrent agent jobs |
 
-Provider flags (`--provider`, `--model`, `--api-key`, etc.) work the same as in interactive mode and set the default for all jobs. So do `--web-fetch` and `--read-path` (see [Tool access](#tool-access)), with two differences: serve reads `~/.kx/config.toml` but no project `.kx.toml`, and `web_fetch` stays off under `--tools read-only`.
+Provider flags (`--provider`, `--model`, `--api-key`, etc.) work the same as in interactive mode and set the default for all jobs. So do `--web-fetch` and `--read-path` (see [Tool access](#tool-access)), with two differences: serve reads `~/.kx/config.toml` but no project `.kx.toml`, and `web_fetch` stays off under `--tools read-only`. `--cli-tools` and `cli_tools` do not apply: a job's tools come from `--tools`, and serve refuses `--cli-tools`.
 
 ### API
 
@@ -362,21 +373,23 @@ timeout_secs = 300                   # Request timeout in seconds
 
 ### Tool access
 
-The agent's tools work inside the project directory. Two settings widen
-that on purpose:
+The agent's tools work inside the project directory. Three settings
+widen that on purpose:
 
 | Setting | Flag | Config key | Default |
 |---|---|---|---|
 | Hosts the `web_fetch` tool may reach | `--web-fetch <host>` (repeatable or comma-separated; `all` for any public host, `none` to turn it off; env `KX_WEB_FETCH`) | `web_fetch = ["docs.rs", "*.crates.io"]` or `web_fetch = "all"` | off |
 | Extra directories the file tools may read | `--read-path <dir>` (repeatable) | `read_paths = ["/opt/shared-docs", "~/notes"]` | none |
+| Tools the `claude-code` and `opencode` CLIs may use | `--cli-tools <tool>` (comma-separated, commas inside parentheses kept; `all` or `default`; env `KX_CLI_TOOLS`) | `cli_tools = ["Read", "Edit", "Bash(cargo test *)"]` or `cli_tools = "all"` | read, search and edit files; no shell |
 
-Both keys belong in `~/.kx/config.toml`, which applies to every project and
-which no repository can change. For `web_fetch` the flag replaces the config
-value; `read_paths` from the config and the flags add up. Relative paths are
+These keys belong in `~/.kx/config.toml`, which applies to every project and
+which no repository can change. For `web_fetch` and `cli_tools` the flag
+replaces the config value; `read_paths` from the config and the flags add
+up. Relative paths are
 taken from your home directory in the config and from the current directory
 on the command line.
 
-A project's `.kx.toml` cannot widen either setting, because that file
+A project's `.kx.toml` cannot widen any of them, because that file
 arrives with the repository. The one key it may set is `web_fetch = "none"`,
 which turns the tool off for that project even when your config turns it
 on. Any other `web_fetch` or `read_paths` in `.kx.toml` is ignored with a
@@ -384,9 +397,8 @@ warning.
 
 The `claude-code` and `opencode` providers bring their own WebFetch and
 WebSearch tools, which cannot be held to a host list: they get them only
-with `--web-fetch all` (or `web_fetch = "all"`). Their shell still has the
-network either way, so for these providers `web_fetch` does not limit
-where data can go (see
+with `--web-fetch all` (or `web_fetch = "all"`). When `cli_tools` gives
+them a shell, it has the network whatever `web_fetch` says (see
 [How the agent CLIs run their tools](#how-the-agent-clis-run-their-tools)).
 
 ### Stack options
@@ -524,7 +536,7 @@ kx defaults to Claude Code CLI as its AI backend. The underlying `kernex-provide
 | `--provider fireworks` | Fireworks AI | `FIREWORKS_API_KEY` |
 | `--provider xai` | xAI (Grok) | `XAI_API_KEY` |
 
-`claude-code` and `opencode` run their tools without asking for permission when no tool list applies, inside the OS sandbox; see [How the agent CLIs run their tools](#how-the-agent-clis-run-their-tools).
+`claude-code` runs with a tool list that has no shell unless you widen it, and `opencode` runs only with `--cli-tools all`; see [How the agent CLIs run their tools](#how-the-agent-clis-run-their-tools).
 
 **AWS Bedrock** is available as an optional compile-time feature. Build with `--features bedrock` to enable `--provider bedrock`. Requires standard AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`). Bedrock is not included in the 11 built-in provider count above.
 
@@ -593,11 +605,11 @@ Only one kx session per project can run at a time. Close other sessions or wait 
 
 ## Security
 
-Tool subprocesses (shell commands, custom toolboxes, MCP servers, the `claude` and `opencode` CLIs) run inside an OS sandbox: Seatbelt on macOS, Landlock on Linux. They can write only in the project directory and the temp and toolchain cache directories, cannot read credential stores (`~/.ssh`, `~/.aws`, `~/.npmrc`, `~/.claude` and similar), shell startup files, the memory database, `~/.kx/config.toml` or any other project's data directory under `~/.kx/projects/`. Shell commands, toolboxes and MCP servers have no network unless a tool declares it. The `claude` and `opencode` CLIs always have the network, and so does every command they run; claude-code also gets the macOS keychain and its login token (see [How the agent CLIs run their tools](#how-the-agent-clis-run-their-tools)).
+Tool subprocesses (shell commands, custom toolboxes, MCP servers, the `claude` and `opencode` CLIs) run inside an OS sandbox: Seatbelt on macOS, Landlock on Linux. They can write only in the project directory and the temp and toolchain cache directories, cannot read credential stores (`~/.ssh`, `~/.aws`, `~/.npmrc`, `~/.claude` and similar), shell startup files, the memory database, `~/.kx/config.toml` or any other project's data directory under `~/.kx/projects/`. Shell commands, toolboxes and MCP servers have no network unless a tool declares it. The `claude` and `opencode` CLIs always have the network, and so does every command they run; claude-code also gets the macOS keychain and its login token. By default claude-code is given no shell for that reason (see [How the agent CLIs run their tools](#how-the-agent-clis-run-their-tools)).
 
 The `read`, `write`, `edit`, `grep` and `glob` tools run inside the kx process and are held to the same places: writes in the project directory, reads in the project directory, the installed skills and any `--read-path` / `read_paths` directory (set in `~/.kx/config.toml`; a project's `.kx.toml` cannot add one). `web_fetch` is off unless you turn it on (see [Tool access](#tool-access)); that setting covers kx's own tool, not the network the agent CLIs already have.
 
-A session that reads untrusted content (a web page, a file from someone else) can still be steered within those limits. With `web_fetch` on, it can send what it can read to an allowed host; with the `claude-code` or `opencode` provider it can send it anywhere, whatever `web_fetch` says.
+A session that reads untrusted content (a web page, a file from someone else) can still be steered within those limits. With `web_fetch` on, it can send what it can read to an allowed host. With an agent CLI that has a shell (`cli_tools = "all"`, a `Bash` entry, or opencode) it can send it anywhere, whatever `web_fetch` says.
 
 Skills installed via `kx skills add` are pinned by SHA-256 in `~/.kx/projects/<name>/skills.toml`. A skill may declare an MCP server or a toolbox only when installed with `--trust trusted`, and kx refuses to start while a skill that declares one is untrusted, unlisted, or changed since install. The runtime starts a skill's MCP server only when the skill lists the server's command in `permissions.commands`, and gives it the network only when the skill declares `permissions.network`; a server started with `npx -y` needs both.
 

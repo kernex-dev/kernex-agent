@@ -65,14 +65,19 @@ kernex crates):
   `permissions.commands`, and has no network unless the skill declares
   `permissions.network` (or `network = true` on the server entry).
 - The `claude` and `opencode` CLIs always have the network: they are the
-  provider. claude-code also gets the macOS keychain for its login. With
-  no tool list (`kx dev`, one-shot runs, pipelines, `kx serve --tools
-  full`) each CLI runs its tools without asking, inside this sandbox; a
-  tool list never runs with the permission checks off. Every command the
-  CLI runs shares its sandbox, so it has the network and, for
-  claude-code, the keychain and the login token. With either CLI as the
-  provider (claude-code is the default), a steered session can send what
-  it can read to any host, whatever `web_fetch` says.
+  provider. claude-code also gets the macOS keychain for its login. Every
+  command the CLI runs shares its sandbox, so it has the network and, for
+  claude-code, the keychain and the login token. kx therefore starts
+  claude-code with a tool list that has no shell and names no MCP server
+  (`Read`, `Glob`, `Grep`, `Edit`, `Write`, `NotebookEdit`, `TodoWrite`,
+  plus `WebFetch` and `WebSearch` under `web_fetch = "all"`), and a tool
+  list never runs with the permission checks off. `cli_tools` in
+  `~/.kx/config.toml` or `--cli-tools` widens it: with `all` (and under
+  `kx serve --tools full`) the CLI runs every tool without asking, and a
+  `Bash` entry lets the commands it matches run. opencode has no tool
+  list and runs only with `all`. Once the CLI has a shell, a steered
+  session can send what it can read to any host, whatever `web_fetch`
+  says.
 
 ### File tools and `web_fetch`
 
@@ -84,8 +89,8 @@ data directory's skills, and directories you add with `--read-path` or
 those roots too.
 
 `web_fetch` is off by default and not offered to the model. The setting
-governs kx's own tool; it does not take the network away from the
-`claude` and `opencode` CLIs (see above). Turn it on with
+governs kx's own tool and the CLIs' fetch tools; it does not take the
+network away from a CLI that has a shell (see above). Turn it on with
 `--web-fetch <host>` or `web_fetch = [...]` in `~/.kx/config.toml` for a
 host list, or with `all` for any public host. Private and loopback addresses are
 refused, and every redirect hop is checked like the first URL. The
@@ -94,7 +99,7 @@ under `all`, because they cannot be held to a host list.
 
 An agent that reads untrusted text can still be steered within those
 limits; with `web_fetch` on, it can send what it can read to an allowed
-host, and with an agent CLI as the provider, to any host. kx has no per-call approval prompt yet.
+host, and with an agent CLI that has a shell, to any host. kx has no per-call approval prompt yet.
 
 ### Memory
 
@@ -198,10 +203,9 @@ or a one-time `CLAUDE_CONFIG_DIR=<that directory> claude` login.
   can reach, including the provider credentials. Use `full` only where you
   control the input of every job, and keep the bearer token as secret as
   those credentials. Two limits: with the `claude-code` provider the
-  restriction is the allowlist the `claude` CLI is started with, and MCP
-  servers declared by a skill you installed as `trusted` stay available
-  to it; the `opencode` provider has no allowlist and is refused under
-  `read-only`. A read-only job can still read any file under the server's
+  restriction is the allowlist the `claude` CLI is started with, which
+  names no MCP server, so none is started; the `opencode` provider has no
+  allowlist and is refused under `read-only`. A read-only job can still read any file under the server's
   working directory, its `--read-path` directories and the project's
   skills, outside the blocked credential paths, and return it to the
   caller. `web_fetch` stays off under `read-only` whatever `--web-fetch`

@@ -87,6 +87,12 @@ impl JobTools {
     /// Resolve the access for `profile`. A read-only job has no network,
     /// so `web_fetch` stays off under it whatever the flags say.
     pub fn new(profile: ToolProfile, args: &AccessArgs) -> anyhow::Result<Self> {
+        if args.cli_tools.iter().any(|v| !v.trim().is_empty()) {
+            anyhow::bail!(
+                "`--cli-tools` (or KX_CLI_TOOLS) does not apply to `kx serve`; its jobs use \
+                 the `--tools` profile"
+            );
+        }
         Ok(Self::with_access(
             profile,
             ToolAccess::without_project(args)?,
@@ -224,6 +230,27 @@ mod tests {
 
         let full = JobTools::with_access(ToolProfile::Full, ToolAccess::default());
         assert_eq!(full.provider_setup(data_dir).cli_tools, None);
+    }
+
+    /// `--cli-tools all` must not look like it widened a serve job: serve
+    /// takes its tools from `--tools` only, so the flag is refused there.
+    #[test]
+    fn serve_refuses_the_cli_tools_flag() {
+        let args = AccessArgs {
+            cli_tools: vec!["all".to_string()],
+            ..Default::default()
+        };
+        let Err(err) = JobTools::new(ToolProfile::ReadOnly, &args) else {
+            panic!("serve accepted --cli-tools");
+        };
+        assert!(err.to_string().contains("--tools"), "{err}");
+
+        // An empty KX_CLI_TOOLS in the environment sets nothing.
+        let empty = AccessArgs {
+            cli_tools: vec![String::new()],
+            ..Default::default()
+        };
+        assert!(JobTools::new(ToolProfile::ReadOnly, &empty).is_ok());
     }
 
     /// The read tools a read-only job keeps are confined by the runtime:

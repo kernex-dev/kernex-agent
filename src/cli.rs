@@ -994,4 +994,15 @@ mod tests {
         let cli = Cli::try_parse_from(["kx", "doctor", "--web-fetch", "all"]).unwrap();
         assert_eq!(cli.access.web_fetch, vec!["all"]);
     }
+
+    #[test]
+    fn cli_parses_cli_tools() {
+        // kx splits the value itself (`cli_tools::resolve`), so a comma
+        // inside a pattern reaches it intact.
+        let value = "Read,Bash(echo a,b)";
+        let cli = Cli::try_parse_from(["kx", "dev", "--cli-tools", value]).unwrap();
+        assert_eq!(cli.access.cli_tools, vec![value]);
+        let cli = Cli::try_parse_from(["kx", "--cli-tools", "all", "dev"]).unwrap();
+        assert_eq!(cli.access.cli_tools, vec!["all"]);
+    }
 }

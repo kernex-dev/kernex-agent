@@ -135,13 +135,29 @@ pub fn build_provider(
     data_dir: &Path,
 ) -> anyhow::Result<(Box<dyn Provider>, String)> {
     let cwd = std::env::current_dir()?;
-    let access = ToolAccess::resolve(&flags.access, Some(config), &UserConfig::load()?, &cwd)?;
-    let setup = ProviderSetup {
+    let setup = provider_setup(flags, config, &UserConfig::load()?, &cwd, data_dir)?;
+    build_provider_with_tools(flags, config, setup)
+}
+
+/// The setup [`build_provider`] builds with: the tool access and, for an
+/// agent CLI, its tool list.
+fn provider_setup(
+    flags: &ProviderFlags,
+    config: &config::ProjectConfig,
+    user: &UserConfig,
+    cwd: &Path,
+    data_dir: &Path,
+) -> anyhow::Result<ProviderSetup> {
+    let access = ToolAccess::resolve(&flags.access, Some(config), user, cwd)?;
+    let cli_tools =
+        crate::cli_tools::for_provider(&flags.name, &flags.access, user, &access.web_fetch)?
+            .map(|list| crate::cli_tools::without_blocked_fetch(list, &access.web_fetch))
+            .transpose()?;
+    Ok(ProviderSetup {
         data_dir: data_dir.to_path_buf(),
         access,
-        cli_tools: None,
-    };
-    build_provider_with_tools(flags, config, setup)
+        cli_tools,
+    })
 }
 
 /// [`build_provider`] with the setup given in full.
@@ -155,8 +171,9 @@ pub fn build_provider_with_tools(
     // That file arrives with a cloned repository: honoring `provider.name`
     // or `provider.base_url` from it let a repo point kx at a host of its
     // choosing, which then received the user's API key and answered as the
-    // model.
-    let provider_name = flags.name.clone();
+    // model. The factory ignores case, so the name is folded here too: the
+    // agent CLI arm below must catch `Claude-Code` as well.
+    let provider_name = flags.name.trim().to_ascii_lowercase();
     warn_ignored_project_provider_fields(config);
 
     let model = flags
@@ -264,8 +281,9 @@ fn cli_provider(
             ))
         }
         ("opencode", Some(_)) => anyhow::bail!(
-            "the opencode provider cannot run with a restricted tool profile: it has no \
-             tool allowlist. Use another provider, or start the server with `--tools full`."
+            "the opencode provider cannot run with a restricted tool list: it has no tool \
+             allowlist. Use another provider, or allow every tool: `--cli-tools all` (or \
+             `cli_tools = \"all\"` in ~/.kx/config.toml), or `--tools full` for `kx serve`."
         ),
         _ => ProviderFactory::create(provider_name, config)
             .map_err(|e| anyhow::anyhow!(e.to_string())),
@@ -553,9 +571,74 @@ mod tests {
             panic!("opencode must be refused under a restricted profile");
         };
         assert!(err.to_string().contains("--tools full"), "{err}");
+        assert!(err.to_string().contains("--cli-tools all"), "{err}");
+
+        // The factory ignores case, so the refusal must too.
+        assert!(
+            build_provider_with_tools(&test_flags("OpenCode"), &config, setup(Some(&tools)))
+                .is_err(),
+            "OpenCode skipped the refusal"
+        );
+
+        // The list kx dev uses when nothing is configured refuses it too.
+        let default = crate::cli_tools::resolve(&[], None, &Default::default()).unwrap();
+        assert!(default.is_some());
+        assert!(build_provider_with_tools(
+            &test_flags("opencode"),
+            &config,
+            setup(default.as_deref())
+        )
+        .is_err());
 
         // Unrestricted, it still builds.
         assert!(build_provider_with_tools(&test_flags("opencode"), &config, setup(None)).is_ok());
+    }
+
+    /// `build_provider` must hand an agent CLI its tool list: without one,
+    /// claude-code runs every tool with its permission checks off.
+    #[test]
+    fn build_provider_gives_the_agent_cli_its_tool_list() {
+        let config = config::ProjectConfig::default();
+        let cwd = tempfile::tempdir().unwrap();
+        let data_dir = cwd.path().join(".kx/projects/demo");
+        let user = UserConfig::default();
+        let default: Vec<String> = crate::cli_tools::DEFAULT_CLI_TOOLS
+            .iter()
+            .map(|t| t.to_string())
+            .collect();
+
+        let setup = provider_setup(
+            &test_flags("claude-code"),
+            &config,
+            &user,
+            cwd.path(),
+            &data_dir,
+        )
+        .unwrap();
+        assert_eq!(setup.cli_tools, Some(default));
+        let setup = provider_setup(
+            &test_flags("anthropic"),
+            &config,
+            &user,
+            cwd.path(),
+            &data_dir,
+        )
+        .unwrap();
+        assert_eq!(setup.cli_tools, None, "API providers run their tools in kx");
+
+        let all = UserConfig {
+            cli_tools: Some(crate::cli_tools::CliToolsSetting::Keyword("all".into())),
+            ..Default::default()
+        };
+        let setup = provider_setup(
+            &test_flags("claude-code"),
+            &config,
+            &all,
+            cwd.path(),
+            &data_dir,
+        )
+        .unwrap();
+        assert_eq!(setup.cli_tools, None, "\"all\" is the user's choice");
     }
 
     #[test]

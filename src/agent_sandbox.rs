@@ -44,6 +44,21 @@ pub struct AccessArgs {
     /// `read_paths` from config. Writes stay limited to the project
     #[arg(long = "read-path", global = true, value_name = "DIR")]
     pub read_paths: Vec<PathBuf>,
+
+    /// Tools the claude-code CLI may use: `default` (read, search and edit
+    /// files, no shell; plus WebFetch and WebSearch when web_fetch is
+    /// `all`), `all` (every tool, with the CLI's permission checks off), or a
+    /// comma-separated list such as `Read,Edit,Bash(cargo test *)` (a comma
+    /// inside parentheses stays in the pattern). opencode runs only with
+    /// `all`. Replaces `cli_tools` from config. `kx serve` uses `--tools`
+    /// instead
+    #[arg(
+        long = "cli-tools",
+        global = true,
+        value_name = "TOOL|all|default",
+        env = "KX_CLI_TOOLS"
+    )]
+    pub cli_tools: Vec<String>,
 }
 
 /// `web_fetch` in a config file: `"all"`, `"none"`, or a list of hosts.
@@ -64,6 +79,8 @@ pub struct UserConfig {
     pub web_fetch: Option<WebFetchSetting>,
     #[serde(default)]
     pub read_paths: Vec<PathBuf>,
+    /// Tools the agent CLIs may use. See [`crate::cli_tools`].
+    pub cli_tools: Option<crate::cli_tools::CliToolsSetting>,
 }
 
 impl UserConfig {
@@ -368,6 +385,7 @@ mod tests {
         AccessArgs {
             web_fetch: web_fetch.iter().map(|s| s.to_string()).collect(),
             read_paths: read_paths.iter().map(PathBuf::from).collect(),
+            cli_tools: Vec::new(),
         }
     }
 

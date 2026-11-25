@@ -21,12 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or later (Landlock ABI 3); older kernels no longer count as enforcing,
   and kx refuses rather than run unsandboxed. Every other project's data
   directory under `~/.kx/projects/` is also closed to the tools, one
-  blocked path per project. With no tool list (`kx dev`, one-shot runs,
-  pipelines, `kx serve --tools full`) the `claude-code` and `opencode`
-  CLIs run their tools without asking, inside the sandbox; a tool list
-  never skips their permission checks. That sandbox has the network, and
-  for claude-code the keychain and the login token, so the commands the
-  CLI runs have them too. See the
+  blocked path per project. With every tool allowed (`--cli-tools all`
+  or `kx serve --tools full`) the `claude-code` and `opencode` CLIs run
+  their tools without asking, inside the sandbox; a tool list never skips
+  their permission checks. That sandbox has the network, and for
+  claude-code the keychain and the login token, so the commands the CLI
+  runs have them too. See the
   [kernex 0.12.0 changelog](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md)
   for the full list.
 - **Breaking: `web_fetch` is off by default** in `kx dev`, one-shot runs,
@@ -36,9 +36,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `all`. A project's `.kx.toml` cannot turn it on; it may only set
   `web_fetch = "none"`. The
   `claude-code` and `opencode` providers get their own WebFetch and
-  WebSearch only with `all`, but their shell keeps the network, so for
-  them the setting does not limit egress. Under `kx serve --tools
-  read-only` it stays off.
+  WebSearch only with `all`. Under `--cli-tools all`, or a tool list with
+  a `Bash` entry, their shell has the network whatever `web_fetch` says.
+  Under `kx serve --tools read-only` it stays off.
+- **Breaking: the agent CLIs get a tool list by default.** In `kx dev`,
+  one-shot runs and pipelines, claude-code may use `Read`, `Glob`, `Grep`,
+  `Edit`, `Write`, `NotebookEdit` and `TodoWrite`, plus `WebFetch` and
+  `WebSearch` under `web_fetch = "all"`. Before, it ran every tool with
+  its permission checks off. The list has no shell and names no MCP
+  server, so unless `web_fetch = "all"` adds the fetch tools, no tool the
+  model runs reaches the network. Set `cli_tools` in `~/.kx/config.toml`,
+  or `--cli-tools` (env `KX_CLI_TOOLS`) for one run: `"all"` brings back
+  every tool with the checks off, and a list such as `["Read", "Edit",
+  "Bash(cargo test *)"]` offers and pre-approves those entries. kx refuses
+  an empty list, an unknown tool or a malformed rule. While `web_fetch` is
+  not `"all"` it leaves `WebFetch` and `WebSearch` out with a warning, and
+  refuses the run when the list names nothing else. A command a `Bash`
+  entry lets through has the CLI's network and login token. opencode has
+  no tool list, so it now needs `--cli-tools all`. A project's `.kx.toml`
+  cannot set `cli_tools`, and `kx serve` keeps its `--tools` profile.
 - **Breaking: the claude-code provider has its own login.** kx runs the
   Claude CLI with `CLAUDE_CONFIG_DIR` set to `cli/claude` in the project's
   data directory, so the login in `~/.claude` no longer applies. The
@@ -96,6 +112,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `release-manager` and `incident-responder` declare read-only `git`
   toolbox commands (`git log`, `git status`, `git tag --list`); the other
   five declare none.
+
+### Fixed
+
+- **A provider name in another case no longer skips the tool list.**
+  `--provider Claude-Code` (or a `kx serve` job naming it that way) built
+  the claude-code CLI through the runtime's factory, which ignores case,
+  so it ran with its permission checks off even under `kx serve --tools
+  read-only`, and opencode was not refused. kx now folds the name first.
 
 ## [0.8.0] - 2026-11-23
 
