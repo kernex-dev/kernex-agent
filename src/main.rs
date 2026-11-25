@@ -257,7 +257,10 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
 
     let skills_manifest = skills::manifest::SkillsManifest::load(&data_dir);
     let loaded_skills = skills::prompt::load_skills(&data_dir, skills_manifest.list());
-    let skills_section = skills::prompt::build_skills_prompt(&loaded_skills);
+    // `kx dev` builds its provider with no tool allowlist (`build_provider`),
+    // so the model has `read` and can open each skill's file when it needs it.
+    let mode = skills::prompt::SkillsPromptMode::for_tools(None);
+    let skills_section = skills::prompt::build_skills_prompt(&loaded_skills, mode);
     system_prompt.push_str(&skills_section);
 
     let (raw_provider, model_label) = build_provider(flags, &project_config, &data_dir)?;

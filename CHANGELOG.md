@@ -68,6 +68,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field could print a forged heading or trust line there. The error names
   the skill; fix its frontmatter or remove it.
 
+- **`kx dev` lists installed skills instead of pasting them.** The system
+  prompt carried every installed skill's full instructions on every turn:
+  about 108 KB (roughly 27,000 tokens) for the 21 builtins. It now carries
+  one line per skill with its trust level and denied permissions (about
+  1.7 KB), plus the guardrails, and tells the model to read a skill's
+  `SKILL.md` with its read tool before acting on it. The runtime's own
+  list gives each file's path. A model without a read tool still gets the
+  full instructions. The prompt stays the same across turns, so prompt
+  caching is unaffected. Because that list comes from the runtime, kx now
+  refuses to start while the `SKILL.md` of any skill it installed differs
+  from the hash recorded at install (before, it only left the skill out of
+  its own list). A skill directory added by hand has no recorded hash.
+
 ### Added
 
 - **`--web-fetch` and `--read-path` flags, `web_fetch` and `read_paths`

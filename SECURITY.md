@@ -123,7 +123,9 @@ may set `web_fetch = "none"`, which only narrows; any other `web_fetch` or
   exact ref; the manifest records the requested ref and the resolved
   commit SHA alongside the content SHA-256.
 - **Integrity** — SHA-256 verified on install; `kx skills verify` detects
-  post-install tampering. Install/remove/verify operations are logged to
+  post-install tampering, and kx refuses to start while a skill it
+  installed fails its hash. A skill directory added to `skills/` by hand
+  has no recorded hash, so it is listed as it is. Install/remove/verify operations are logged to
   the audit log.
 - **MCP servers need declared commands.** The runtime starts a skill's
   MCP server only when the skill lists the server's command in

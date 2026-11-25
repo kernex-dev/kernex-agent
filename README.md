@@ -464,7 +464,7 @@ blocked = ["suspicious-skill"]
 - **SHA-256 integrity** — Every installed skill is hashed. Use `kx skills verify` to detect tampering.
 - **Size limits** — Skills are capped at 64 KB.
 - **Name validation** — Strict naming rules prevent path traversal attacks.
-- **Prompt guardrails** — Skills are injected into the system prompt with XML delimiters and trust metadata. The AI is instructed to treat skills as untrusted third-party content.
+- **Prompt guardrails.** The system prompt lists each installed skill with its trust level and denied permissions, and tells the AI to treat skills as untrusted third-party content. The AI reads a skill's `SKILL.md` with its read tool when it needs it, so 21 builtins cost about 400 tokens per turn instead of about 27,000. Where the model has no read tool, the full instructions go into the prompt instead.
 - **Audit log** — All skill operations (install, remove, verify, load) are logged to `skills-audit.log`.
 - **Blocklist** — Block specific skills via `.kx.toml` configuration.
 

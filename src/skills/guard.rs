@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use kernex_runtime::skills::{load_skills, Skill};
 
-use super::manifest::{compute_sha256, SkillsManifest};
+use super::manifest::{compute_sha256, verify_skill, SkillsManifest, VerifyResult};
 use super::types::TrustLevel;
 
 /// Sidecar files the runtime merges into a skill's declarations. They are
@@ -186,13 +186,35 @@ pub fn check_installed(data_dir: &Path) -> Result<(), String> {
     }
 
     if problems.is_empty() {
-        return Ok(());
+        return check_hashes(data_dir, &manifest);
     }
     Err(format!(
         "refusing to start: an installed skill declares a command kx has not been told to trust.\n{}\n\
          Remove it with `kx skills remove <name>`, or reinstall it with \
          `kx skills add <source> --trust trusted --force` after reading what it runs.",
         problems.join("\n")
+    ))
+}
+
+/// Refuse to start while an installed skill's `SKILL.md` no longer has the
+/// hash recorded at install. kx leaves such a skill out of its own list,
+/// but the runtime reads the skills directory itself and would still name
+/// it, with its path, in the prompt.
+fn check_hashes(data_dir: &Path, manifest: &SkillsManifest) -> Result<(), String> {
+    let modified: Vec<String> = manifest
+        .list()
+        .iter()
+        .filter(|skill| matches!(verify_skill(data_dir, skill), VerifyResult::Modified { .. }))
+        .map(|skill| format!("  skill '{}'", skill.name))
+        .collect();
+    if modified.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "refusing to start: an installed skill's SKILL.md changed after install.\n{}\n\
+         Check it with `kx skills verify`, then reinstall it with \
+         `kx skills add <source> --force` or remove it with `kx skills remove <name>`.",
+        modified.join("\n")
     ))
 }
 
@@ -354,5 +376,19 @@ Body.
         let tab = "---\nname: lint\ndescription: Lint\tand format.\n---\n\nBody.\n";
         install(tmp.path(), "lint", tab, TrustLevel::Sandboxed);
         assert!(check_installed(tmp.path()).is_ok());
+    }
+
+    /// kx drops a skill whose hash drifted from its own list, but the
+    /// runtime would still list it, so the run is refused.
+    #[test]
+    fn a_plain_skill_edited_after_install_blocks_startup() {
+        let tmp = tempfile::tempdir().unwrap();
+        install(tmp.path(), "plain", PLAIN, TrustLevel::Sandboxed);
+        assert!(check_installed(tmp.path()).is_ok());
+        let edited = PLAIN.replace("Just instructions.", "Other instructions.");
+        std::fs::write(tmp.path().join("skills/plain/SKILL.md"), edited).unwrap();
+        let err = check_installed(tmp.path()).unwrap_err();
+        assert!(err.contains("skill 'plain'"), "{err}");
+        assert!(err.contains("changed after install"), "{err}");
     }
 }
