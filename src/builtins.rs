@@ -238,22 +238,32 @@ mod tests {
         }
         assert_eq!(loaded.len(), builtin_count());
 
-        // Every permission the runtime acts on, for every builtin, against
-        // a checked-in copy: widening one shows up as a reviewed diff there.
+        // Every permission the runtime acts on, and the trigger that decides
+        // when it applies, for every builtin, against a checked-in copy:
+        // widening one shows up as a reviewed diff there.
         let actual: String = loaded.iter().map(declaration).collect();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/builtin-declarations.txt"
         );
-        if std::env::var_os("KX_UPDATE_BUILTIN_DECLARATIONS").is_some() {
-            std::fs::write(path, &actual).unwrap();
-        }
         let expected = std::fs::read_to_string(path).unwrap();
-        assert!(
-            actual == expected,
-            "builtin declarations differ from {path}; review the change and \
-             rerun with KX_UPDATE_BUILTIN_DECLARATIONS=1 to accept it:\n{actual}"
-        );
+        if actual != expected {
+            // Rewriting the copy still fails the run, so a changed
+            // declaration never passes without a diff to review.
+            let update = std::env::var("KX_UPDATE_BUILTIN_DECLARATIONS").is_ok_and(|v| v == "1");
+            if update {
+                std::fs::write(path, &actual).unwrap();
+            }
+            panic!(
+                "builtin declarations differ from {path}{}:\n{actual}",
+                if update {
+                    "; the file was rewritten, review its diff and rerun"
+                } else {
+                    "; review the change and rerun with \
+                     KX_UPDATE_BUILTIN_DECLARATIONS=1 to rewrite it"
+                }
+            );
+        }
     }
 
     /// The declarations of a loaded skill that grant it anything, in a
@@ -263,9 +273,16 @@ mod tests {
         use std::fmt::Write;
         let p = &skill.permissions;
         let mut out = format!(
-            "[{}]\nfiles = {:?}\nnetwork = {:?}\nenv = {:?}\ncommands = {:?}\n\
-             lazy = {}\nmodel = {:?}\n",
-            skill.name, p.files, p.network, p.env, p.commands, skill.lazy, skill.model
+            "[{}]\ntrigger = {:?}\nfiles = {:?}\nnetwork = {:?}\nenv = {:?}\n\
+             commands = {:?}\nlazy = {}\nmodel = {:?}\n",
+            skill.name,
+            skill.trigger,
+            p.files,
+            p.network,
+            p.env,
+            p.commands,
+            skill.lazy,
+            skill.model
         );
         let mut toolboxes: Vec<_> = skill.toolboxes.iter().collect();
         toolboxes.sort_by(|a, b| a.name.cmp(&b.name));

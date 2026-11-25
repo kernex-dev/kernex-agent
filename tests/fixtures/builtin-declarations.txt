@@ -1,4 +1,5 @@
 [accessibility-auditor]
+trigger = Some("accessibility|a11y|wcag|screen reader|aria|keyboard navigation|color contrast|focus management|assistive technology|inclusive design|alt text")
 files = ["read:src/**", "read:public/**", "read:package.json", "write:src/components/**", "write:src/styles/**"]
 network = ["localhost"]
 env = []
@@ -10,6 +11,7 @@ toolbox contrast_check = "npx" ["-y", "color-contrast-checker"] env={} network=t
 toolbox lighthouse_a11y = "npx" ["-y", "lighthouse", "--only-categories=accessibility", "--output=json", "--chrome-flags=--headless=new --no-sandbox"] env={} network=true parameters={"properties":{"url":{"description":"URL to audit","type":"string"}},"required":["url"],"type":"object"}
 
 [agents-orchestrator]
+trigger = Some("orchestrate|pipeline|multi-agent|workflow|coordinate agents|spawn agent|dev-qa loop|quality gate|agent pipeline")
 files = ["read:src/**", "read:tests/**", "read:project-specs/**", "read:package.json", "read:Cargo.toml", "write:project-tasks/**", "write:project-docs/**"]
 network = []
 env = []
@@ -18,6 +20,7 @@ lazy = false
 model = None
 
 [ai-engineer]
+trigger = Some("ai engineer|machine learning|ml model|llm|embedding|rag|vector|fine-tune|inference|training|hugging face|openai|anthropic|ollama|langchain|prompt engineering|transformer")
 files = ["read:src/**", "read:models/**", "read:data/**", "read:notebooks/**", "read:package.json", "read:Cargo.toml", "read:requirements.txt", "read:pyproject.toml", "write:src/ai/**", "write:src/ml/**", "write:src/pipelines/**", "write:models/**", "write:notebooks/**"]
 network = ["localhost", "api.openai.com", "api.anthropic.com", "huggingface.co"]
 env = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "HF_TOKEN"]
@@ -28,6 +31,7 @@ toolbox ollama_run = "ollama" ["run"] env={} network=true parameters={"propertie
 toolbox python_eval = "python" ["-c"] env={} network=true parameters={"properties":{"code":{"description":"Python code to execute","type":"string"}},"required":["code"],"type":"object"}
 
 [api-tester]
+trigger = Some("api test|endpoint test|integration test|contract test|api validation|http test|rest test|graphql test|status code|response validation")
 files = ["read:src/**", "read:tests/**", "read:test/**", "read:e2e/**", "read:openapi.*", "read:swagger.*", "read:package.json", "read:Cargo.toml", "write:tests/**", "write:test/**", "write:e2e/**"]
 network = ["localhost"]
 env = []
@@ -37,6 +41,7 @@ model = None
 toolbox api_load_test = "npx" ["-y", "hey"] env={} network=true parameters={"properties":{"concurrency":{"description":"Number of concurrent workers (default: 50)","type":"number"},"method":{"description":"HTTP method (default: GET)","type":"string"},"requests":{"description":"Total number of requests (default: 200)","type":"number"},"url":{"description":"URL to load test","type":"string"}},"required":["url"],"type":"object"}
 
 [backend-architect]
+trigger = Some("backend|api design|database|schema|migration|microservice|rest|graphql|grpc|scalability|cqrs|event sourcing|sql|postgres|redis|queue")
 files = ["read:src/**", "read:migrations/**", "read:prisma/**", "read:drizzle/**", "read:docker-compose.*", "read:Dockerfile*", "read:package.json", "read:Cargo.toml", "read:requirements.txt", "read:go.mod", "write:src/api/**", "write:src/routes/**", "write:src/services/**", "write:src/models/**", "write:migrations/**", "write:prisma/**"]
 network = ["localhost"]
 env = []
@@ -45,6 +50,7 @@ lazy = false
 model = None
 
 [data-engineer]
+trigger = Some("data engineer|etl pipeline|etl job|data pipeline|batch job|data validation|data quality|backfill job|airflow|dbt|pyspark|pandas|parquet|ingestion|data warehouse|late data|schema drift")
 files = ["read:src/**", "read:pipelines/**", "read:dags/**", "read:etl/**", "read:jobs/**", "read:sql/**", "read:dbt/**", "read:tests/**", "read:pyproject.toml", "read:requirements.txt", "read:package.json", "read:Cargo.toml", "write:pipelines/**", "write:dags/**", "write:etl/**", "write:jobs/**", "write:sql/**", "write:tests/**"]
 network = []
 env = []
@@ -53,6 +59,7 @@ lazy = false
 model = None
 
 [database-engineer]
+trigger = Some("database engineer|schema design|data model|slow query|query plan|explain analyze|database index|missing index|query tuning|query optimization|normalization|foreign key|deadlock|n+1|partition|zero-downtime migration|backfill")
 files = ["read:src/**", "read:migrations/**", "read:db/**", "read:prisma/**", "read:drizzle/**", "read:sql/**", "read:docker-compose.*", "read:package.json", "read:Cargo.toml", "read:pyproject.toml", "read:requirements.txt", "read:go.mod", "write:migrations/**", "write:db/migrations/**", "write:prisma/**", "write:drizzle/**"]
 network = ["localhost"]
 env = []
@@ -61,6 +68,7 @@ lazy = false
 model = None
 
 [debugger]
+trigger = Some("debug|root cause|stack trace|traceback|failing test|test fails|crash|panic|exception|segfault|bisect|regression|reproduce|not working|why does this fail|unexpected behavior")
 files = ["read:src/**", "read:lib/**", "read:tests/**", "read:test/**", "read:logs/**", "read:.github/**", "read:package.json", "read:Cargo.toml", "read:pyproject.toml", "read:requirements.txt", "read:go.mod", "write:src/**", "write:tests/**", "write:test/**"]
 network = []
 env = []
@@ -71,6 +79,7 @@ toolbox debug_recent_commits = "git" ["log", "--oneline", "-n", "20"] env={} net
 toolbox debug_working_tree = "git" ["-c", "core.fsmonitor=false", "--no-optional-locks", "status", "--short"] env={} network=false parameters={"properties":{},"type":"object"}
 
 [devops-automator]
+trigger = Some("devops|ci/cd|pipeline|deploy|docker|kubernetes|k8s|terraform|infrastructure|monitoring|prometheus|grafana|github actions|gitlab ci|helm|nginx|load balancer|autoscaling")
 files = ["read:src/**", "read:.github/**", "read:.gitlab-ci.yml", "read:Dockerfile*", "read:docker-compose.*", "read:terraform/**", "read:k8s/**", "read:helm/**", "read:nginx/**", "read:Makefile", "write:.github/workflows/**", "write:Dockerfile*", "write:docker-compose.*", "write:terraform/**", "write:k8s/**", "write:helm/**", "!~/.aws/*", "!~/.kube/*"]
 network = ["localhost", "registry.hub.docker.com", "ghcr.io"]
 env = []
@@ -81,6 +90,7 @@ toolbox docker_build = "docker" ["build"] env={} network=true parameters={"prope
 toolbox docker_compose_up = "docker" ["compose", "up", "-d"] env={} network=true parameters={"properties":{"file":{"description":"Compose file path (default: docker-compose.yml)","type":"string"},"services":{"description":"Specific services to start (space-separated, optional)","type":"string"}},"type":"object"}
 
 [frontend-developer]
+trigger = Some("frontend|react|vue|angular|svelte|component|css|tailwind|ui|ux|web vitals|lighthouse|accessibility|a11y|responsive|jsx|tsx")
 files = ["read:src/**", "read:public/**", "read:package.json", "read:tsconfig.json", "read:vite.config.*", "read:next.config.*", "read:webpack.config.*", "write:src/components/**", "write:src/styles/**", "write:src/pages/**", "write:src/app/**", "write:public/**"]
 network = []
 env = []
@@ -91,6 +101,7 @@ toolbox bundle_analyze = "npx" ["-y", "source-map-explorer"] env={} network=fals
 toolbox lighthouse_audit = "npx" ["-y", "lighthouse", "--output=json", "--chrome-flags=--headless=new --no-sandbox"] env={} network=false parameters={"properties":{"url":{"description":"URL to audit (e.g. http://localhost:3000)","type":"string"}},"required":["url"],"type":"object"}
 
 [incident-responder]
+trigger = Some("incident|outage|production down|prod is down|site is down|on-call|pager|postmortem|post-mortem|error spike|degraded|sev1|sev2|mitigation|service unavailable|5xx")
 files = ["read:src/**", "read:logs/**", "read:docs/**", "read:deploy/**", "read:.github/**", "read:Dockerfile*", "read:docker-compose.*", "read:CHANGELOG.md", "write:docs/incidents/**", "write:docs/postmortems/**", "!~/.ssh/*", "!~/.aws/*", "!~/.gnupg/*"]
 network = []
 env = []
@@ -100,7 +111,8 @@ model = None
 toolbox incident_recent_commits = "git" ["log", "--oneline", "-n", "30"] env={} network=false parameters={"properties":{},"type":"object"}
 
 [mobile-developer]
-files = ["read:src/**", "read:app/**", "read:lib/**", "read:ios/**", "read:android/**", "read:test/**", "read:tests/**", "read:package.json", "read:app.json", "read:pubspec.yaml", "write:src/**", "write:app/**", "write:lib/**", "write:ios/**", "write:android/**", "write:test/**", "write:tests/**", "!android/key.properties", "!**/*.jks", "!**/*.keystore", "!**/*.p12", "!**/*.mobileprovision", "!**/fastlane/.env*"]
+trigger = Some("mobile app|mobile developer|ios app|iphone|android|swiftui|uikit|kotlin|jetpack compose|react native|flutter|dart|xcode|gradle|app store|play store|push notification|deep link")
+files = ["read:src/**", "read:app/**", "read:lib/**", "read:ios/**", "read:android/**", "read:test/**", "read:tests/**", "read:package.json", "read:app.json", "read:pubspec.yaml", "write:src/**", "write:app/**", "write:lib/**", "write:ios/**", "write:android/**", "write:test/**", "write:tests/**", "!android/key.properties", "!**/*.jks", "!**/*.keystore", "!**/*.p12", "!**/*.p8", "!**/*.pem", "!**/*.mobileprovision", "!**/fastlane/.env*"]
 network = []
 env = []
 commands = ["npm", "npx", "flutter", "dart", "xcodebuild", "gradle"]
@@ -108,6 +120,7 @@ lazy = false
 model = None
 
 [performance-benchmarker]
+trigger = Some("performance|benchmark|load test|stress test|latency|throughput|core web vitals|p95|p99|capacity|bottleneck|profiling|flame graph|memory leak|response time")
 files = ["read:src/**", "read:tests/**", "read:k6/**", "read:artillery/**", "read:package.json", "read:Cargo.toml", "write:tests/performance/**", "write:k6/**", "write:artillery/**", "write:benchmarks/**"]
 network = ["localhost"]
 env = []
@@ -119,6 +132,7 @@ toolbox k6_run = "k6" ["run", "--summary-trend-stats=avg,min,med,max,p(90),p(95)
 toolbox lighthouse_perf = "npx" ["-y", "lighthouse", "--only-categories=performance", "--output=json", "--chrome-flags=--headless=new --no-sandbox"] env={} network=true parameters={"properties":{"url":{"description":"URL to audit","type":"string"}},"required":["url"],"type":"object"}
 
 [project-manager]
+trigger = Some("project manager|task breakdown|scope|requirements|user story|sprint plan|backlog|specification|acceptance criteria|estimate|prioritize tasks|roadmap")
 files = ["read:src/**", "read:project-specs/**", "read:docs/**", "read:package.json", "read:Cargo.toml", "write:project-tasks/**", "write:project-docs/**"]
 network = []
 env = []
@@ -127,6 +141,7 @@ lazy = false
 model = None
 
 [reality-checker]
+trigger = Some("reality check|quality gate|production ready|go/no-go|readiness review|ship it|ready to deploy|qa review|sanity check|smoke test|release review")
 files = ["read:src/**", "read:tests/**", "read:test/**", "read:e2e/**", "read:cypress/**", "read:playwright/**", "read:package.json", "read:Cargo.toml", "read:coverage/**", "read:.github/**"]
 network = []
 env = []
@@ -137,6 +152,7 @@ toolbox check_coverage = "npx" ["-y", "c8", "report", "--reporter=text"] env={} 
 toolbox run_tests = "npm" ["test", "--", "--reporter=json"] env={} network=false parameters={"properties":{"args":{"description":"Additional arguments to pass","type":"string"},"script":{"description":"Test script to run (default: test)","type":"string"}},"type":"object"}
 
 [release-manager]
+trigger = Some("release manager|cut a release|prepare release|release checklist|release plan|version bump|semver|semantic version|release candidate|rollback plan|hotfix release|what goes in the release")
 files = ["read:src/**", "read:docs/**", "read:.github/**", "read:README.md", "read:CHANGELOG.md", "read:package.json", "read:Cargo.toml", "read:pyproject.toml", "read:go.mod", "write:CHANGELOG.md", "write:docs/releases/**"]
 network = []
 env = []
@@ -147,6 +163,7 @@ toolbox release_list_tags = "git" ["tag", "--list", "--sort=-creatordate"] env={
 toolbox release_recent_commits = "git" ["log", "--oneline", "-n", "50"] env={} network=false parameters={"properties":{},"type":"object"}
 
 [security-engineer]
+trigger = Some("security|vulnerability|owasp|threat model|secure code|penetration|xss|sql injection|csrf|auth bypass|cve|secret|credential leak|encryption|tls|zero trust")
 files = ["read:src/**", "read:.github/**", "read:Dockerfile*", "read:docker-compose.*", "read:package.json", "read:Cargo.toml", "read:requirements.txt", "read:go.mod", "write:src/**", "write:.github/workflows/**", "!~/.ssh/*", "!~/.aws/*", "!~/.gnupg/*"]
 network = []
 env = []
@@ -158,6 +175,7 @@ toolbox semgrep_scan = "semgrep" ["scan", "--json", "--config=auto"] env={} netw
 toolbox trivy_scan = "trivy" ["--format", "json"] env={} network=false parameters={"properties":{"scan_type":{"description":"Scan type: image, fs, repo (default: fs)","type":"string"},"target":{"description":"Image name, filesystem path, or git repo URL","type":"string"}},"required":["target"],"type":"object"}
 
 [senior-developer]
+trigger = Some("senior dev|full stack|advanced pattern|complex integration|refactor|architecture review|code review|design pattern|premium|craft")
 files = ["read:src/**", "read:tests/**", "read:package.json", "read:Cargo.toml", "read:requirements.txt", "read:go.mod", "read:docker-compose.*", "write:src/**", "write:tests/**"]
 network = []
 env = []
@@ -166,6 +184,7 @@ lazy = false
 model = None
 
 [skill-factory]
+trigger = None
 files = []
 network = []
 env = []
@@ -174,6 +193,7 @@ lazy = false
 model = None
 
 [technical-writer]
+trigger = Some("documentation|write docs|readme|api docs|api reference|changelog|migration guide|upgrade guide|release notes|docstring|tutorial|how-to guide|technical writing|document this")
 files = ["read:src/**", "read:lib/**", "read:docs/**", "read:examples/**", "read:tests/**", "read:README.md", "read:CHANGELOG.md", "read:CONTRIBUTING.md", "read:openapi.*", "read:package.json", "read:Cargo.toml", "read:pyproject.toml", "read:go.mod", "write:docs/**", "write:README.md", "write:CHANGELOG.md"]
 network = []
 env = []
@@ -182,6 +202,7 @@ lazy = false
 model = None
 
 [test-engineer]
+trigger = Some("unit test|write tests|add tests|test coverage|coverage gap|regression test|test fixture|test double|mocking|flaky test|test design|tdd|pytest|jest|vitest|cargo test")
 files = ["read:src/**", "read:lib/**", "read:tests/**", "read:test/**", "read:spec/**", "read:__tests__/**", "read:coverage/**", "read:package.json", "read:Cargo.toml", "read:pyproject.toml", "read:requirements.txt", "read:go.mod", "write:tests/**", "write:test/**", "write:spec/**", "write:__tests__/**"]
 network = []
 env = []

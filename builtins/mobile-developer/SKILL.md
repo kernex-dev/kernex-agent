@@ -27,6 +27,8 @@ files = [
     "!**/*.jks",
     "!**/*.keystore",
     "!**/*.p12",
+    "!**/*.p8",
+    "!**/*.pem",
     "!**/*.mobileprovision",
     "!**/fastlane/.env*",
 ]
