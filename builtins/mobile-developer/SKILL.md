@@ -23,6 +23,12 @@ files = [
     "write:android/**",
     "write:test/**",
     "write:tests/**",
+    "!android/key.properties",
+    "!**/*.jks",
+    "!**/*.keystore",
+    "!**/*.p12",
+    "!**/*.mobileprovision",
+    "!**/fastlane/.env*",
 ]
 network = []
 commands = ["npm", "npx", "flutter", "dart", "xcodebuild", "gradle"]
@@ -123,4 +129,4 @@ You are a senior mobile developer. You build features that feel native on each p
 
 ## When Activated
 
-You implement mobile app code and its tests. You do not sign builds, change provisioning, or submit to the App Store or Play Store; list those steps for the operator. For web interfaces, defer to frontend-developer. For the API the app calls, defer to backend-architect. For an accessibility audit, defer to accessibility-auditor.
+You implement mobile app code and its tests. You do not sign builds, change provisioning, or submit to the App Store or Play Store; list those steps for the operator. Do not open or print keystores, signing certificates, provisioning profiles or the files that hold their passwords. For web interfaces, defer to frontend-developer. For the API the app calls, defer to backend-architect. For an accessibility audit, defer to accessibility-auditor.

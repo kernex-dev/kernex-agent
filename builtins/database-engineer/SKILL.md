@@ -73,7 +73,7 @@ Each index slows writes and uses storage. Drop indexes that no query uses. Do no
 ## Query Tuning Protocol
 
 1. **Get the exact query and its parameters.** Typical and worst-case values.
-2. **Capture the plan.** `EXPLAIN (ANALYZE, BUFFERS)` in PostgreSQL, `EXPLAIN ANALYZE` in MySQL, `EXPLAIN QUERY PLAN` in SQLite. Run it on a development or replica database, never as a write against production.
+2. **Capture the plan.** `EXPLAIN (ANALYZE, BUFFERS)` in PostgreSQL, `EXPLAIN ANALYZE` in MySQL, `EXPLAIN QUERY PLAN` in SQLite. Run it on a development database, never against production. `EXPLAIN ANALYZE` executes the statement, so wrap an `INSERT`, `UPDATE` or `DELETE` in `BEGIN` ... `ROLLBACK`.
 3. **Find the expensive node.** Sequential scan on a large table, row estimate far from actual, sort or hash spilling to disk, nested loop over many rows.
 4. **Change one thing.** Add or adjust an index, rewrite the predicate so it can use an index, remove the N+1 with a join or a batch, select fewer columns.
 5. **Capture the plan again.** Report before and after timings and row counts.

@@ -1,0 +1,191 @@
+[accessibility-auditor]
+files = ["read:src/**", "read:public/**", "read:package.json", "write:src/components/**", "write:src/styles/**"]
+network = ["localhost"]
+env = []
+commands = ["npm", "npx", "node"]
+lazy = false
+model = None
+toolbox axe_audit = "npx" ["-y", "@axe-core/cli"] env={} network=true parameters={"properties":{"tags":{"description":"WCAG tags to test (default: wcag2a,wcag2aa,wcag22aa)","type":"string"},"url":{"description":"URL to audit (e.g. http://localhost:3000)","type":"string"}},"required":["url"],"type":"object"}
+toolbox contrast_check = "npx" ["-y", "color-contrast-checker"] env={} network=true parameters={"properties":{"background":{"description":"Background color (hex, e.g. #ffffff)","type":"string"},"foreground":{"description":"Foreground color (hex, e.g. #333333)","type":"string"}},"required":["foreground","background"],"type":"object"}
+toolbox lighthouse_a11y = "npx" ["-y", "lighthouse", "--only-categories=accessibility", "--output=json", "--chrome-flags=--headless=new --no-sandbox"] env={} network=true parameters={"properties":{"url":{"description":"URL to audit","type":"string"}},"required":["url"],"type":"object"}
+
+[agents-orchestrator]
+files = ["read:src/**", "read:tests/**", "read:project-specs/**", "read:package.json", "read:Cargo.toml", "write:project-tasks/**", "write:project-docs/**"]
+network = []
+env = []
+commands = ["git"]
+lazy = false
+model = None
+
+[ai-engineer]
+files = ["read:src/**", "read:models/**", "read:data/**", "read:notebooks/**", "read:package.json", "read:Cargo.toml", "read:requirements.txt", "read:pyproject.toml", "write:src/ai/**", "write:src/ml/**", "write:src/pipelines/**", "write:models/**", "write:notebooks/**"]
+network = ["localhost", "api.openai.com", "api.anthropic.com", "huggingface.co"]
+env = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "HF_TOKEN"]
+commands = ["python", "pip", "cargo", "npm", "npx", "ollama", "docker"]
+lazy = false
+model = None
+toolbox ollama_run = "ollama" ["run"] env={} network=true parameters={"properties":{"model":{"description":"Model name (e.g. llama3, mistral, codellama)","type":"string"},"prompt":{"description":"Prompt to send to the model","type":"string"}},"required":["model","prompt"],"type":"object"}
+toolbox python_eval = "python" ["-c"] env={} network=true parameters={"properties":{"code":{"description":"Python code to execute","type":"string"}},"required":["code"],"type":"object"}
+
+[api-tester]
+files = ["read:src/**", "read:tests/**", "read:test/**", "read:e2e/**", "read:openapi.*", "read:swagger.*", "read:package.json", "read:Cargo.toml", "write:tests/**", "write:test/**", "write:e2e/**"]
+network = ["localhost"]
+env = []
+commands = ["npm", "npx", "cargo", "curl"]
+lazy = false
+model = None
+toolbox api_load_test = "npx" ["-y", "hey"] env={} network=true parameters={"properties":{"concurrency":{"description":"Number of concurrent workers (default: 50)","type":"number"},"method":{"description":"HTTP method (default: GET)","type":"string"},"requests":{"description":"Total number of requests (default: 200)","type":"number"},"url":{"description":"URL to load test","type":"string"}},"required":["url"],"type":"object"}
+
+[backend-architect]
+files = ["read:src/**", "read:migrations/**", "read:prisma/**", "read:drizzle/**", "read:docker-compose.*", "read:Dockerfile*", "read:package.json", "read:Cargo.toml", "read:requirements.txt", "read:go.mod", "write:src/api/**", "write:src/routes/**", "write:src/services/**", "write:src/models/**", "write:migrations/**", "write:prisma/**"]
+network = ["localhost"]
+env = []
+commands = ["npm", "npx", "cargo", "python", "go", "docker"]
+lazy = false
+model = None
+
+[data-engineer]
+files = ["read:src/**", "read:pipelines/**", "read:dags/**", "read:etl/**", "read:jobs/**", "read:sql/**", "read:dbt/**", "read:tests/**", "read:pyproject.toml", "read:requirements.txt", "read:package.json", "read:Cargo.toml", "write:pipelines/**", "write:dags/**", "write:etl/**", "write:jobs/**", "write:sql/**", "write:tests/**"]
+network = []
+env = []
+commands = ["python", "pytest", "npm", "npx", "cargo"]
+lazy = false
+model = None
+
+[database-engineer]
+files = ["read:src/**", "read:migrations/**", "read:db/**", "read:prisma/**", "read:drizzle/**", "read:sql/**", "read:docker-compose.*", "read:package.json", "read:Cargo.toml", "read:pyproject.toml", "read:requirements.txt", "read:go.mod", "write:migrations/**", "write:db/migrations/**", "write:prisma/**", "write:drizzle/**"]
+network = ["localhost"]
+env = []
+commands = ["npm", "npx", "cargo", "python", "psql", "sqlite3"]
+lazy = false
+model = None
+
+[debugger]
+files = ["read:src/**", "read:lib/**", "read:tests/**", "read:test/**", "read:logs/**", "read:.github/**", "read:package.json", "read:Cargo.toml", "read:pyproject.toml", "read:requirements.txt", "read:go.mod", "write:src/**", "write:tests/**", "write:test/**"]
+network = []
+env = []
+commands = ["git", "npm", "npx", "cargo", "python", "go"]
+lazy = false
+model = None
+toolbox debug_recent_commits = "git" ["log", "--oneline", "-n", "20"] env={} network=false parameters={"properties":{},"type":"object"}
+toolbox debug_working_tree = "git" ["-c", "core.fsmonitor=false", "--no-optional-locks", "status", "--short"] env={} network=false parameters={"properties":{},"type":"object"}
+
+[devops-automator]
+files = ["read:src/**", "read:.github/**", "read:.gitlab-ci.yml", "read:Dockerfile*", "read:docker-compose.*", "read:terraform/**", "read:k8s/**", "read:helm/**", "read:nginx/**", "read:Makefile", "write:.github/workflows/**", "write:Dockerfile*", "write:docker-compose.*", "write:terraform/**", "write:k8s/**", "write:helm/**", "!~/.aws/*", "!~/.kube/*"]
+network = ["localhost", "registry.hub.docker.com", "ghcr.io"]
+env = []
+commands = ["docker", "kubectl", "terraform", "helm", "make", "git", "curl"]
+lazy = false
+model = None
+toolbox docker_build = "docker" ["build"] env={} network=true parameters={"properties":{"file":{"description":"Dockerfile path (optional)","type":"string"},"path":{"description":"Build context directory (default: .)","type":"string"},"tag":{"description":"Image tag (e.g. myapp:latest)","type":"string"}},"required":["tag"],"type":"object"}
+toolbox docker_compose_up = "docker" ["compose", "up", "-d"] env={} network=true parameters={"properties":{"file":{"description":"Compose file path (default: docker-compose.yml)","type":"string"},"services":{"description":"Specific services to start (space-separated, optional)","type":"string"}},"type":"object"}
+
+[frontend-developer]
+files = ["read:src/**", "read:public/**", "read:package.json", "read:tsconfig.json", "read:vite.config.*", "read:next.config.*", "read:webpack.config.*", "write:src/components/**", "write:src/styles/**", "write:src/pages/**", "write:src/app/**", "write:public/**"]
+network = []
+env = []
+commands = ["npm", "npx", "pnpm", "bun", "node"]
+lazy = false
+model = None
+toolbox bundle_analyze = "npx" ["-y", "source-map-explorer"] env={} network=false parameters={"properties":{"file":{"description":"Path to the JS bundle file with sourcemap","type":"string"}},"required":["file"],"type":"object"}
+toolbox lighthouse_audit = "npx" ["-y", "lighthouse", "--output=json", "--chrome-flags=--headless=new --no-sandbox"] env={} network=false parameters={"properties":{"url":{"description":"URL to audit (e.g. http://localhost:3000)","type":"string"}},"required":["url"],"type":"object"}
+
+[incident-responder]
+files = ["read:src/**", "read:logs/**", "read:docs/**", "read:deploy/**", "read:.github/**", "read:Dockerfile*", "read:docker-compose.*", "read:CHANGELOG.md", "write:docs/incidents/**", "write:docs/postmortems/**", "!~/.ssh/*", "!~/.aws/*", "!~/.gnupg/*"]
+network = []
+env = []
+commands = ["git"]
+lazy = false
+model = None
+toolbox incident_recent_commits = "git" ["log", "--oneline", "-n", "30"] env={} network=false parameters={"properties":{},"type":"object"}
+
+[mobile-developer]
+files = ["read:src/**", "read:app/**", "read:lib/**", "read:ios/**", "read:android/**", "read:test/**", "read:tests/**", "read:package.json", "read:app.json", "read:pubspec.yaml", "write:src/**", "write:app/**", "write:lib/**", "write:ios/**", "write:android/**", "write:test/**", "write:tests/**", "!android/key.properties", "!**/*.jks", "!**/*.keystore", "!**/*.p12", "!**/*.mobileprovision", "!**/fastlane/.env*"]
+network = []
+env = []
+commands = ["npm", "npx", "flutter", "dart", "xcodebuild", "gradle"]
+lazy = false
+model = None
+
+[performance-benchmarker]
+files = ["read:src/**", "read:tests/**", "read:k6/**", "read:artillery/**", "read:package.json", "read:Cargo.toml", "write:tests/performance/**", "write:k6/**", "write:artillery/**", "write:benchmarks/**"]
+network = ["localhost"]
+env = []
+commands = ["npm", "npx", "cargo", "k6", "curl"]
+lazy = false
+model = None
+toolbox cargo_bench = "cargo" ["bench"] env={} network=true parameters={"properties":{"filter":{"description":"Benchmark filter pattern (optional)","type":"string"},"package":{"description":"Specific package to benchmark (optional)","type":"string"}},"type":"object"}
+toolbox k6_run = "k6" ["run", "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)"] env={} network=true parameters={"properties":{"duration":{"description":"Test duration e.g. '30s', '5m' (overrides script)","type":"string"},"script":{"description":"Path to the k6 test script","type":"string"},"vus":{"description":"Number of virtual users (overrides script)","type":"number"}},"required":["script"],"type":"object"}
+toolbox lighthouse_perf = "npx" ["-y", "lighthouse", "--only-categories=performance", "--output=json", "--chrome-flags=--headless=new --no-sandbox"] env={} network=true parameters={"properties":{"url":{"description":"URL to audit","type":"string"}},"required":["url"],"type":"object"}
+
+[project-manager]
+files = ["read:src/**", "read:project-specs/**", "read:docs/**", "read:package.json", "read:Cargo.toml", "write:project-tasks/**", "write:project-docs/**"]
+network = []
+env = []
+commands = ["git"]
+lazy = false
+model = None
+
+[reality-checker]
+files = ["read:src/**", "read:tests/**", "read:test/**", "read:e2e/**", "read:cypress/**", "read:playwright/**", "read:package.json", "read:Cargo.toml", "read:coverage/**", "read:.github/**"]
+network = []
+env = []
+commands = ["npm", "npx", "cargo", "git"]
+lazy = false
+model = None
+toolbox check_coverage = "npx" ["-y", "c8", "report", "--reporter=text"] env={} network=false parameters={"properties":{"threshold":{"description":"Minimum coverage percentage (default: 80)","type":"number"}},"type":"object"}
+toolbox run_tests = "npm" ["test", "--", "--reporter=json"] env={} network=false parameters={"properties":{"args":{"description":"Additional arguments to pass","type":"string"},"script":{"description":"Test script to run (default: test)","type":"string"}},"type":"object"}
+
+[release-manager]
+files = ["read:src/**", "read:docs/**", "read:.github/**", "read:README.md", "read:CHANGELOG.md", "read:package.json", "read:Cargo.toml", "read:pyproject.toml", "read:go.mod", "write:CHANGELOG.md", "write:docs/releases/**"]
+network = []
+env = []
+commands = ["git"]
+lazy = false
+model = None
+toolbox release_list_tags = "git" ["tag", "--list", "--sort=-creatordate"] env={} network=false parameters={"properties":{},"type":"object"}
+toolbox release_recent_commits = "git" ["log", "--oneline", "-n", "50"] env={} network=false parameters={"properties":{},"type":"object"}
+
+[security-engineer]
+files = ["read:src/**", "read:.github/**", "read:Dockerfile*", "read:docker-compose.*", "read:package.json", "read:Cargo.toml", "read:requirements.txt", "read:go.mod", "write:src/**", "write:.github/workflows/**", "!~/.ssh/*", "!~/.aws/*", "!~/.gnupg/*"]
+network = []
+env = []
+commands = ["npm", "npx", "cargo", "semgrep", "trivy", "gitleaks", "git"]
+lazy = false
+model = None
+toolbox gitleaks_detect = "gitleaks" ["detect", "--report-format=json"] env={} network=false parameters={"properties":{"source":{"description":"Path to git repo or directory to scan","type":"string"}},"required":["source"],"type":"object"}
+toolbox semgrep_scan = "semgrep" ["scan", "--json", "--config=auto"] env={} network=false parameters={"properties":{"config":{"description":"Semgrep config (default: auto)","type":"string"},"path":{"description":"Directory or file to scan","type":"string"}},"required":["path"],"type":"object"}
+toolbox trivy_scan = "trivy" ["--format", "json"] env={} network=false parameters={"properties":{"scan_type":{"description":"Scan type: image, fs, repo (default: fs)","type":"string"},"target":{"description":"Image name, filesystem path, or git repo URL","type":"string"}},"required":["target"],"type":"object"}
+
+[senior-developer]
+files = ["read:src/**", "read:tests/**", "read:package.json", "read:Cargo.toml", "read:requirements.txt", "read:go.mod", "read:docker-compose.*", "write:src/**", "write:tests/**"]
+network = []
+env = []
+commands = ["npm", "npx", "cargo", "python", "go", "git", "docker"]
+lazy = false
+model = None
+
+[skill-factory]
+files = []
+network = []
+env = []
+commands = []
+lazy = false
+model = None
+
+[technical-writer]
+files = ["read:src/**", "read:lib/**", "read:docs/**", "read:examples/**", "read:tests/**", "read:README.md", "read:CHANGELOG.md", "read:CONTRIBUTING.md", "read:openapi.*", "read:package.json", "read:Cargo.toml", "read:pyproject.toml", "read:go.mod", "write:docs/**", "write:README.md", "write:CHANGELOG.md"]
+network = []
+env = []
+commands = ["git"]
+lazy = false
+model = None
+
+[test-engineer]
+files = ["read:src/**", "read:lib/**", "read:tests/**", "read:test/**", "read:spec/**", "read:__tests__/**", "read:coverage/**", "read:package.json", "read:Cargo.toml", "read:pyproject.toml", "read:requirements.txt", "read:go.mod", "write:tests/**", "write:test/**", "write:spec/**", "write:__tests__/**"]
+network = []
+env = []
+commands = ["npm", "npx", "cargo", "python", "pytest", "go"]
+lazy = false
+model = None
+

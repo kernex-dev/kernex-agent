@@ -238,33 +238,57 @@ mod tests {
         }
         assert_eq!(loaded.len(), builtin_count());
 
-        // (name, toolbox count, network hosts) for the skills whose
-        // declarations the runtime acts on. A toolbox the loader rejects is
-        // dropped silently, so the count is what proves it was accepted.
-        let expected: [(&str, usize, usize); 8] = [
-            ("data-engineer", 0, 0),
-            ("database-engineer", 0, 1),
-            ("debugger", 2, 0),
-            ("incident-responder", 1, 0),
-            ("mobile-developer", 0, 0),
-            ("release-manager", 2, 0),
-            ("technical-writer", 0, 0),
-            ("test-engineer", 0, 0),
-        ];
-        for (name, toolboxes, hosts) in expected {
-            let skill = loaded.iter().find(|s| s.name == name).unwrap();
-            assert_eq!(skill.toolboxes.len(), toolboxes, "{name} toolboxes");
-            assert_eq!(skill.permissions.network.len(), hosts, "{name} network");
-            // An empty command list means "no restriction" to the runtime.
-            assert!(!skill.permissions.commands.is_empty(), "{name} commands");
-            assert!(!skill.permissions.files.is_empty(), "{name} files");
-            assert!(skill.trigger.is_some(), "{name} trigger");
-            assert!(skill.mcp_servers.is_empty(), "{name} mcp servers");
-            for toolbox in &skill.toolboxes {
-                assert_eq!(toolbox.command, "git", "{name} toolbox command");
-                assert!(!toolbox.network, "{name} toolbox network");
-            }
+        // Every permission the runtime acts on, for every builtin, against
+        // a checked-in copy: widening one shows up as a reviewed diff there.
+        let actual: String = loaded.iter().map(declaration).collect();
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/builtin-declarations.txt"
+        );
+        if std::env::var_os("KX_UPDATE_BUILTIN_DECLARATIONS").is_some() {
+            std::fs::write(path, &actual).unwrap();
         }
+        let expected = std::fs::read_to_string(path).unwrap();
+        assert!(
+            actual == expected,
+            "builtin declarations differ from {path}; review the change and \
+             rerun with KX_UPDATE_BUILTIN_DECLARATIONS=1 to accept it:\n{actual}"
+        );
+    }
+
+    /// The declarations of a loaded skill that grant it anything, in a
+    /// stable order.
+    fn declaration(skill: &kernex_runtime::skills::Skill) -> String {
+        use std::collections::BTreeMap;
+        use std::fmt::Write;
+        let p = &skill.permissions;
+        let mut out = format!(
+            "[{}]\nfiles = {:?}\nnetwork = {:?}\nenv = {:?}\ncommands = {:?}\n\
+             lazy = {}\nmodel = {:?}\n",
+            skill.name, p.files, p.network, p.env, p.commands, skill.lazy, skill.model
+        );
+        let mut toolboxes: Vec<_> = skill.toolboxes.iter().collect();
+        toolboxes.sort_by(|a, b| a.name.cmp(&b.name));
+        for t in toolboxes {
+            let env: BTreeMap<_, _> = t.env.iter().collect();
+            let _ = writeln!(
+                out,
+                "toolbox {} = {:?} {:?} env={:?} network={} parameters={}",
+                t.name, t.command, t.args, env, t.network, t.parameters
+            );
+        }
+        let mut servers: Vec<_> = skill.mcp_servers.iter().collect();
+        servers.sort_by(|a, b| a.name.cmp(&b.name));
+        for m in servers {
+            let env: BTreeMap<_, _> = m.env.iter().collect();
+            let _ = writeln!(
+                out,
+                "mcp {} = {:?} {:?} env={:?}",
+                m.name, m.command, m.args, env
+            );
+        }
+        out.push('\n');
+        out
     }
 
     #[test]
