@@ -81,8 +81,8 @@ tower-http = { version = "0.5", features = ["trace"], optional = true }
 # Placeholder optional deps. Reserved for the corresponding feature
 # flag's eventual implementation; currently no source under default
 # activates them.
-ratatui = { version = "0.29", optional = true }
-crossterm = { version = "0.28", optional = true }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"], optional = true }
+crossterm = { version = "0.29", optional = true }
 toml_edit = { version = "0.22", optional = true }
 
 [features]

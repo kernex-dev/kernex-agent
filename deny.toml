@@ -12,11 +12,6 @@ all-features = true
 [advisories]
 version = 2
 ignore = [
-    # `paste 1.0.15` is unmaintained per RUSTSEC-2024-0436. It reaches kx
-    # only via `ratatui 0.29.x` -> `paste`, behind the optional `tui`
-    # feature flag. No ratatui release that drops `paste` exists yet;
-    # revisit on the next ratatui upgrade.
-    "RUSTSEC-2024-0436",
     # Reviewed 2026-11-20; next review 2027-02-20 or at the next kernex-*
     # bump, whichever comes first. Remove each entry when its fix lands.
     #
