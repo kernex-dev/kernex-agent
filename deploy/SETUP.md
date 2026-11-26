@@ -17,7 +17,7 @@ No build step required — pull the pre-built image from GHCR.
 ## Pulling the Image from GHCR
 
 The image is published publicly at `ghcr.io/kernex-dev/kernex-agent`, tagged per release
-(`0.9.0`, `0.9`, `latest`). The compose files pin the release they shipped with. No authentication
+(`0.10.0`, `0.10`, `latest`). The compose files pin the release they shipped with. No authentication
 is required to pull it. If you receive a 401 or 403, check that:
 
 1. The package visibility is set to **Public** at
@@ -399,7 +399,7 @@ Set the release you want in `.env`, then pull and restart:
 
 ```bash
 # .env
-KX_VERSION=0.9.0
+KX_VERSION=0.10.0
 ```
 
 ```bash
@@ -446,7 +446,7 @@ The base `ghcr.io/kernex-dev/kernex-agent` image does not include it. If your sa
 `psql "$DATABASE_URL" -c "..."`, extend the image:
 
 ```dockerfile
-FROM ghcr.io/kernex-dev/kernex-agent:0.9.0
+FROM ghcr.io/kernex-dev/kernex-agent:0.10.0
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
     && rm -rf /var/lib/apt/lists/*
