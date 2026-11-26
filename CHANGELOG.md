@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-26
+
+### Changed
+
+- **kx runs on the kernex 0.13.1 crates.** The `openai` provider's default
+  model is now `gpt-6-luna` instead of `gpt-4o`, which OpenAI shuts down on
+  2027-01-14. With tools, Luna is sent `reasoning_effort: "none"`, the only
+  effort at which it calls tools on Chat Completions. `gpt-6.2-*` and
+  `gpt-6.1-terra` on `api.openai.com` now refuse a request with tools before
+  sending it, since they call tools only through the Responses API, which
+  the provider does not use yet. Pass `--model` to use another model. See
+  the [kernex 0.13.1 changelog](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md).
+
+### Fixed
+
+- `/help` showed the multiline marker as `\"\"\"`. It now shows `"""`.
+- `kx doctor` listed `claude-code`, `opencode` and `ollama` as "(no API key
+  required)" whether or not they were installed or running. It now says
+  found or missing: the CLI on `PATH`, or the Ollama address that answered
+  or did not. For the active provider, that address is the `--base-url` in
+  use, printed without its user, password, query or fragment, and not at
+  all when it is not an `http` or `https` URL. The active provider is
+  marked with `*` whatever the case of the name passed to `--provider`,
+  and its key shows as set when it comes from `--api-key` or
+  `KERNEX_API_KEY`.
+- When a provider that needs a key failed its availability check, kx said
+  "Set <VAR> or pass --api-key" even when the key was set and the API had
+  refused it. With a key set (`--api-key`, `KERNEX_API_KEY` or the
+  provider's variable), it now says the key was refused or the API could
+  not be reached.
+
 ## [0.11.0] - 2026-11-26
 
 ### Changed
