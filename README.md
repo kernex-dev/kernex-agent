@@ -174,7 +174,7 @@ Each [release](https://github.com/kernex-dev/kernex-agent/releases/latest) has `
 
 ```bash
 shasum -a 256 -c SHA256SUMS --ignore-missing
-gh attestation verify kx-v0.10.0-aarch64-apple-darwin.tar.gz --repo kernex-dev/kernex-agent
+gh attestation verify kx-v0.11.0-aarch64-apple-darwin.tar.gz --repo kernex-dev/kernex-agent
 ```
 
 ## First Run

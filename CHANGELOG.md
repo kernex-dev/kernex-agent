@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-26
+
 ### Changed
 
 - **Breaking: kx has no default provider.** Without `--provider` (or
@@ -23,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   needs a provider at startup. A named `ollama` reads `OLLAMA_HOST` too.
   `KERNEX_API_KEY` (or `--api-key`) is used only with a named provider: a
   provider kx picked uses its own key variable.
+  Upgrading: if you relied on the old default and also have a provider key
+  such as `ANTHROPIC_API_KEY` in your environment, kx now uses that
+  provider, billed per token, instead of your Claude subscription. Pass
+  `--provider claude-code` or set `KERNEX_PROVIDER=claude-code` to keep the
+  CLI. In Docker, remove `KERNEX_PROVIDER=claude-code` from `.env`.
 - The compose files no longer set a provider (they defaulted to
   `claude-code`, or `openai` for Traefik): the key in `.env` picks it.
   `deploy/SETUP.md` and the compose comments no longer describe running
