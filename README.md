@@ -131,8 +131,8 @@ Use `cargo install kernex-agent --features agent-codex` (or any combination) to 
 
 | Platform | Status | Notes |
 |---|---|---|
-| **macOS** (Apple Silicon & Intel) | Fully supported | Sandbox via Seatbelt |
-| **Linux** (x86_64, aarch64) | Fully supported | Sandbox via Landlock; tool subprocesses need kernel 6.2+ (Landlock ABI 3), network rules need 6.7+ |
+| **macOS** (Apple Silicon & Intel) | Fully supported | Sandbox via Seatbelt; prebuilt binary for Apple Silicon only (build from source on Intel) |
+| **Linux** (x86_64, aarch64) | Fully supported | Sandbox via Landlock; prebuilt binary for x86_64 only (build from source on aarch64); tool subprocesses need kernel 6.2+ (Landlock ABI 3), network rules need 6.7+ |
 | **Windows** | Experimental | No sandbox support; requires WSL2 for best experience |
 
 The sandbox layer comes from `kernex-sandbox` and is used by the runtime to isolate AI subprocesses. On platforms without sandbox support, kx refuses to spawn agent tool subprocesses instead of running them unsandboxed.
@@ -166,6 +166,15 @@ cargo install kernex-agent
 git clone https://github.com/kernex-dev/kernex-agent.git
 cd kernex-agent
 cargo install --path .
+```
+
+### Prebuilt binaries
+
+Each [release](https://github.com/kernex-dev/kernex-agent/releases/latest) has `kx` for macOS (Apple Silicon) and Linux (x86_64), a `SHA256SUMS` file and a Sigstore build-provenance attestation. To verify a download:
+
+```bash
+shasum -a 256 -c SHA256SUMS --ignore-missing
+gh attestation verify kx-v0.10.0-aarch64-apple-darwin.tar.gz --repo kernex-dev/kernex-agent
 ```
 
 ## First Run
