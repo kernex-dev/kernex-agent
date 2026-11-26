@@ -51,6 +51,7 @@ kx needs at least one LLM provider configured. The default is the Claude Code CL
 | Provider | Auth | Set with |
 |---|---|---|
 | `claude-code` (default) | Subscription via local CLI, with its own login (see below) | `claude --version` to verify |
+| `opencode` | The API key variable of the model's provider (none for local Ollama) | `--provider opencode --cli-tools all` |
 | `anthropic` | API key | `ANTHROPIC_API_KEY` env var |
 | `openai` | API key | `OPENAI_API_KEY` env var |
 | `gemini` | API key | `GEMINI_API_KEY` env var |
@@ -538,9 +539,9 @@ kx defaults to Claude Code CLI as its AI backend. The underlying `kernex-provide
 
 `claude-code` runs with a tool list that has no shell unless you widen it, and `opencode` runs only with `--cli-tools all`; see [How the agent CLIs run their tools](#how-the-agent-clis-run-their-tools).
 
-**AWS Bedrock** is available as an optional compile-time feature. Build with `--features bedrock` to enable `--provider bedrock`. Requires standard AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`). Bedrock is not included in the 11 built-in provider count above.
+**AWS Bedrock** is available as an optional compile-time feature. Build with `--features bedrock` to enable `--provider bedrock`. Requires standard AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`). Bedrock is not included in the 12 built-in providers above.
 
-Provider is auto-detected if `--provider` is omitted. Override the model with `--model <name>`.
+Without `--provider` or `KERNEX_PROVIDER`, kx uses `claude-code`. Override the model with `--model <name>`.
 
 You can also set defaults via environment variables:
 
