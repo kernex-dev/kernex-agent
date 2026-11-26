@@ -335,6 +335,25 @@ curl -s -X POST http://localhost:8080/webhook/pr-review \
   -d '{"message": "PR #42: add user auth endpoint"}'
 ```
 
+## Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `kx dev` | Interactive session (the default when no subcommand is given) |
+| `kx audit` | Repository health audit: dependencies, tests, docs, structure |
+| `kx docs` | Documentation audit: finds outdated docs |
+| `kx init` | Sets up kx for the current project and installs the builtin skills |
+| `kx doctor` | Checks provider availability, environment variables and the data directory |
+| `kx pipeline run <name>` / `list` | Runs or lists multi-agent pipelines |
+| `kx skills` | Installs, lists, verifies and removes skills (see [Skills](#skills)) |
+| `kx cron create` / `list` / `delete` | Manages scheduled tasks |
+| `kx mem` | Searches, reads and writes the project memory from outside the REPL (`search`, `get`, `history`, `stats`, `facts`, `save`) |
+| `kx serve` | Headless HTTP server (see [Serve Mode](#serve-mode)) |
+| `kx install` | Wires kernex into an agent host (see [Agent adapters](#agent-adapters)) |
+| `kx mcp` | Stdio MCP server for the project's memory tools; needs a build with `--features mcp` |
+
+`kx <subcommand> --help` lists the flags of each.
+
 ## Commands
 
 | Command | Description |
@@ -347,6 +366,8 @@ curl -s -X POST http://localhost:8080/webhook/pr-review \
 | `/facts` | List stored facts |
 | `/facts delete <key>` | Delete a specific fact |
 | `/config` | Show active configuration |
+| `/cost` | Show cumulative token usage, estimated cost and cache hit ratio |
+| `/skills` | List installed skills (`/skills add`, `/skills remove`, `/skills verify`) |
 | `/retry` | Retry last failed message |
 | `/clear` | Close current conversation |
 | `/quit` or `/exit` | Exit kx |
