@@ -423,10 +423,10 @@ kx supports the [Agent Skills](https://agentskills.io) standard — an open form
 
 ```bash
 # Install from GitHub
-kx skills add anthropics/skills/rust-best-practices
+kx skills add anthropics/skills/skills/frontend-design
 
 # Install with specific trust level
-kx skills add vercel-labs/agent-skills/web-design-guidelines --trust standard
+kx skills add vercel-labs/agent-skills/skills/web-design-guidelines --trust standard
 
 # List installed skills
 kx skills list
@@ -435,7 +435,7 @@ kx skills list
 kx skills verify
 
 # Remove a skill
-kx skills remove rust-best-practices
+kx skills remove frontend-design
 ```
 
 Skills can also be managed from the interactive REPL with `/skills`, `/skills add`, `/skills remove`, and `/skills verify`.
