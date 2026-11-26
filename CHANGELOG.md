@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: kx has no default provider.** Without `--provider` (or
+  `KERNEX_PROVIDER`) it uses the first one configured: an API key in the
+  environment (`anthropic`, `openai`, `gemini`, `openrouter`, `groq`,
+  `mistral`, `deepseek`, `fireworks`, `xai`, in that order), then an
+  Ollama server that answers at `OLLAMA_HOST` (default `127.0.0.1:11434`,
+  used as the base URL when set), then the `claude` or `opencode` CLI on
+  `PATH`. It prints which one it picked and why, and stops with the ways to
+  configure one when it finds none. It used to start `claude-code`, which
+  failed where the CLI is not installed, the Docker image included.
+  Commands that call no model (`kx skills`, `kx mem`, `kx cron`, `kx init`,
+  `kx install`, `kx mcp`, `kx pipeline list`) do not look; `kx serve`
+  needs a provider at startup. A named `ollama` reads `OLLAMA_HOST` too.
+  `KERNEX_API_KEY` (or `--api-key`) is used only with a named provider: a
+  provider kx picked uses its own key variable.
+- The compose files no longer set a provider (they defaulted to
+  `claude-code`, or `openai` for Traefik): the key in `.env` picks it.
+  `deploy/SETUP.md` and the compose comments no longer describe running
+  `claude-code` in the image, which does not include the Claude or OpenCode
+  CLI.
+
+### Fixed
+
+- An empty `KERNEX_MODEL`, `KERNEX_API_KEY` or `KERNEX_BASE_URL`, as the
+  compose files pass when `.env` leaves them out, counts as unset instead
+  of being sent as an empty value.
+- `kx serve` sends its own API key and base URL only to jobs that use its
+  default provider. A job that named another provider got them too, so the
+  server's key or Ollama address went to that provider.
+
 ## [0.10.0] - 2026-11-26
 
 ### Changed

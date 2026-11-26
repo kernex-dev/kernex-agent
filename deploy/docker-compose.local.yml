@@ -6,7 +6,7 @@
 # bearer token then crosses the network unencrypted.
 #
 # Usage:
-#   cp .env.example .env   # fill in KERNEX_AUTH_TOKEN, and CLAUDE_CODE_OAUTH_TOKEN for claude-code
+#   cp .env.example .env   # fill in KERNEX_AUTH_TOKEN and one provider key
 #   docker compose -f docker-compose.local.yml up -d
 
 networks:
@@ -26,23 +26,25 @@ services:
       - "${KX_BIND:-127.0.0.1}:8080:8080"
     env_file: .env
     # ── Provider selection ───────────────────────────────────────────────────────
-    # Recommended for local: "claude-code" uses your Claude subscription. Put
-    # CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) or ANTHROPIC_API_KEY in .env;
-    # kx runs the Claude CLI with its own login, never a mounted ~/.claude.
-    # To switch, set KERNEX_PROVIDER in .env and add the matching key:
-    #   groq        ->  GROQ_API_KEY        (fast, low-cost)
-    #   deepseek    ->  DEEPSEEK_API_KEY    (very low-cost)
-    #   openai      ->  OPENAI_API_KEY
+    # Put one provider's key in .env. Without KERNEX_PROVIDER, kx uses the
+    # first key it finds in the order below, then an Ollama that answers at
+    # OLLAMA_HOST, and logs which one it picked. Set KERNEX_PROVIDER to pick one.
+    # The image has no Claude or OpenCode CLI, so claude-code and opencode do
+    # not run in it.
     #   anthropic   ->  ANTHROPIC_API_KEY
+    #   openai      ->  OPENAI_API_KEY
     #   gemini      ->  GEMINI_API_KEY
     #   openrouter  ->  OPENROUTER_API_KEY  (routes to many models via one key)
+    #   groq        ->  GROQ_API_KEY        (fast, low-cost)
     #   mistral     ->  MISTRAL_API_KEY
+    #   deepseek    ->  DEEPSEEK_API_KEY    (very low-cost)
     #   fireworks   ->  FIREWORKS_API_KEY
     #   xai         ->  XAI_API_KEY
-    #   ollama      ->  set KERNEX_BASE_URL=http://host.docker.internal:11434 (local, no key)
-    # Or use KERNEX_API_KEY as a unified key regardless of provider.
+    #   ollama      ->  OLLAMA_HOST=host.docker.internal:11434 (no key; on Linux
+    #                   also add extra_hosts: ["host.docker.internal:host-gateway"])
+    # KERNEX_API_KEY works for any provider, but only with KERNEX_PROVIDER set.
     environment:
-      KERNEX_PROVIDER: ${KERNEX_PROVIDER:-claude-code}
+      KERNEX_PROVIDER: ${KERNEX_PROVIDER:-}
       KERNEX_MODEL: ${KERNEX_MODEL:-}
       KERNEX_API_KEY: ${KERNEX_API_KEY:-}
       KERNEX_BASE_URL: ${KERNEX_BASE_URL:-}

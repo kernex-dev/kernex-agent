@@ -57,6 +57,9 @@ fn run_kx(extra: &[&str], config: Option<&str>) -> Run {
         .env_clear()
         .env("HOME", &home)
         .env("PATH", path_with(&bin))
+        // Nothing answers on the discard port, so kx never picks a local
+        // Ollama over the stand-in CLI.
+        .env("OLLAMA_HOST", "127.0.0.1:9")
         .output()
         .unwrap();
     let args = read_args(&project.join("claude-args.txt"));
@@ -96,7 +99,14 @@ fn cli_args(run: Run) -> Vec<String> {
 
 #[test]
 fn by_default_the_cli_gets_a_list_without_a_shell() {
-    let args = cli_args(run_kx(&[], None));
+    let run = run_kx(&[], None);
+    assert!(
+        run.stderr
+            .contains("using provider claude-code (the claude CLI is on PATH)"),
+        "{}",
+        run.stderr
+    );
+    let args = cli_args(run);
     assert!(!args.iter().any(|a| a == "--dangerously-skip-permissions"));
     assert_eq!(
         values(&args, "--tools"),

@@ -31,6 +31,7 @@ pub mod mcp;
 pub mod mem;
 pub mod prompts;
 pub mod provider_check;
+pub mod provider_detect;
 pub mod runtime_glue;
 pub mod scheduler;
 #[cfg(feature = "serve")]

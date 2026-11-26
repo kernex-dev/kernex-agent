@@ -1181,6 +1181,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_sends_the_server_key_and_url_only_to_its_default_provider() {
+        let (mut state, mut rx) = make_test_state(TEST_TOKEN);
+        let mut flags = (*state.default_flags).clone();
+        flags.api_key = Some("sk-server".into());
+        flags.base_url = Some("http://box:11434".into());
+        state.default_flags = Arc::new(flags);
+        let app = build_app(state, TEST_MAX_BODY);
+
+        for (body, key, url) in [
+            (
+                serde_json::json!({ "message": "a" }),
+                Some("sk-server"),
+                Some("http://box:11434"),
+            ),
+            (
+                serde_json::json!({ "message": "b", "provider": "openai" }),
+                None,
+                None,
+            ),
+        ] {
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::POST)
+                        .uri("/run")
+                        .header(header::AUTHORIZATION, format!("Bearer {TEST_TOKEN}"))
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let queued = rx.try_recv().expect("expected queued job in channel");
+            assert_eq!(queued.api_key.as_deref(), key, "{body}");
+            assert_eq!(queued.base_url.as_deref(), url, "{body}");
+        }
+    }
+
+    #[tokio::test]
     async fn run_rejects_message_above_64kib() {
         let (state, _rx) = make_test_state(TEST_TOKEN);
         let app = build_app(state, TEST_MAX_BODY);

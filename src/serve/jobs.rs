@@ -4,6 +4,28 @@ use std::sync::Arc;
 use serde::Serialize;
 use tokio::sync::RwLock;
 
+use crate::runtime_glue::ProviderFlags;
+
+/// The server's API key, for a job that uses its default provider. A job
+/// that names another provider must not send that key to it.
+pub fn default_api_key(defaults: &ProviderFlags, provider: &str) -> Option<String> {
+    uses_default(defaults, provider)
+        .then(|| defaults.api_key.clone())
+        .flatten()
+}
+
+/// The server's base URL, for a job that uses its default provider: an
+/// Ollama address must not become another provider's endpoint.
+pub fn default_base_url(defaults: &ProviderFlags, provider: &str) -> Option<String> {
+    uses_default(defaults, provider)
+        .then(|| defaults.base_url.clone())
+        .flatten()
+}
+
+fn uses_default(defaults: &ProviderFlags, provider: &str) -> bool {
+    provider.trim().eq_ignore_ascii_case(defaults.name.trim())
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum JobStatus {
@@ -246,5 +268,32 @@ mod tests {
         assert!(json.contains("\"id\":\"abc-123\""));
         assert!(json.contains("\"status\":\"queued\""));
         assert!(json.contains("\"message\":\"hello\""));
+    }
+
+    #[test]
+    fn the_server_key_and_url_go_only_to_its_default_provider() {
+        let defaults = ProviderFlags {
+            name: "ollama".into(),
+            model: None,
+            api_key: Some("sk-x".into()),
+            base_url: Some("http://box:11434".into()),
+            project: None,
+            channel: None,
+            max_tokens: None,
+            no_memory: true,
+            auto_compact: true,
+            verbose: false,
+            access: Default::default(),
+        };
+        assert_eq!(
+            default_api_key(&defaults, "Ollama").as_deref(),
+            Some("sk-x")
+        );
+        assert_eq!(
+            default_base_url(&defaults, " ollama").as_deref(),
+            Some("http://box:11434")
+        );
+        assert_eq!(default_api_key(&defaults, "openai"), None);
+        assert_eq!(default_base_url(&defaults, "openai"), None);
     }
 }

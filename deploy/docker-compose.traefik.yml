@@ -4,7 +4,7 @@
 # Prerequisites:
 #   - Traefik v2 or v3 already running
 #   - A Traefik network configured to discover containers (set TRAEFIK_NETWORK in .env)
-#   - An API key provider set in .env (recommended over claude-code for servers)
+#   - One provider's API key in .env
 #
 # Usage:
 #   cp .env.example .env   # set KERNEX_AUTH_TOKEN, KERNEX_PROVIDER, API key, DOMAIN
@@ -41,20 +41,25 @@ services:
       - "127.0.0.1:${KX_PORT:-8081}:8080"
     env_file: .env
     # ── Provider selection ───────────────────────────────────────────────────────
-    # Recommended for VPS: use an API key provider (not claude-code, OAuth is session-based).
-    # Set KERNEX_PROVIDER and KERNEX_API_KEY (or provider-specific key) in .env:
-    #   groq        ->  GROQ_API_KEY        (fast, low-cost)
-    #   deepseek    ->  DEEPSEEK_API_KEY    (very low-cost)
-    #   openai      ->  OPENAI_API_KEY
+    # Put one provider's key in .env. Without KERNEX_PROVIDER, kx uses the
+    # first key it finds in the order below, then an Ollama that answers at
+    # OLLAMA_HOST, and logs which one it picked. Set KERNEX_PROVIDER to pick one.
+    # The image has no Claude or OpenCode CLI, so claude-code and opencode do
+    # not run in it.
     #   anthropic   ->  ANTHROPIC_API_KEY
+    #   openai      ->  OPENAI_API_KEY
     #   gemini      ->  GEMINI_API_KEY
     #   openrouter  ->  OPENROUTER_API_KEY  (routes to many models via one key)
+    #   groq        ->  GROQ_API_KEY        (fast, low-cost)
     #   mistral     ->  MISTRAL_API_KEY
+    #   deepseek    ->  DEEPSEEK_API_KEY    (very low-cost)
     #   fireworks   ->  FIREWORKS_API_KEY
     #   xai         ->  XAI_API_KEY
+    #   ollama      ->  OLLAMA_HOST=host.docker.internal:11434 (no key; on Linux
+    #                   also add extra_hosts: ["host.docker.internal:host-gateway"])
     # For OpenAI-compatible proxies (e.g. LiteLLM), also set KERNEX_BASE_URL.
     environment:
-      KERNEX_PROVIDER: ${KERNEX_PROVIDER:-openai}
+      KERNEX_PROVIDER: ${KERNEX_PROVIDER:-}
       KERNEX_MODEL: ${KERNEX_MODEL:-}
       KERNEX_API_KEY: ${KERNEX_API_KEY:-}
       KERNEX_BASE_URL: ${KERNEX_BASE_URL:-}
@@ -68,8 +73,6 @@ services:
       - "${KX_WORKERS:-4}"
     volumes:
       - kx_data:/home/kx/.kx
-      # KERNEX_PROVIDER=claude-code needs CLAUDE_CODE_OAUTH_TOKEN (from
-      # `claude setup-token`) or ANTHROPIC_API_KEY in .env; no ~/.claude mount.
       # Optional: override bundled skills with your own directory
       # - type: bind
       #   source: ./my-skills
