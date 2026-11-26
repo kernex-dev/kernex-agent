@@ -118,7 +118,7 @@ list, so kx runs it only with `all`.
 
 ### Agent adapters
 
-`kx install --agent <name> --preset <preset>` wires kernex into a coding assistant's config so it can call kernex's MCP server and share the kernex voice template. The default build ships Claude Code only; the others are opt-in feature flags so the default binary stays under 15 MiB on macOS aarch64.
+`kx install --agent <name> --preset solo-dev` wires kernex into a coding assistant's config so it can call kernex's MCP server and share the kernex voice template (`solo-dev` is the only preset so far). The default build ships Claude Code only; the others are opt-in feature flags so the default binary stays under 15 MiB on macOS aarch64.
 
 | Adapter        | Feature flag        | Default? | Docs                                                     |
 |----------------|---------------------|----------|----------------------------------------------------------|
