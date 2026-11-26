@@ -18,8 +18,10 @@
 use std::path::Path;
 use std::time::Duration;
 
+use colored::Colorize;
+
 use crate::cli::{Cli, Command, PipelineAction};
-use crate::runtime_glue::{ProviderFlags, PROVIDERS};
+use crate::runtime_glue::{ProviderFlags, ProviderSpec, PROVIDERS};
 
 /// Where Ollama listens unless `OLLAMA_HOST` says otherwise.
 const OLLAMA_DEFAULT: &str = "http://127.0.0.1:11434";
@@ -211,6 +213,102 @@ pub fn choose_with(named: Option<&str>, probe: &Probe<'_>) -> anyhow::Result<Cho
         msg.push_str(". KERNEX_API_KEY is set but names no provider: pass --provider with it");
     }
     anyhow::bail!(msg)
+}
+
+/// What `kx doctor` shows for `spec`: where its API key comes from, or for
+/// a provider without one, whether it is there.
+pub fn doctor_status(spec: &ProviderSpec, flags: &ProviderFlags) -> String {
+    let Some(var) = spec.api_key_env else {
+        return keyless_status(spec.name, flags);
+    };
+    let env = |k: &str| std::env::var(k).ok();
+    match key_source(spec.name, var, flags, &env) {
+        Some(source) => format!("{} via {source}", "set".green()),
+        None => format!("{} ({var} unset)", "missing".yellow()),
+    }
+}
+
+/// Where the key for provider `name` comes from, by the rules the key
+/// lookup uses: the flags' key, which only the active provider gets, then
+/// `var` when not empty.
+fn key_source(
+    name: &str,
+    var: &str,
+    flags: &ProviderFlags,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    if flags.api_key.is_some() && flags.name.trim().eq_ignore_ascii_case(name) {
+        Some("--api-key or KERNEX_API_KEY".to_string())
+    } else {
+        env(var).filter(|v| !v.is_empty()).map(|_| var.to_string())
+    }
+}
+
+/// Whether a provider that needs no API key is there: whether Ollama
+/// answers, or whether the agent CLI is on `PATH`, checked the way the
+/// provider search checks them. For the active provider, a `--base-url` is
+/// where Ollama is looked for.
+fn keyless_status(name: &str, flags: &ProviderFlags) -> String {
+    let env = |k: &str| std::env::var(k).ok();
+    let probe = Probe {
+        env: &env,
+        ollama_answers: &ollama_answers,
+        on_path: &on_path,
+    };
+    match keyless_status_with(name, flags, &probe) {
+        Some((true, what)) => format!("{} ({what})", "found".green()),
+        Some((false, what)) => format!("{} ({what})", "missing".yellow()),
+        None => "(no API key required)".dimmed().to_string(),
+    }
+}
+
+/// Whether the keyless provider `name` is there, and how it was looked
+/// for. `None` for a provider this check does not know.
+fn keyless_status_with(
+    name: &str,
+    flags: &ProviderFlags,
+    probe: &Probe<'_>,
+) -> Option<(bool, String)> {
+    if name == "ollama" {
+        // The provider uses `--base-url` as given, so it is probed as given.
+        let base_url = Some(flags.base_url.as_deref().unwrap_or_default().trim())
+            .filter(|u| !u.is_empty() && flags.name.trim().eq_ignore_ascii_case(name))
+            .map(|u| u.trim_end_matches('/').to_string());
+        let url = base_url.unwrap_or_else(|| {
+            (probe.env)("OLLAMA_HOST")
+                .filter(|h| !h.trim().is_empty())
+                .map(|h| ollama_url(&h))
+                .unwrap_or_else(|| OLLAMA_DEFAULT.to_string())
+        });
+        let shown =
+            printable(&url).unwrap_or_else(|| "an address that is not an http URL".to_string());
+        return Some(if (probe.ollama_answers)(&url) {
+            (true, format!("answers at {shown}"))
+        } else {
+            (false, format!("nothing answers at {shown}"))
+        });
+    }
+    let (program, _) = CLIS.iter().find(|(_, n)| *n == name)?;
+    Some(if (probe.on_path)(program) {
+        (true, format!("{program} on PATH"))
+    } else {
+        (false, format!("{program} not on PATH"))
+    })
+}
+
+/// `url` as `kx doctor` prints it: an http or https URL, parsed the way
+/// the provider's HTTP client parses it, without its user, password, query
+/// or fragment. `None` when `url` is not one, since nothing then tells
+/// where a password in it ends.
+fn printable(url: &str) -> Option<String> {
+    let mut url = url::Url::parse(url)
+        .ok()
+        .filter(|u| matches!(u.scheme(), "http" | "https") && u.has_host())?;
+    url.set_username("").ok()?;
+    url.set_password(None).ok()?;
+    url.set_query(None);
+    url.set_fragment(None);
+    Some(url.as_str().trim_end_matches('/').to_string())
 }
 
 /// `OLLAMA_HOST` as a URL, read the way Ollama reads it: `host` or
@@ -485,5 +583,172 @@ mod tests {
             reason: None,
         };
         assert_eq!(flags_for(&cli, named).api_key.as_deref(), Some("k"));
+    }
+
+    #[test]
+    fn doctor_says_whether_a_keyless_provider_is_there() {
+        use clap::Parser;
+        // Ollama "answers" only at `answering`; the CLIs in `clis` are on PATH.
+        let status = |name: &str,
+                      active: (&str, Option<&str>),
+                      answering: &str,
+                      clis: &[&str],
+                      host: Option<&str>| {
+            let host = host.map(str::to_string);
+            let env = move |k: &str| (k == "OLLAMA_HOST").then(|| host.clone()).flatten();
+            let answering = answering.to_string();
+            let ollama_answers = move |url: &str| url == answering;
+            let clis: Vec<String> = clis.iter().map(|c| c.to_string()).collect();
+            let on_path = move |p: &str| clis.iter().any(|c| c == p);
+            let cli = Cli::try_parse_from(["kx"]).unwrap();
+            let mut flags = flags_for(
+                &cli,
+                Choice {
+                    name: active.0.to_string(),
+                    base_url: None,
+                    reason: None,
+                },
+            );
+            flags.base_url = active.1.map(str::to_string);
+            keyless_status_with(
+                name,
+                &flags,
+                &Probe {
+                    env: &env,
+                    ollama_answers: &ollama_answers,
+                    on_path: &on_path,
+                },
+            )
+        };
+        let local = "http://127.0.0.1:11434";
+        let none = ("openai", None);
+        assert_eq!(
+            status("ollama", none, local, &[], None),
+            Some((true, format!("answers at {local}")))
+        );
+        assert_eq!(
+            status("ollama", none, local, &[], Some("box:1234")),
+            Some((false, "nothing answers at http://box:1234".into()))
+        );
+        assert_eq!(
+            status("ollama", none, local, &[], Some("   ")),
+            Some((true, format!("answers at {local}")))
+        );
+        // The active provider's --base-url wins, as given, whatever the case
+        // of the provider name; another provider's --base-url does not.
+        let stub = "http://127.0.0.1:18734";
+        assert_eq!(
+            status(
+                "ollama",
+                ("Ollama", Some("http://127.0.0.1:18734/")),
+                stub,
+                &[],
+                Some("box:1")
+            ),
+            Some((true, format!("answers at {stub}")))
+        );
+        assert_eq!(
+            status(
+                "ollama",
+                ("ollama", Some("127.0.0.1:18734")),
+                stub,
+                &[],
+                None
+            ),
+            Some((
+                false,
+                "nothing answers at an address that is not an http URL".into()
+            ))
+        );
+        // Credentials in --base-url are sent but never shown.
+        let with_password = "http://user:SECRET@127.0.0.1:18734/v1";
+        assert_eq!(
+            status(
+                "ollama",
+                ("ollama", Some(with_password)),
+                with_password,
+                &[],
+                None
+            ),
+            Some((true, "answers at http://127.0.0.1:18734/v1".into()))
+        );
+        let not_http = "nothing answers at an address that is not an http URL";
+        let ipv6 = "http://u:SECRET@[::1]:11434/?token=SECRET#SECRET";
+        assert_eq!(
+            status("ollama", ("ollama", Some(ipv6)), "", &[], None),
+            Some((false, "nothing answers at http://[::1]:11434".into()))
+        );
+        // Where the password ends cannot be told, or the address is not one
+        // the provider can use, so nothing of it is printed.
+        for given in [
+            "u:SECRET@box:1",
+            "user:SECRET@box:1/?r=http://x",
+            "http://user:SE/CRET@host:1",
+            "ftp://box:1",
+        ] {
+            assert_eq!(
+                status("ollama", ("ollama", Some(given)), "", &[], None),
+                Some((false, not_http.into())),
+                "{given}"
+            );
+        }
+        assert_eq!(
+            status("ollama", ("openai", Some(stub)), stub, &[], None),
+            Some((false, format!("nothing answers at {local}")))
+        );
+        assert_eq!(
+            status("claude-code", none, "", &["claude"], None),
+            Some((true, "claude on PATH".into()))
+        );
+        assert_eq!(
+            status("opencode", none, "", &["claude"], None),
+            Some((false, "opencode not on PATH".into()))
+        );
+        assert_eq!(status("openai", none, local, &["claude"], None), None);
+    }
+
+    #[test]
+    fn doctor_names_where_a_key_comes_from() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["kx"]).unwrap();
+        let named = |name: &str, key: Option<&str>| {
+            let mut flags = flags_for(
+                &cli,
+                Choice {
+                    name: name.to_string(),
+                    base_url: None,
+                    reason: None,
+                },
+            );
+            flags.api_key = key.map(str::to_string);
+            flags
+        };
+        let env = |k: &str| (k == "GROQ_API_KEY").then(|| "g".to_string());
+        let source =
+            |name: &str, var: &str, flags: &ProviderFlags| key_source(name, var, flags, &env);
+
+        let flag_key = "--api-key or KERNEX_API_KEY".to_string();
+        assert_eq!(
+            source("openai", "OPENAI_API_KEY", &named("OpenAI", Some("k"))),
+            Some(flag_key)
+        );
+        // The flags' key goes to the active provider only.
+        assert_eq!(
+            source("openai", "OPENAI_API_KEY", &named("groq", Some("k"))),
+            None
+        );
+        assert_eq!(
+            source("groq", "GROQ_API_KEY", &named("openai", Some("k"))),
+            Some("GROQ_API_KEY".into())
+        );
+        assert_eq!(
+            source("openai", "OPENAI_API_KEY", &named("openai", None)),
+            None
+        );
+        let empty = |_: &str| Some(String::new());
+        assert_eq!(
+            key_source("groq", "GROQ_API_KEY", &named("openai", None), &empty),
+            None
+        );
     }
 }

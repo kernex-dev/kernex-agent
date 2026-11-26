@@ -10,13 +10,14 @@ use std::path::Path;
 use colored::Colorize;
 use kernex_core::traits::Provider;
 
-use crate::runtime_glue::{api_key_var, claude_login_dir, CLAUDE_OAUTH_TOKEN_ENV};
+use crate::runtime_glue::{api_key_var, claude_login_dir, ProviderFlags, CLAUDE_OAUTH_TOKEN_ENV};
 
 /// Oldest Claude CLI release kx is tested against.
 const MIN_CLAUDE_VERSION: (u32, u32) = (2, 0);
 
-/// Fail with a readable message when `provider` cannot be used.
-pub async fn check_provider(provider: &dyn Provider) -> anyhow::Result<()> {
+/// Fail with a readable message when `provider`, built from `flags`,
+/// cannot be used.
+pub async fn check_provider(provider: &dyn Provider, flags: &ProviderFlags) -> anyhow::Result<()> {
     if provider.name() == "claude-code" {
         return check_claude_cli();
     }
@@ -25,17 +26,37 @@ pub async fn check_provider(provider: &dyn Provider) -> anyhow::Result<()> {
         let msg = if provider.name() == "ollama" {
             "Ollama server not reachable. Start it with: ollama serve".to_string()
         } else if provider.requires_api_key() {
+            let env = |k: &str| std::env::var(k).ok();
             let var = api_key_var(provider.name());
-            format!(
-                "Provider '{}' unavailable. Set {var} or pass --api-key.",
-                provider.name()
-            )
+            unavailable_with_key(provider.name(), var, flags.api_key.is_some(), &env)
         } else {
             format!("Provider '{}' is not available.", provider.name())
         };
         return Err(anyhow::anyhow!(msg));
     }
     Ok(())
+}
+
+/// Why a provider that needs a key is unavailable. Where its availability
+/// check calls the API (listing models with the key), a key that is set and
+/// still fails was refused, or the API could not be reached. A key is set by the
+/// rules the key lookup uses: `from_flags` (`--api-key` or
+/// `KERNEX_API_KEY`, as the flags kept it), else the provider's variable
+/// when not empty.
+fn unavailable_with_key(
+    name: &str,
+    var: &str,
+    from_flags: bool,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> String {
+    if from_flags || env(var).is_some_and(|v| !v.is_empty()) {
+        format!(
+            "Provider '{name}' refused the API key, or could not be reached. \
+             Check that the key is valid and allowed to list models."
+        )
+    } else {
+        format!("Provider '{name}' unavailable. Set {var} or pass --api-key.")
+    }
 }
 
 fn check_claude_cli() -> anyhow::Result<()> {
@@ -153,5 +174,39 @@ mod tests {
         let data_dir = Path::new("/d");
         assert!(login_hint("claude-code", data_dir, "timed out after 3600s").is_none());
         assert!(login_hint("openai", data_dir, "Invalid API key").is_none());
+    }
+
+    #[test]
+    fn a_refused_key_is_not_reported_as_missing() {
+        let env = |k: &str| (k == "OPENAI_API_KEY").then(|| "sk-x".to_string());
+        let msg = unavailable_with_key("openai", "OPENAI_API_KEY", false, &env);
+        assert!(msg.contains("refused the API key"), "{msg}");
+        assert!(!msg.contains("Set OPENAI_API_KEY"), "{msg}");
+
+        // A key from --api-key, with the provider variable unset.
+        let msg = unavailable_with_key("openai", "OPENAI_API_KEY", true, &|_| None);
+        assert!(msg.contains("refused the API key"), "{msg}");
+
+        // The provider variable is sent unless empty, spaces included.
+        let env = |k: &str| (k == "OPENAI_API_KEY").then(|| "   ".to_string());
+        let msg = unavailable_with_key("openai", "OPENAI_API_KEY", false, &env);
+        assert!(msg.contains("refused the API key"), "{msg}");
+    }
+
+    #[test]
+    fn a_missing_key_says_which_variable_to_set() {
+        // KERNEX_API_KEY reaches the lookup only through the flags, so it is
+        // not read here.
+        for value in [None, Some("")] {
+            let env = |k: &str| match k {
+                "KERNEX_API_KEY" => Some("k".to_string()),
+                _ => value.map(str::to_string),
+            };
+            let msg = unavailable_with_key("groq", "GROQ_API_KEY", false, &env);
+            assert_eq!(
+                msg, "Provider 'groq' unavailable. Set GROQ_API_KEY or pass --api-key.",
+                "{value:?}"
+            );
+        }
     }
 }

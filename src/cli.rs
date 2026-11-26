@@ -12,7 +12,7 @@ pub struct Cli {
     #[arg(short = 'p', long, global = true, env = "KERNEX_PROVIDER")]
     pub provider: Option<String>,
 
-    /// Model override (provider-specific, e.g. gpt-4o, llama3.2)
+    /// Model override (provider-specific, e.g. gpt-6-luna, llama3.2)
     #[arg(short = 'm', long, global = true, env = "KERNEX_MODEL")]
     pub model: Option<String>,
 

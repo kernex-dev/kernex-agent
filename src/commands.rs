@@ -499,8 +499,8 @@ fn print_help() {
 
   {}
 
-  \"\"\"                Start/end multiline input (paste code blocks between \"\"\")
-                     Example: \"\"\" <paste code> \"\"\"
+  """                Start/end multiline input (paste code blocks between """)
+                     Example: """ <paste code> """
 
   {}
 

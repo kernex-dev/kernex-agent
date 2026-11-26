@@ -255,7 +255,7 @@ async fn cmd_dev(one_shot: Option<String>, flags: &ProviderFlags) -> anyhow::Res
     let (raw_provider, model_label) = build_provider(flags, &project_config, &data_dir)?;
     let provider: Arc<dyn Provider> = Arc::from(raw_provider);
 
-    provider_check::check_provider(provider.as_ref()).await?;
+    provider_check::check_provider(provider.as_ref(), flags).await?;
 
     // The runtime starts whatever commands installed skills declare.
     skills::guard::check_installed(&data_dir).map_err(|e| anyhow::anyhow!(e))?;
@@ -605,16 +605,10 @@ async fn cmd_doctor(flags: &ProviderFlags) -> anyhow::Result<()> {
     }
 
     println!("\n  {}", "Providers".bold());
-    let active_name = flags.name.as_str();
+    let active = |name: &str| name.eq_ignore_ascii_case(flags.name.trim());
     for spec in PROVIDERS {
-        let marker = if spec.name == active_name { "*" } else { " " };
-        let key_status = match spec.api_key_env {
-            None => "(no API key required)".dimmed().to_string(),
-            Some(env_var) => match std::env::var(env_var) {
-                Ok(v) if !v.is_empty() => format!("{} via {env_var}", "set".green()),
-                _ => format!("{} ({env_var} unset)", "missing".yellow()),
-            },
-        };
+        let marker = if active(spec.name) { "*" } else { " " };
+        let key_status = kernex_agent::provider_detect::doctor_status(spec, flags);
         println!("  {marker} {:<12} {key_status}", spec.name);
     }
 
@@ -627,7 +621,7 @@ async fn cmd_doctor(flags: &ProviderFlags) -> anyhow::Result<()> {
                 let status = provider_check::claude_login_status(&data_dir);
                 println!("  {} {status}", "claude-code".dimmed());
             }
-            match provider_check::check_provider(provider.as_ref()).await {
+            match provider_check::check_provider(provider.as_ref(), flags).await {
                 Ok(()) => {
                     println!("  {} provider is reachable", "OK".green().bold());
                 }
@@ -675,7 +669,7 @@ async fn cmd_pipeline(action: PipelineAction, flags: &ProviderFlags) -> anyhow::
             );
 
             let (provider, _model_label) = build_provider(flags, &project_config, &data_dir)?;
-            provider_check::check_provider(provider.as_ref()).await?;
+            provider_check::check_provider(provider.as_ref(), flags).await?;
 
             // Pre-build one Runtime per unique agent so each runs with its own system prompt.
             let mut agent_runtimes: std::collections::HashMap<String, Runtime> =
@@ -837,7 +831,7 @@ async fn run_oneshot_command(
     let data_dir = data_dir_for(&project_name);
 
     let (provider, _model_label) = build_provider(flags, &project_config, &data_dir)?;
-    provider_check::check_provider(provider.as_ref()).await?;
+    provider_check::check_provider(provider.as_ref(), flags).await?;
 
     let system_prompt = prompts::dev_system_prompt(detected_stack, &project_name);
 
