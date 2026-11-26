@@ -30,17 +30,14 @@ is required to pull it. If you receive a 401 or 403, check that:
 ## Prerequisites
 
 - Docker + Docker Compose v2
-- An API key from Anthropic, OpenAI, Groq, Mistral, DeepSeek, Fireworks, or xAI
-  (recommended for server deployments — see security note below)
+- An API key from Anthropic, OpenAI, Gemini, OpenRouter, Groq, Mistral, DeepSeek,
+  Fireworks or xAI, or an Ollama server the container can reach
 - For VPS path: a domain with an A record pointing to your server
 
-> **Security note for server deployments:** The `claude-code` provider uses an OAuth token
-> tied to your personal Claude subscription. kx runs the Claude CLI with its own login inside
-> the kx data volume and never reads a mounted `~/.claude`, so pass the token instead:
-> `CLAUDE_CODE_OAUTH_TOKEN` in `.env` (create it with `claude setup-token`), or
-> `ANTHROPIC_API_KEY`. A leaked token exposes your personal account. For any server or VPS
-> deployment, prefer an API key provider (`anthropic`, `openai`, `groq`, etc.) with a scoped
-> key that can be rotated independently.
+> **Providers in the image:** the image runs the API providers and Ollama. It does not
+> include the Claude or OpenCode CLI, so `claude-code` and `opencode` do not run in it. Use a
+> scoped API key that you can rotate on its own; [Provider Options](#provider-options) lists
+> them and how kx picks one.
 
 ---
 
@@ -64,27 +61,15 @@ Open `.env` and set:
 # Required: strong random token for API auth
 KERNEX_AUTH_TOKEN=<output of: openssl rand -hex 32>
 
-# Required if using Claude subscription (KERNEX_PROVIDER=claude-code):
-CLAUDE_CODE_OAUTH_TOKEN=<output of: claude setup-token>
-
-# Required if using an API key instead:
+# Required: one provider's key (kx picks the provider from it)
+ANTHROPIC_API_KEY=sk-ant-...
+# Optional: name the provider when more than one key is set
 # KERNEX_PROVIDER=anthropic
-# ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 Leave `DOMAIN` and `ACME_EMAIL` blank (not used for local).
 
-### 3. Create the Claude token (skip if using API key)
-
-```bash
-# Install Claude CLI if you haven't already
-npm install -g @anthropic-ai/claude-code
-
-# Prints a long-lived OAuth token for your subscription; put it in .env
-claude setup-token
-```
-
-### 4. Start
+### 3. Start
 
 ```bash
 docker compose -f docker-compose.local.yml up -d
@@ -93,7 +78,7 @@ docker compose -f docker-compose.local.yml up -d
 On first start, the container bootstraps the default skills and workflows into
 the `kx_data` volume. Subsequent restarts skip this and use the persisted state.
 
-### 5. Verify
+### 4. Verify
 
 ```bash
 curl http://localhost:8080/health
@@ -132,28 +117,19 @@ cp .env.example .env
 
 ```bash
 KERNEX_AUTH_TOKEN=<output of: openssl rand -hex 32>
-CLAUDE_CODE_OAUTH_TOKEN=<output of: claude setup-token>
+ANTHROPIC_API_KEY=sk-ant-...        # or another provider's key
 DOMAIN=api.yourdomain.com
 ACME_EMAIL=admin@yourdomain.com
 ```
 
-### 4. Create the Claude token (skip if using API key)
-
-```bash
-# On any machine with the Claude CLI:
-npm install -g @anthropic-ai/claude-code
-claude setup-token
-# Put the printed token in .env as CLAUDE_CODE_OAUTH_TOKEN
-```
-
-### 5. Open firewall ports
+### 4. Open firewall ports
 
 ```bash
 ufw allow 80
 ufw allow 443
 ```
 
-### 6. Start
+### 5. Start
 
 ```bash
 docker compose -f docker-compose.vps.yml up -d
@@ -161,7 +137,7 @@ docker compose -f docker-compose.vps.yml up -d
 
 Caddy obtains a TLS certificate automatically on first start.
 
-### 7. Verify
+### 6. Verify
 
 ```bash
 curl https://api.yourdomain.com/health
@@ -489,16 +465,22 @@ Only use columns that exist in the schema. Store additional fields in the notes 
 
 ## Provider Options
 
+Without `KERNEX_PROVIDER`, kx uses the first provider in this table whose key is set,
+then an Ollama server that answers at `OLLAMA_HOST`, and logs which one it picked. Set
+`KERNEX_PROVIDER` when more than one key is in `.env`. `KERNEX_API_KEY` works for any
+provider, but only with `KERNEX_PROVIDER` set.
+
 | Provider | `KERNEX_PROVIDER` value | Env var needed |
 |---|---|---|
-| Claude subscription | `claude-code` | `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) or `ANTHROPIC_API_KEY` |
 | Anthropic API | `anthropic` | `ANTHROPIC_API_KEY` |
 | OpenAI | `openai` | `OPENAI_API_KEY` |
+| Gemini | `gemini` | `GEMINI_API_KEY` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | Groq | `groq` | `GROQ_API_KEY` |
 | Mistral | `mistral` | `MISTRAL_API_KEY` |
 | DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` |
 | Fireworks | `fireworks` | `FIREWORKS_API_KEY` |
 | xAI | `xai` | `XAI_API_KEY` |
-| Ollama (local) | `ollama` | none (runs locally) |
-| Gemini | `gemini` | `GEMINI_API_KEY` |
-| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
+| Ollama | `ollama` | none; `OLLAMA_HOST` (for example `host.docker.internal:11434`; on Linux, also add `extra_hosts: ["host.docker.internal:host-gateway"]` to the kx service) |
+
+`claude-code` and `opencode` need their CLI, which the image does not include.

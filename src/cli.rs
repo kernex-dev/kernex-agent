@@ -6,15 +6,11 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// AI provider to use (claude-code, opencode, anthropic, openai, ollama, gemini, openrouter, groq, mistral, deepseek, fireworks, xai)
-    #[arg(
-        short = 'p',
-        long,
-        global = true,
-        default_value = "claude-code",
-        env = "KERNEX_PROVIDER"
-    )]
-    pub provider: String,
+    /// AI provider to use (claude-code, opencode, anthropic, openai, ollama, gemini, openrouter, groq, mistral, deepseek, fireworks, xai).
+    /// Without it kx uses the first configured: an API key in the
+    /// environment, a running Ollama, then the claude or opencode CLI
+    #[arg(short = 'p', long, global = true, env = "KERNEX_PROVIDER")]
+    pub provider: Option<String>,
 
     /// Model override (provider-specific, e.g. gpt-4o, llama3.2)
     #[arg(short = 'm', long, global = true, env = "KERNEX_MODEL")]
@@ -475,7 +471,7 @@ mod tests {
         let cli = cli.unwrap();
         assert!(cli.command.is_none());
         assert!(cli.message.is_none());
-        assert_eq!(cli.provider, "claude-code");
+        assert_eq!(cli.provider, None);
     }
 
     #[test]
@@ -571,7 +567,7 @@ mod tests {
         let cli = Cli::try_parse_from(["kx", "--provider", "ollama", "dev"]);
         assert!(cli.is_ok());
         let cli = cli.unwrap();
-        assert_eq!(cli.provider, "ollama");
+        assert_eq!(cli.provider.as_deref(), Some("ollama"));
     }
 
     #[test]
@@ -599,10 +595,10 @@ mod tests {
     }
 
     #[test]
-    fn cli_provider_default_is_claude_code() {
+    fn cli_has_no_default_provider() {
         let cli = Cli::try_parse_from(["kx", "dev"]);
         assert!(cli.is_ok());
-        assert_eq!(cli.unwrap().provider, "claude-code");
+        assert_eq!(cli.unwrap().provider, None);
     }
 
     #[test]
@@ -920,7 +916,7 @@ mod tests {
     #[test]
     fn cli_parses_provider_short_flag() {
         let cli = Cli::try_parse_from(["kx", "-p", "ollama", "dev"]).unwrap();
-        assert_eq!(cli.provider, "ollama");
+        assert_eq!(cli.provider.as_deref(), Some("ollama"));
     }
 
     #[test]

@@ -174,6 +174,9 @@ pub fn build_provider_with_tools(
     // model. The factory ignores case, so the name is folded here too: the
     // agent CLI arm below must catch `Claude-Code` as well.
     let provider_name = flags.name.trim().to_ascii_lowercase();
+    if provider_name.is_empty() {
+        anyhow::bail!("no provider is configured; pass --provider <name>");
+    }
     warn_ignored_project_provider_fields(config);
 
     let model = flags

@@ -38,19 +38,19 @@ kx is your AI coding assistant. It can:
 
 ## Requirements
 
-kx needs at least one LLM provider configured. The default is the Claude Code CLI; any other provider can be selected via `--provider` or `KERNEX_PROVIDER`.
+kx needs at least one LLM provider configured, and has no default. Without `--provider` (or `KERNEX_PROVIDER`) it uses the first one it finds: an API key in the environment (`anthropic`, `openai`, `gemini`, `openrouter`, `groq`, `mistral`, `deepseek`, `fireworks`, `xai`, in that order), an Ollama server that answers at `OLLAMA_HOST` (default `127.0.0.1:11434`), then the `claude` or `opencode` CLI on `PATH`. It prints which one it picked and why. Commands that call no model (`kx skills`, `kx mem`, `kx cron`, `kx init`, `kx install`, `kx mcp`, `kx pipeline list`) do not look. `kx serve` needs one at startup; a job can still name another. A named `ollama` reads `OLLAMA_HOST` too.
 
 | Dependency | Minimum Version | When required |
 |---|---|---|
 | **Rust toolchain** | 1.89+ | For `cargo install kernex-agent` (not needed if using Docker) |
-| **Claude CLI** | 2.0+ | Only when using the default `claude-code` provider |
+| **Claude CLI** | 2.0+ | Only for the `claude-code` provider |
 | **Docker + Compose v2** | 24+ | Only for the Docker deployment path |
 
 ### Provider options
 
 | Provider | Auth | Set with |
 |---|---|---|
-| `claude-code` (default) | Subscription via local CLI, with its own login (see below) | `claude --version` to verify |
+| `claude-code` | Subscription via local CLI, with its own login (see below) | `claude --version` to verify |
 | `anthropic` | API key | `ANTHROPIC_API_KEY` env var |
 | `openai` | API key | `OPENAI_API_KEY` env var |
 | `gemini` | API key | `GEMINI_API_KEY` env var |
@@ -62,7 +62,7 @@ kx needs at least one LLM provider configured. The default is the Claude Code CL
 | `fireworks` | API key | `FIREWORKS_API_KEY` env var |
 | `xai` | API key | `XAI_API_KEY` env var |
 
-To install Claude Code (the default):
+To install Claude Code:
 
 1. Visit [claude.ai/download](https://claude.ai/download)
 2. Download and install for your platform (macOS, Linux, Windows)
@@ -248,7 +248,7 @@ No Rust installation required. Pull the pre-built image from GHCR.
 curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/docker-compose.local.yml
 curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/.env.example
 cp .env.example .env
-# Edit .env: set KERNEX_AUTH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN (from claude setup-token)
+# Edit .env: set KERNEX_AUTH_TOKEN and one provider key (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...)
 docker compose -f docker-compose.local.yml up -d
 curl http://localhost:8080/health
 ```
@@ -262,12 +262,12 @@ curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/Ca
 curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/Dockerfile.caddy
 curl -O https://raw.githubusercontent.com/kernex-dev/kernex-agent/main/deploy/.env.example
 cp .env.example .env
-# Edit .env: set KERNEX_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, DOMAIN, ACME_EMAIL
+# Edit .env: set KERNEX_AUTH_TOKEN, one provider key, DOMAIN, ACME_EMAIL
 docker compose -f docker-compose.vps.yml up -d
 curl https://api.yourdomain.com/health
 ```
 
-With `KERNEX_PROVIDER=claude-code`, put `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) or `ANTHROPIC_API_KEY` in `.env`; the compose files pass `.env` to the container. They no longer mount `~/.claude/.credentials.json`, which kx would not use (see [Logging in the claude-code provider](#logging-in-the-claude-code-provider)).
+The image runs the API providers and Ollama; it does not include the Claude or OpenCode CLI, so `claude-code` and `opencode` do not run in it. The compose files pass `.env` to the container, and kx picks the provider from the key it finds there (or from `KERNEX_PROVIDER`).
 
 The image ships with 16 pre-loaded skills and 4 workflows (PR review, feature design, security audit, GEO audit). Skills and job data persist in a named Docker volume across restarts and updates.
 
@@ -519,11 +519,11 @@ User-wide settings live in `~/.kx/config.toml` (see [Tool access](#tool-access))
 
 ## Providers
 
-kx defaults to Claude Code CLI as its AI backend. The underlying `kernex-providers` crate supports additional backends:
+kx runs on any of these backends from the `kernex-providers` crate:
 
 | Flag | Provider | Requires |
 |------|----------|---------|
-| `--provider claude-code` | Claude Code CLI (default) | Claude CLI installed |
+| `--provider claude-code` | Claude Code CLI | Claude CLI installed |
 | `--provider opencode` | OpenCode CLI | OpenCode CLI installed and configured |
 | `--provider anthropic` | Anthropic API | `ANTHROPIC_API_KEY` |
 | `--provider openai` | OpenAI API | `OPENAI_API_KEY` |
@@ -540,7 +540,7 @@ kx defaults to Claude Code CLI as its AI backend. The underlying `kernex-provide
 
 **AWS Bedrock** is available as an optional compile-time feature. Build with `--features bedrock` to enable `--provider bedrock`. Requires standard AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`). Bedrock is not included in the 11 built-in provider count above.
 
-Provider is auto-detected if `--provider` is omitted. Override the model with `--model <name>`.
+Without `--provider`, kx picks one as described under [Requirements](#requirements). Override the model with `--model <name>`.
 
 You can also set defaults via environment variables:
 

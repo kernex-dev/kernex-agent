@@ -21,7 +21,7 @@ services:
     # No ports exposed to host — only Caddy can reach kx
     env_file: .env
     environment:
-      KERNEX_PROVIDER: ${KERNEX_PROVIDER:-claude-code}
+      KERNEX_PROVIDER: ${KERNEX_PROVIDER:-}
       KERNEX_MODEL: ${KERNEX_MODEL:-}
     command:
       - serve
@@ -48,8 +48,8 @@ services:
         read_only: true
         bind:
           create_host_path: false
-      # KERNEX_PROVIDER=claude-code needs CLAUDE_CODE_OAUTH_TOKEN (from
-      # `claude setup-token`) or ANTHROPIC_API_KEY in .env; no ~/.claude mount.
+      # The provider comes from .env: see docker-compose.local.yml. The image
+      # has no Claude or OpenCode CLI.
     restart: unless-stopped
 
     # ── Container hardening ──────────────────────────────────────────────────
