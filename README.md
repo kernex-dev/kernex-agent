@@ -561,7 +561,7 @@ kx is a thin CLI wrapper around the Kernex runtime:
 
 The `HookRunner` trait lets you intercept tool calls before and after execution (`pre_tool` / `post_tool` / `on_stop`). kx uses this for `--verbose` output and session summaries.
 
-For the full implementation spec (provider resolution, runtime wiring, hook runner, KAIROS scheduler), see [kernex/docs/kernex-agent.md](https://github.com/kernex-dev/kernex/blob/main/docs/kernex-agent.md).
+Provider resolution, runtime wiring and the hook runner live in [`src/runtime_glue.rs`](src/runtime_glue.rs); the scheduler is in [`src/scheduler.rs`](src/scheduler.rs).
 
 For details on the underlying runtime, see [kernex-dev/kernex](https://github.com/kernex-dev/kernex).
 
