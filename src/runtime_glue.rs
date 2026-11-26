@@ -267,7 +267,7 @@ fn cli_provider(
             Ok(Box::new(
                 ClaudeCodeProvider::from_config(
                     25,
-                    tools.map(<[String]>::to_vec).unwrap_or_default(),
+                    tools.map(<[String]>::to_vec),
                     3600,
                     config.workspace_path,
                     5,

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **kx runs on the kernex 0.13 crates.** The claude-code provider now
+  keeps a tool list kx passes as written, an empty one included, where
+  0.12 read an empty list as no list and offered every tool. kx already
+  refused an empty list, so what the CLI gets is unchanged. See the
+  [kernex 0.13.0 changelog](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md).
+
 ## [0.9.0] - 2026-11-25
 
 ### Changed

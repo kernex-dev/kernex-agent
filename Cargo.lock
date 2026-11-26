@@ -1379,9 +1379,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-adapter-core"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd939967295b0a551224b5f0e95bea3f04cbb2081a5ff457c5c687306bd90889"
+checksum = "40e6b44052971ef7a6211995052a953cd3015c57ede6b885c81166266e9d64a5"
 dependencies = [
  "async-trait",
  "serde",
@@ -1436,9 +1436,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-core"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef95145d654e1f06dc30ad0d184e08475bd5a6da8e71ea312f08be7d4d776ec1"
+checksum = "0f0b242b2ad574ad6a32856fd891d2e058a2e0ae0446f48760a97bc78faff72c"
 dependencies = [
  "async-trait",
  "basic-toml",
@@ -1453,9 +1453,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-memory"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3501d8a8e9945fc3c53309f2dbf99ede0b8e14dc941064dfde4aeb877601e2e"
+checksum = "1630f8cfe782b61fb3a9eb56e2a6ddf5b1fb7580f1da4531c19a9d2d7fc3e325"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1471,9 +1471,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-pipelines"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f4ccc75b8e1f8b9af6e4c01a888a8db7f9ae17a0bbba96148dfde4b62597b72"
+checksum = "f8c2ff80de7e1e34158443488b7f40dc1ebb7761b355a151fd4012b0c90b87c9"
 dependencies = [
  "basic-toml",
  "kernex-core",
@@ -1483,9 +1483,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-providers"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0173862caa523ab4a10c0303ad68626acf5813ea98762c83513809e55bc83290"
+checksum = "538ad1b6c687a4265ab27b09d66bf6fa615908713515ce76eaae81d17582e221"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1508,9 +1508,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-runtime"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f42ec9ac2619a1f951d6dcfba1e2d502c72c71897de235eb0ade4235647c3adc"
+checksum = "e937ee1e63ac88f8616941d9ccc4eafa1a8b5ac98e89892326c5b4b296d24e61"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1527,9 +1527,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-sandbox"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "881c64c0c9bee5d69f9dc74ec4b2c959fcb8919bad63c3ab5b9507259d07ee3d"
+checksum = "6ee6c2138c1f7a0907b90a3054a997993892259270f629b7063b389888122ff0"
 dependencies = [
  "anyhow",
  "landlock",
@@ -1540,9 +1540,9 @@ dependencies = [
 
 [[package]]
 name = "kernex-skills"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7504d242699edd3b47f532b099041f39954bba17856cf93e20dff019aede9190"
+checksum = "4ecc780c2d7574ad25f1384294a00898c05a6e4c6ed7f0e4af3494d674130232"
 dependencies = [
  "basic-toml",
  "kernex-core",

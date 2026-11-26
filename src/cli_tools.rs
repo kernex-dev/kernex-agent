@@ -146,8 +146,8 @@ pub fn resolve(
 /// `list` without the fetch tools `web_fetch` keeps off this run (by the
 /// flag, the user's config or a project's `web_fetch = "none"`): the CLI
 /// gets them only when every host is allowed. kx warns when it takes one
-/// out, and refuses when nothing would be left, since kernex 0.12 reads an
-/// empty list as no list.
+/// out, and refuses when nothing would be left: a CLI started with an empty
+/// list could use no tool at all.
 pub fn without_blocked_fetch(
     list: Vec<String>,
     web_fetch: &WebFetchPolicy,
@@ -216,8 +216,8 @@ fn parse(values: &[&str], origin: &str) -> anyhow::Result<Choice> {
 }
 
 /// The choice `value` names when it is a keyword (any case), `None` when
-/// it is not one. `none` is refused: kernex 0.12 reads an empty list as no
-/// list, which would offer every tool.
+/// it is not one. `none` is refused: a CLI with no tools can only talk, and
+/// an API provider does that without starting one.
 fn keyword(value: &str, origin: &str) -> anyhow::Result<Option<Choice>> {
     match value.to_ascii_lowercase().as_str() {
         "all" => Ok(Some(Choice::All)),
@@ -373,8 +373,9 @@ mod tests {
         }
     }
 
-    /// kernex 0.12 reads an empty tool list as no list, which offers every
-    /// tool, so "no tools" must never reach it.
+    /// kernex 0.12 read an empty tool list as no list, which offered every
+    /// tool. 0.13 keeps it as no tools, and kx still refuses "no tools"
+    /// rather than start a CLI that can do nothing.
     #[test]
     fn no_tools_is_refused_rather_than_widened() {
         let none = keyword_setting("none");
@@ -466,8 +467,7 @@ mod tests {
             without_blocked_fetch(default_list(), &off()).unwrap(),
             default_list()
         );
-        // Nothing left would reach kernex as an empty list, which offers
-        // every tool.
+        // Nothing left: the CLI would start with no tool at all.
         assert!(without_blocked_fetch(flag(&["WebFetch"]), &off()).is_err());
     }
 
