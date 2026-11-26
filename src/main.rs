@@ -104,19 +104,7 @@ async fn run() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .try_init();
 
-    let provider_flags = ProviderFlags {
-        name: cli.provider.clone(),
-        model: cli.model.clone(),
-        api_key: cli.api_key.clone(),
-        base_url: cli.base_url.clone(),
-        project: cli.project.clone(),
-        channel: cli.channel.clone(),
-        max_tokens: cli.max_tokens,
-        no_memory: cli.no_memory,
-        auto_compact: !cli.no_auto_compact,
-        verbose: cli.verbose,
-        access: cli.access.clone(),
-    };
+    let provider_flags = kernex_agent::provider_detect::provider_flags(&cli)?;
 
     match cli.command {
         Some(Command::Dev { message }) => cmd_dev(message, &provider_flags).await,

@@ -316,10 +316,10 @@ async fn submit_run(
     let req = JobRequest {
         job_id: job_id.clone(),
         message: body.message,
+        api_key: super::jobs::default_api_key(&state.default_flags, &provider),
+        base_url: super::jobs::default_base_url(&state.default_flags, &provider),
         provider,
         model: body.model.or_else(|| state.default_flags.model.clone()),
-        api_key: state.default_flags.api_key.clone(),
-        base_url: state.default_flags.base_url.clone(),
         project: body.project,
         channel: body.channel,
         max_tokens: body.max_tokens.or(state.default_flags.max_tokens),
