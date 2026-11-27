@@ -283,7 +283,7 @@ mod tests {
             no_memory: true,
             auto_compact: true,
             verbose: false,
-            access: Default::default(),
+            ..Default::default()
         };
         assert_eq!(
             default_api_key(&defaults, "Ollama").as_deref(),

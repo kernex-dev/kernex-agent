@@ -52,7 +52,17 @@ pub struct Probe<'a> {
 /// empty when `.env` leaves them out.
 pub fn provider_flags(cli: &Cli) -> anyhow::Result<ProviderFlags> {
     let choice = for_command(cli.command.as_ref(), cli.provider.as_deref())?;
+    if serve_ignores_openai_api(cli) {
+        eprintln!(
+            "warning: kx serve jobs ignore --openai-api / KERNEX_OPENAI_API and use the API their base URL implies"
+        );
+    }
     Ok(flags_for(cli, choice))
+}
+
+/// Whether this is `kx serve` with `--openai-api` set: its jobs do not read it.
+fn serve_ignores_openai_api(cli: &Cli) -> bool {
+    cli.openai_api().is_some() && cli.command.as_ref().is_some_and(is_serve)
 }
 
 fn flags_for(cli: &Cli, choice: Choice) -> ProviderFlags {
@@ -64,6 +74,7 @@ fn flags_for(cli: &Cli, choice: Choice) -> ProviderFlags {
         // so a provider kx picked uses its own key variable.
         api_key: set(&cli.api_key).filter(|_| choice.reason.is_none()),
         base_url: set(&cli.base_url).or(choice.base_url),
+        openai_api: cli.openai_api(),
         project: cli.project.clone(),
         channel: cli.channel.clone(),
         max_tokens: cli.max_tokens,
@@ -583,6 +594,44 @@ mod tests {
             reason: None,
         };
         assert_eq!(flags_for(&cli, named).api_key.as_deref(), Some("k"));
+    }
+
+    #[test]
+    fn the_openai_api_flag_reaches_the_provider_flags() {
+        use clap::Parser;
+        use kernex_providers::openai::OpenAiApi;
+        let named = || Choice {
+            name: "openai".into(),
+            base_url: None,
+            reason: None,
+        };
+        let cli = Cli::try_parse_from(["kx", "--openai-api", "chat", "init"]).unwrap();
+        assert_eq!(
+            flags_for(&cli, named()).openai_api,
+            Some(OpenAiApi::ChatCompletions)
+        );
+        let cli = Cli::try_parse_from(["kx", "init"]).unwrap();
+        assert_eq!(flags_for(&cli, named()).openai_api, None);
+    }
+
+    #[cfg(feature = "serve")]
+    #[test]
+    fn serve_says_it_ignores_the_openai_api_flag() {
+        use clap::Parser;
+        let parse = |args: &[&str]| Cli::try_parse_from(args).unwrap();
+        assert!(serve_ignores_openai_api(&parse(&[
+            "kx",
+            "--openai-api",
+            "responses",
+            "serve"
+        ])));
+        assert!(!serve_ignores_openai_api(&parse(&["kx", "serve"])));
+        assert!(!serve_ignores_openai_api(&parse(&[
+            "kx",
+            "--openai-api",
+            "responses",
+            "dev"
+        ])));
     }
 
     #[test]

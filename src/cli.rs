@@ -24,6 +24,12 @@ pub struct Cli {
     #[arg(long, global = true, env = "KERNEX_BASE_URL")]
     pub base_url: Option<String>,
 
+    /// API the openai provider uses: responses or chat. Default: responses
+    /// on api.openai.com and its regional hosts, chat for any other
+    /// --base-url. kx serve jobs ignore it and follow the host
+    #[arg(long, global = true, env = "KERNEX_OPENAI_API", value_parser = openai_api_value)]
+    pub openai_api: Option<String>,
+
     /// Override the active project scope (default: current directory name)
     #[arg(long, global = true)]
     pub project: Option<String>,
@@ -58,6 +64,30 @@ pub struct Cli {
 
     /// One-shot message when no subcommand is given (kx "fix the bug")
     pub message: Option<String>,
+}
+
+/// `--openai-api` trimmed and lowercased, as kx reads the other `KERNEX_*`
+/// settings; empty means unset.
+fn openai_api_value(s: &str) -> Result<String, String> {
+    let v = s.trim().to_ascii_lowercase();
+    match v.as_str() {
+        "responses" | "chat" | "" => Ok(v),
+        _ => Err("expected responses or chat".to_string()),
+    }
+}
+
+impl Cli {
+    /// `--openai-api` as the provider's API. Empty counts as unset, as the
+    /// compose files pass `KERNEX_*` variables empty when `.env` leaves
+    /// them out.
+    pub fn openai_api(&self) -> Option<kernex_providers::openai::OpenAiApi> {
+        use kernex_providers::openai::OpenAiApi;
+        match self.openai_api.as_deref() {
+            Some("responses") => Some(OpenAiApi::Responses),
+            Some("chat") => Some(OpenAiApi::ChatCompletions),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -572,10 +602,10 @@ mod tests {
 
     #[test]
     fn cli_parses_model_flag() {
-        let cli = Cli::try_parse_from(["kx", "--model", "gpt-4o", "dev"]);
+        let cli = Cli::try_parse_from(["kx", "--model", "gpt-6.2-sol", "dev"]);
         assert!(cli.is_ok());
         let cli = cli.unwrap();
-        assert_eq!(cli.model, Some("gpt-4o".to_string()));
+        assert_eq!(cli.model, Some("gpt-6.2-sol".to_string()));
     }
 
     #[test]
@@ -592,6 +622,34 @@ mod tests {
         assert!(cli.is_ok());
         let cli = cli.unwrap();
         assert_eq!(cli.base_url, Some("http://localhost:11434".to_string()));
+    }
+
+    #[test]
+    fn cli_parses_the_openai_api_flag() {
+        use kernex_providers::openai::OpenAiApi;
+        let parse = |v: &str| Cli::try_parse_from(["kx", &format!("--openai-api={v}"), "dev"]);
+        assert_eq!(
+            parse("chat").unwrap().openai_api(),
+            Some(OpenAiApi::ChatCompletions)
+        );
+        assert_eq!(
+            parse("responses").unwrap().openai_api(),
+            Some(OpenAiApi::Responses)
+        );
+        assert_eq!(parse("").unwrap().openai_api(), None, "empty is unset");
+        assert_eq!(parse(" ").unwrap().openai_api(), None, "blank is unset");
+        assert_eq!(
+            parse(" Chat ").unwrap().openai_api(),
+            Some(OpenAiApi::ChatCompletions)
+        );
+        assert_eq!(
+            parse("RESPONSES").unwrap().openai_api(),
+            Some(OpenAiApi::Responses)
+        );
+        let err = parse("completions").err().unwrap().to_string();
+        assert!(err.contains("expected responses or chat"), "{err}");
+        let unset = Cli::try_parse_from(["kx", "dev"]).unwrap();
+        assert_eq!(unset.openai_api(), None);
     }
 
     #[test]

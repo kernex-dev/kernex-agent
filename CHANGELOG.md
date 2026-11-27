@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **kx runs on the kernex 0.14.0 crates.** The `openai` provider uses
+  OpenAI's Responses API on `api.openai.com` and its regional hosts, so
+  `gpt-6.2-sol`, `gpt-6.2-astra`, `gpt-6.1-sol`, `gpt-6.1-terra` and
+  `gpt-6-astra` can call tools there, and its default model is now
+  `gpt-6.2-sol` instead of `gpt-6-luna`. Any other `--base-url` stays on
+  Chat Completions, where `gpt-6.2-sol` cannot call tools: pass `--model`
+  (for example `gpt-6-luna`) or `--openai-api responses`. See the
+  [kernex 0.14.0 changelog](https://github.com/kernex-dev/kernex/blob/main/CHANGELOG.md).
+
+### Added
+
+- `--openai-api responses|chat` (`KERNEX_OPENAI_API`) sets the API the
+  `openai` provider uses, for a proxy that implements the Responses API or
+  to keep OpenAI itself on Chat Completions (with a model that calls tools
+  there, such as `gpt-6-luna`). Without it the provider follows the base
+  URL. The value is trimmed and case-insensitive, and empty counts as
+  unset. `kx serve` jobs ignore it and follow the host; `kx serve` warns
+  when it is set.
+
 ## [0.11.1] - 2026-11-26
 
 ### Changed

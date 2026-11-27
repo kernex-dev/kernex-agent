@@ -54,12 +54,14 @@ impl HookRunner for CliHookRunner {
     async fn on_stop(&self, _final_text: &str) {}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ProviderFlags {
     pub name: String,
     pub model: Option<String>,
     pub api_key: Option<String>,
     pub base_url: Option<String>,
+    /// `--openai-api`; `None` lets the provider follow the base URL.
+    pub openai_api: Option<kernex_providers::openai::OpenAiApi>,
     pub project: Option<String>,
     pub channel: Option<String>,
     pub max_tokens: Option<u32>,
@@ -211,6 +213,7 @@ pub fn build_provider_with_tools(
 
     let kx_config = KxProviderConfig {
         base_url,
+        openai_api: flags.openai_api,
         api_key,
         model,
         max_tokens: flags
@@ -516,6 +519,7 @@ mod tests {
             model: None,
             api_key: None,
             base_url: None,
+            openai_api: None,
             project: None,
             channel: None,
             max_tokens: None,
@@ -595,6 +599,26 @@ mod tests {
 
         // Unrestricted, it still builds.
         assert!(build_provider_with_tools(&test_flags("opencode"), &config, setup(None)).is_ok());
+    }
+
+    /// `--openai-api chat` reaches the openai provider: on OpenAI's own host
+    /// it then refuses a Responses-only model with tools before sending.
+    #[tokio::test]
+    async fn the_openai_api_flag_reaches_the_openai_provider() {
+        let flags = ProviderFlags {
+            api_key: Some("k".into()),
+            model: Some("gpt-6.2-sol".into()),
+            openai_api: Some(kernex_providers::openai::OpenAiApi::ChatCompletions),
+            ..test_flags("openai")
+        };
+        let config = config::ProjectConfig::default();
+        let (provider, _) = build_provider_with_tools(&flags, &config, setup(None)).unwrap();
+        let err = provider
+            .complete(&kernex_core::context::Context::new("hi"))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("set to Chat Completions"), "{err}");
     }
 
     /// `build_provider` must hand an agent CLI its tool list: without one,

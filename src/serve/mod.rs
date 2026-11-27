@@ -603,7 +603,7 @@ async fn run_agent(req: JobRequest) -> Result<String, String> {
         // server-level guard further up the call stack.
         auto_compact: true,
         verbose: req.verbose,
-        access: Default::default(),
+        ..Default::default()
     };
 
     let config = ProjectConfig::default();
@@ -967,7 +967,7 @@ mod tests {
             no_memory: false,
             auto_compact: true,
             verbose: false,
-            access: Default::default(),
+            ..Default::default()
         });
         let state = AppState {
             jobs: jobs::new_store(),

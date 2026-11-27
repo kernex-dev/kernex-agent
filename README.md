@@ -573,6 +573,8 @@ kx runs on any of these backends from the `kernex-providers` crate:
 
 Without `--provider` or `KERNEX_PROVIDER`, kx picks one as described under [Requirements](#requirements). Override the model with `--model <name>`.
 
+The `openai` provider's default model is `gpt-6.2-sol`. On `api.openai.com` and its regional hosts it uses OpenAI's Responses API, and with any other `--base-url` it uses Chat Completions, where `gpt-6.2-sol` cannot call tools: there, pass a model such as `--model gpt-6-luna`, or `--openai-api responses` (`KERNEX_OPENAI_API=responses`) if the server implements the Responses API. `--openai-api chat` keeps OpenAI itself on Chat Completions, where only a model such as `gpt-6-luna` calls tools, so pass `--model` with it. `kx serve` jobs ignore the setting and follow the host, and `kx serve` warns when it is set.
+
 You can also set defaults via environment variables:
 
 ```bash
