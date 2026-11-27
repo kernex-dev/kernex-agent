@@ -318,14 +318,15 @@ fn keyless_status_with(
 }
 
 /// The proxy variable the provider's HTTP client reads for `url`, when it
-/// is set and not empty: `HTTPS_PROXY` or `HTTP_PROXY` by scheme, each
-/// before its lowercase form, then `ALL_PROXY` and `all_proxy`.
+/// holds a proxy the client accepts: `HTTPS_PROXY` or `HTTP_PROXY` by
+/// scheme, each before its lowercase form, then `ALL_PROXY` and
+/// `all_proxy`. The first of each pair that is set is the one read.
 fn proxy_var(url: &str, env: &dyn Fn(&str) -> Option<String>) -> Option<&'static str> {
     let first = |names: [&'static str; 2]| {
         names
             .into_iter()
             .find(|n| env(n).is_some())
-            .filter(|n| env(n).is_some_and(|v| !v.trim().is_empty()))
+            .filter(|n| env(n).is_some_and(|v| accepted_proxy(&v)))
     };
     let by_scheme = if url
         .get(..6)
@@ -336,6 +337,18 @@ fn proxy_var(url: &str, env: &dyn Fn(&str) -> Option<String>) -> Option<&'static
         ["HTTP_PROXY", "http_proxy"]
     };
     first(by_scheme).or_else(|| first(["ALL_PROXY", "all_proxy"]))
+}
+
+/// Whether the client would use `value` as a proxy: no whitespace, and an
+/// http, https or socks scheme, or none, followed by a host. The client
+/// ignores any other value.
+fn accepted_proxy(value: &str) -> bool {
+    let (scheme, rest) = value.split_once("://").unwrap_or(("http", value));
+    let known = ["http", "https", "socks4", "socks4a", "socks5", "socks5h"];
+    !value.is_empty()
+        && !value.contains(char::is_whitespace)
+        && known.iter().any(|k| scheme.eq_ignore_ascii_case(k))
+        && !rest.is_empty()
 }
 
 /// `url` as `kx doctor` prints it: an http or https URL, parsed the way
@@ -705,6 +718,20 @@ mod tests {
         assert_eq!(with(&empty, http), None);
         let all = [("HTTP_PROXY", ""), ("ALL_PROXY", "http://p")];
         assert_eq!(with(&all, http), Some("ALL_PROXY"));
+        // A value the client rejects is skipped the same way.
+        assert_eq!(
+            with(&[("HTTP_PROXY", "proxy:3128")], http),
+            Some("HTTP_PROXY")
+        );
+        assert_eq!(
+            with(&[("HTTP_PROXY", "socks5://p")], http),
+            Some("HTTP_PROXY")
+        );
+        for bad in ["ftp://p", "http://", "http://p q"] {
+            assert_eq!(with(&[("HTTP_PROXY", bad)], http), None, "{bad}");
+            let fallback = [("HTTP_PROXY", bad), ("all_proxy", "p")];
+            assert_eq!(with(&fallback, http), Some("all_proxy"), "{bad}");
+        }
     }
 
     #[test]
