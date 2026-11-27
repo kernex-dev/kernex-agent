@@ -7,21 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **The `ollama` provider talks to the address kx checked.** Without
-  `OLLAMA_HOST`, the provider search and `kx doctor` look for Ollama at
-  `127.0.0.1:11434`, but the provider then connected to
-  `localhost:11434`, which can resolve to another address. It now uses
-  `127.0.0.1:11434` too, whether kx picked Ollama or you named it with
-  `--provider`. A `kx serve` job that names `ollama` while the server
-  runs another provider still connects to `localhost:11434`.
-- **`kx doctor` says when its Ollama check skipped a proxy.** The check
-  connects directly, while the provider goes through the proxy in
-  `HTTP_PROXY` (or `HTTPS_PROXY`, or `ALL_PROXY`) unless `NO_PROXY`
-  exempts the address, so the two could disagree with no hint why. The
-  Ollama line now names the variable when one is set.
-
 ## [0.12.0] - 2026-11-27
 
 ### Changed
@@ -44,6 +29,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   URL. The value is trimmed and case-insensitive, and empty counts as
   unset. `kx serve` jobs ignore it and follow the host; `kx serve` warns
   when it is set.
+
+### Fixed
+
+- **The `ollama` provider talks to the address kx checked.** Without
+  `OLLAMA_HOST`, the provider search and `kx doctor` look for Ollama at
+  `127.0.0.1:11434`, but the provider then connected to
+  `localhost:11434`, which can resolve to another address. It now uses
+  `127.0.0.1:11434` too, whether kx picked Ollama or you named it with
+  `--provider`. A `kx serve` job that names `ollama` while the server
+  runs another provider still connects to `localhost:11434`.
+- **`kx doctor` says when its Ollama check skipped a proxy.** The check
+  connects directly, while the provider goes through the proxy in
+  `HTTP_PROXY` (or `HTTPS_PROXY`, or `ALL_PROXY`) unless `NO_PROXY`
+  exempts the address, so the two could disagree with no hint why. The
+  Ollama line now names the variable when it holds a proxy the provider
+  would use.
 
 ## [0.11.1] - 2026-11-26
 
