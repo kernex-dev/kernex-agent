@@ -79,30 +79,27 @@ rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 # reaches the minimal variant.
 tower-http = { version = "0.5", features = ["trace"], optional = true }
 
-# Placeholder optional deps. Reserved for the corresponding feature
-# flag's eventual implementation; currently no source under default
-# activates them.
+# Optional deps of the `tui` placeholder (ratatui, crossterm) and of
+# `agent-codex` (toml_edit). The default build pulls in none of them.
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"], optional = true }
 crossterm = { version = "0.29", optional = true }
 toml_edit = { version = "0.22", optional = true }
 
 [features]
-# Default build: Claude-first UX, the `kx mem *` cfg surface, and the
-# headless HTTP daemon. Matches the pre-change `cargo install kernex-agent`
-# behaviour byte-for-byte.
+# Default build: the Claude Code installer, the `kx mem *` subcommands,
+# and the `kx serve` HTTP daemon.
 default = ["agent-claude", "memory-cli", "serve"]
 
 # Core features.
-memory-cli = []                                                                # reserves cfg surface for `kx mem *` subcommands
+memory-cli = []                                                                # `kx mem *` subcommands
 mcp = ["memory-cli", "tokio/io-std", "tokio/io-util"]                          # `kx mcp` stdio MCP server exposing the memory tool surface; io-std/io-util add stdin/stdout + buffered line IO only when enabled
 serve = ["dep:axum", "dep:hmac", "dep:subtle", "dep:uuid", "dep:rusqlite", "dep:tower-http"]  # `kx serve` headless HTTP daemon
 tui = ["dep:ratatui", "dep:crossterm"]                                         # placeholder; no source yet
 
-# Configurator adapters. Each is opt-in. Claude logic remains
-# unconditional in this change; the cfg surface is reserved so the
-# adapter module can move behind the flag without another Cargo edit.
-agent-claude   = []                       # reserved cfg surface, no extra deps
-agent-codex    = ["dep:toml_edit"]        # toml_edit is no longer pulled transitively (kernex-agent migrated `toml` -> `basic-toml` in FU-A-06); enabling `agent-codex` adds ~272 KiB
+# Configurator adapters. Each is opt-in; only Claude Code and Codex
+# have an adapter so far.
+agent-claude   = []                       # `kx install` and the Claude Code adapter, no extra deps
+agent-codex    = ["dep:toml_edit"]        # Codex adapter; toml_edit adds about 272 KiB
 agent-opencode = []                       # placeholder; serde_json is already unconditional
 agent-cursor   = []                       # placeholder; rules file is plain text
 agent-cline    = []                       # placeholder; serde_json is already unconditional
@@ -130,16 +127,10 @@ preset-all = [
 # Provider features. Forwarded to kernex-providers.
 bedrock = ["kernex-providers/bedrock"]
 
-# Optional deps that are reserved for placeholder features (`tui`,
-# `agent-codex`) and direct deps reserved for future surfaces get listed
-# here so cargo-machete does not flag them as unused while the
-# implementations are still pending. `kernex-sandbox` is a direct dep
-# but currently has no `use kernex_sandbox` reference in src/; it is
-# pinned for upcoming sandbox-based agent execution surfaces.
-# `kernex-memory` is pinned for the upcoming `kx mem *` subcommand
-# surface; the trait import lands with the first subcommand commit.
+# The placeholder `tui` feature pulls in ratatui and crossterm, which no
+# source uses yet, so cargo-machete is told to skip them.
 [package.metadata.cargo-machete]
-ignored = ["ratatui", "crossterm", "toml_edit", "kernex-sandbox", "kernex-memory"]
+ignored = ["ratatui", "crossterm"]
 
 # Release profile mirrors the kernex-dev workspace's `lto = "fat"`
 # discipline so the bin -> lib split (introduced when src/lib.rs was
