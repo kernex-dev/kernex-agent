@@ -1404,6 +1404,7 @@ dependencies = [
  "dirs",
  "flate2",
  "hmac",
+ "http",
  "http-body-util",
  "indicatif",
  "kernex-adapter-core",

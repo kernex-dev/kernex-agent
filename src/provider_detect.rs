@@ -339,16 +339,24 @@ fn proxy_var(url: &str, env: &dyn Fn(&str) -> Option<String>) -> Option<&'static
     first(by_scheme).or_else(|| first(["ALL_PROXY", "all_proxy"]))
 }
 
-/// Whether the client would use `value` as a proxy: no whitespace, and an
-/// http, https or socks scheme, or none, followed by a host. The client
-/// ignores any other value.
+/// Whether the client would use `value` as a proxy, by the test its proxy
+/// matcher applies (hyper-util's `parse_env_uri`): it parses as a URI with
+/// a host, and its scheme is http, https, a lowercase socks scheme, or
+/// absent. The client ignores any other value.
 fn accepted_proxy(value: &str) -> bool {
-    let (scheme, rest) = value.split_once("://").unwrap_or(("http", value));
-    let known = ["http", "https", "socks4", "socks4a", "socks5", "socks5h"];
-    !value.is_empty()
-        && !value.contains(char::is_whitespace)
-        && known.iter().any(|k| scheme.eq_ignore_ascii_case(k))
-        && !rest.is_empty()
+    use http::uri::{Scheme, Uri};
+    let Ok(uri) = value.parse::<Uri>() else {
+        return false;
+    };
+    let scheme_ok = match uri.scheme() {
+        None => true,
+        Some(s) => {
+            *s == Scheme::HTTP
+                || *s == Scheme::HTTPS
+                || matches!(s.as_str(), "socks4" | "socks4a" | "socks5" | "socks5h")
+        }
+    };
+    scheme_ok && uri.authority().is_some()
 }
 
 /// `url` as `kx doctor` prints it: an http or https URL, parsed the way
@@ -727,7 +735,24 @@ mod tests {
             with(&[("HTTP_PROXY", "socks5://p")], http),
             Some("HTTP_PROXY")
         );
-        for bad in ["ftp://p", "http://", "http://p q"] {
+        assert_eq!(
+            with(&[("HTTP_PROXY", "HTTP://p:3128")], http),
+            Some("HTTP_PROXY")
+        );
+        let user = [("HTTP_PROXY", "http://user:p@ss@h:8080")];
+        assert_eq!(with(&user, http), Some("HTTP_PROXY"));
+        for bad in [
+            "ftp://p",
+            "http://",
+            "http://p q",
+            "SOCKS5://p",
+            "http://user:pa^ss@h:8080",
+            "http://${PROXY_HOST}:3128",
+            "http:///x",
+            "http://user@",
+            "\"http://p:80\"",
+            "/proxy",
+        ] {
             assert_eq!(with(&[("HTTP_PROXY", bad)], http), None, "{bad}");
             let fallback = [("HTTP_PROXY", bad), ("all_proxy", "p")];
             assert_eq!(with(&fallback, http), Some("all_proxy"), "{bad}");

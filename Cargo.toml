@@ -54,6 +54,9 @@ basic-toml = "0.1"
 sha2 = "0.10"
 ureq = "2"
 url = "2.5"
+# Already in the tree through reqwest. `kx doctor` parses proxy variables
+# with it the way the provider's HTTP client does.
+http = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-trait = "0.1"
