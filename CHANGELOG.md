@@ -43,7 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connects directly, while the provider goes through the proxy in
   `HTTP_PROXY` (or `HTTPS_PROXY`, or `ALL_PROXY`) unless `NO_PROXY`
   exempts the address, so the two could disagree with no hint why. The
-  Ollama line now names the variable when one is set.
+  Ollama line now names the variable when it holds a proxy the provider
+  would use.
 
 ## [0.11.1] - 2026-11-26
 
