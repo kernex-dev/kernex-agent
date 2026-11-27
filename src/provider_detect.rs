@@ -295,10 +295,18 @@ fn keyless_status_with(
         });
         let shown =
             printable(&url).unwrap_or_else(|| "an address that is not an http URL".to_string());
+        // This check connects directly; the provider's client honours the
+        // proxy variables, so with one set the two can disagree.
+        let proxy = proxy_var(&url, probe.env).map_or_else(String::new, |var| {
+            format!(
+                "; checked without the proxy in {var}, which the provider uses \
+                 unless NO_PROXY exempts this address"
+            )
+        });
         return Some(if (probe.ollama_answers)(&url) {
-            (true, format!("answers at {shown}"))
+            (true, format!("answers at {shown}{proxy}"))
         } else {
-            (false, format!("nothing answers at {shown}"))
+            (false, format!("nothing answers at {shown}{proxy}"))
         });
     }
     let (program, _) = CLIS.iter().find(|(_, n)| *n == name)?;
@@ -307,6 +315,27 @@ fn keyless_status_with(
     } else {
         (false, format!("{program} not on PATH"))
     })
+}
+
+/// The proxy variable the provider's HTTP client reads for `url`, when it
+/// is set and not empty: `HTTPS_PROXY` or `HTTP_PROXY` by scheme, each
+/// before its lowercase form, then `ALL_PROXY` and `all_proxy`.
+fn proxy_var(url: &str, env: &dyn Fn(&str) -> Option<String>) -> Option<&'static str> {
+    let first = |names: [&'static str; 2]| {
+        names
+            .into_iter()
+            .find(|n| env(n).is_some())
+            .filter(|n| env(n).is_some_and(|v| !v.trim().is_empty()))
+    };
+    let by_scheme = if url
+        .get(..6)
+        .is_some_and(|s| s.eq_ignore_ascii_case("https:"))
+    {
+        ["HTTPS_PROXY", "https_proxy"]
+    } else {
+        ["HTTP_PROXY", "http_proxy"]
+    };
+    first(by_scheme).or_else(|| first(["ALL_PROXY", "all_proxy"]))
 }
 
 /// `url` as `kx doctor` prints it: an http or https URL, parsed the way
@@ -641,6 +670,62 @@ mod tests {
             "responses",
             "dev"
         ])));
+    }
+
+    #[test]
+    fn the_proxy_variable_is_the_one_the_provider_client_reads() {
+        let with = |vars: &[(&str, &str)], url: &str| {
+            let vars: HashMap<String, String> = vars
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            proxy_var(url, &move |k: &str| vars.get(k).cloned())
+        };
+        let http = "http://127.0.0.1:11434";
+        assert_eq!(with(&[], http), None);
+        assert_eq!(
+            with(&[("HTTP_PROXY", "http://p")], http),
+            Some("HTTP_PROXY")
+        );
+        assert_eq!(
+            with(&[("http_proxy", "http://p")], http),
+            Some("http_proxy")
+        );
+        assert_eq!(with(&[("all_proxy", "http://p")], http), Some("all_proxy"));
+        // An https proxy is not used for an http address, and the other way round.
+        assert_eq!(with(&[("HTTPS_PROXY", "http://p")], http), None);
+        assert_eq!(
+            with(&[("HTTPS_PROXY", "http://p")], "HTTPS://box"),
+            Some("HTTPS_PROXY")
+        );
+        assert_eq!(with(&[("HTTP_PROXY", "http://p")], "https://box"), None);
+        // An empty HTTP_PROXY counts as unset and hides http_proxy, as in
+        // the client; ALL_PROXY still applies.
+        let empty = [("HTTP_PROXY", " "), ("http_proxy", "http://p")];
+        assert_eq!(with(&empty, http), None);
+        let all = [("HTTP_PROXY", ""), ("ALL_PROXY", "http://p")];
+        assert_eq!(with(&all, http), Some("ALL_PROXY"));
+    }
+
+    #[test]
+    fn doctor_names_a_proxy_it_did_not_use() {
+        let env = |k: &str| match k {
+            "HTTP_PROXY" => Some("http://proxy:3128".to_string()),
+            _ => None,
+        };
+        let probe = Probe {
+            env: &env,
+            ollama_answers: &|_| true,
+            on_path: &|_| false,
+        };
+        let (found, what) =
+            keyless_status_with("ollama", &ProviderFlags::default(), &probe).unwrap();
+        assert!(found);
+        assert_eq!(
+            what,
+            "answers at http://127.0.0.1:11434; checked without the proxy in HTTP_PROXY, \
+             which the provider uses unless NO_PROXY exempts this address"
+        );
     }
 
     #[test]

@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `127.0.0.1:11434`, but the provider then connected to
   `localhost:11434`, which can resolve to another address. It now uses
   `127.0.0.1:11434` too, whether kx picked Ollama or you named it.
+- **`kx doctor` says when its Ollama check skipped a proxy.** The check
+  connects directly, while the provider goes through the proxy in
+  `HTTP_PROXY` (or `HTTPS_PROXY`, or `ALL_PROXY`) unless `NO_PROXY`
+  exempts the address, so the two could disagree with no hint why. The
+  Ollama line now names the variable when one is set.
 
 ## [0.12.0] - 2026-11-27
 
