@@ -341,22 +341,35 @@ fn proxy_var(url: &str, env: &dyn Fn(&str) -> Option<String>) -> Option<&'static
 
 /// Whether the client would use `value` as a proxy, by the test its proxy
 /// matcher applies (hyper-util's `parse_env_uri`): it parses as a URI with
-/// a host, and its scheme is http, https, a lowercase socks scheme, or
-/// absent. The client ignores any other value.
+/// a host, its scheme is http, https, a lowercase socks scheme, or absent,
+/// and what follows the first `@` of the host (all of it when there is no
+/// `@`) still forms a URI, since the client takes the user and password
+/// off and rebuilds the address from the rest. The client ignores any
+/// other value.
 fn accepted_proxy(value: &str) -> bool {
     use http::uri::{Scheme, Uri};
     let Ok(uri) = value.parse::<Uri>() else {
         return false;
     };
-    let scheme_ok = match uri.scheme() {
-        None => true,
-        Some(s) => {
-            *s == Scheme::HTTP
-                || *s == Scheme::HTTPS
-                || matches!(s.as_str(), "socks4" | "socks4a" | "socks5" | "socks5h")
-        }
+    let scheme = match uri.scheme() {
+        None => Scheme::HTTP,
+        Some(s) if *s == Scheme::HTTP || *s == Scheme::HTTPS => s.clone(),
+        Some(s) if matches!(s.as_str(), "socks4" | "socks4a" | "socks5" | "socks5h") => s.clone(),
+        Some(_) => return false,
     };
-    scheme_ok && uri.authority().is_some()
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    let host_port = authority
+        .as_str()
+        .split_once('@')
+        .map_or(authority.as_str(), |(_, h)| h);
+    Uri::builder()
+        .scheme(scheme)
+        .authority(host_port)
+        .path_and_query("/")
+        .build()
+        .is_ok()
 }
 
 /// `url` as `kx doctor` prints it: an http or https URL, parsed the way
@@ -741,6 +754,8 @@ mod tests {
         );
         let user = [("HTTP_PROXY", "http://user:p@ss@h:8080")];
         assert_eq!(with(&user, http), Some("HTTP_PROXY"));
+        let v6 = [("HTTP_PROXY", "http://u:p@[::1]:3128")];
+        assert_eq!(with(&v6, http), Some("HTTP_PROXY"));
         for bad in [
             "ftp://p",
             "http://",
@@ -752,6 +767,11 @@ mod tests {
             "http://user@",
             "\"http://p:80\"",
             "/proxy",
+            // An @ inside brackets leaves no address once the client
+            // takes off what it reads as the user.
+            "http://[::1@]:80",
+            "http://[x@]",
+            "[@]",
         ] {
             assert_eq!(with(&[("HTTP_PROXY", bad)], http), None, "{bad}");
             let fallback = [("HTTP_PROXY", bad), ("all_proxy", "p")];
