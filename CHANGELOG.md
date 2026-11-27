@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `ollama` provider talks to the address kx checked.** Without
+  `OLLAMA_HOST`, the provider search and `kx doctor` look for Ollama at
+  `127.0.0.1:11434`, but the provider then connected to
+  `localhost:11434`, which can resolve to another address. It now uses
+  `127.0.0.1:11434` too, whether kx picked Ollama or you named it.
+
 ## [0.12.0] - 2026-11-27
 
 ### Changed

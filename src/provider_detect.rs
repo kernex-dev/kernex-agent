@@ -12,7 +12,8 @@
 //!
 //! When nothing is found the command stops with the ways to configure one.
 //! Commands that never call a model do not look. A named `ollama` without
-//! a base URL also reads `OLLAMA_HOST`. `KERNEX_API_KEY` (or `--api-key`)
+//! a base URL also reads `OLLAMA_HOST`, and uses the same default address.
+//! `KERNEX_API_KEY` (or `--api-key`)
 //! is used only with a named provider: it says nothing about which one.
 
 use std::path::Path;
@@ -33,7 +34,8 @@ const CLIS: &[(&str, &str)] = &[("claude", "claude-code"), ("opencode", "opencod
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Choice {
     pub name: String,
-    /// Base URL to use when the choice found it (Ollama at `OLLAMA_HOST`).
+    /// Base URL for Ollama: `OLLAMA_HOST`, else `127.0.0.1:11434`, the
+    /// address the search and `kx doctor` probe. `None` for the rest.
     pub base_url: Option<String>,
     /// Why this provider, for the notice; `None` when the user named it.
     pub reason: Option<String>,
@@ -171,7 +173,7 @@ pub fn choose_with(named: Option<&str>, probe: &Probe<'_>) -> anyhow::Result<Cho
         let ollama = name.eq_ignore_ascii_case("ollama");
         return Ok(Choice {
             name: name.to_string(),
-            base_url: host.as_ref().filter(|_| ollama).map(|_| url.clone()),
+            base_url: ollama.then(|| url.clone()),
             reason: None,
         });
     }
@@ -199,7 +201,7 @@ pub fn choose_with(named: Option<&str>, probe: &Probe<'_>) -> anyhow::Result<Cho
     if (probe.ollama_answers)(&url) {
         return Ok(Choice {
             name: "ollama".into(),
-            base_url: host.is_some().then(|| url.clone()),
+            base_url: Some(url.clone()),
             reason: Some(format!("Ollama answers at {url}")),
         });
     }
@@ -487,13 +489,20 @@ mod tests {
         // Never applied to another provider.
         let c = choose_with(Some("openai"), &probe).unwrap();
         assert_eq!(c.base_url, None);
+        // Without OLLAMA_HOST, the address kx doctor probes.
+        let c = run(Some("ollama"), &[], false, &[]).unwrap();
+        assert_eq!(c.base_url.as_deref(), Some(OLLAMA_DEFAULT));
     }
 
     #[test]
     fn ollama_comes_before_an_installed_cli() {
         let c = run(None, &[], true, &["claude"]).unwrap();
         assert_eq!(c.name, "ollama");
-        assert_eq!(c.base_url, None, "the default address needs no base URL");
+        assert_eq!(
+            c.base_url.as_deref(),
+            Some(OLLAMA_DEFAULT),
+            "the provider must use the address that answered, not its own default"
+        );
         let c = run(None, &[("OLLAMA_HOST", "box:9999")], true, &[]).unwrap();
         assert_eq!(c.base_url.as_deref(), Some("http://box:9999"));
     }
