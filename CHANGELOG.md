@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OLLAMA_HOST`, the provider search and `kx doctor` look for Ollama at
   `127.0.0.1:11434`, but the provider then connected to
   `localhost:11434`, which can resolve to another address. It now uses
-  `127.0.0.1:11434` too, whether kx picked Ollama or you named it.
+  `127.0.0.1:11434` too, whether kx picked Ollama or you named it with
+  `--provider`. A `kx serve` job that names `ollama` while the server
+  runs another provider still connects to `localhost:11434`.
 - **`kx doctor` says when its Ollama check skipped a proxy.** The check
   connects directly, while the provider goes through the proxy in
   `HTTP_PROXY` (or `HTTPS_PROXY`, or `ALL_PROXY`) unless `NO_PROXY`

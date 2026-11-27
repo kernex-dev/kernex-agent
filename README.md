@@ -548,7 +548,7 @@ Where `{project-name}` is derived from the directory name. Each project maintain
 
 User-wide settings live in `~/.kx/config.toml` (see [Tool access](#tool-access)).
 
-kx keeps its data in `~/.kx` (`/tmp/.kx` when `HOME` is unset). It does not read `KERNEX_DATA_DIR`, which other programs built on the kernex crates use; to keep kx's data somewhere else, run it with a different `HOME`.
+kx keeps its data in `~/.kx`. It does not read `KERNEX_DATA_DIR`, which other programs built on the kernex crates use; to keep kx's data somewhere else, run it with a different `HOME`.
 
 ## Providers
 
