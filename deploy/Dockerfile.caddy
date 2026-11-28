@@ -2,7 +2,7 @@
 # Images are pinned by digest and the plugin by commit, so a rebuild cannot pull
 # in code that nobody reviewed. Dependabot (docker ecosystem) proposes image updates;
 # the plugin commit is bumped by hand.
-FROM caddy:2-builder@sha256:aef223d1f943bc12a29a9e0a0a73983aa19a36672daede7507da4201a6b1016a AS builder
+FROM caddy:2-builder@sha256:cda07fe9d82728c7ac44d844306d435e98131423dc7b114f05a8a8ecfff94707 AS builder
 
 RUN xcaddy build \
     --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db
